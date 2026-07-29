@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/pdx1/__init__.py
+src/pdx_1i.egg-info/PKG-INFO
+src/pdx_1i.egg-info/SOURCES.txt
+src/pdx_1i.egg-info/dependency_links.txt
+src/pdx_1i.egg-info/requires.txt
+src/pdx_1i.egg-info/top_level.txt
+tests/test_basic.py
