@@ -22,9 +22,14 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Virtual environments
+.venv/
+venv/
+env/
+
 # Coverage and testing
 htmlcov/
-.toml
+.tox/
 .coverage
 .coverage.*
 .cache

@@ -1,0 +1,30 @@
+[
+  {
+    "bill_id": "SB 1147",
+    "title": "Relating to energy facility siting review timelines",
+    "session": "2026 Regular",
+    "sponsors": ["Senate Committee on Energy and Environment"],
+    "committee": "Senate Committee on Energy and Environment",
+    "action": "Work session held; amendment adopted",
+    "action_at": "2026-05-27T19:30:00+00:00",
+    "status": "In committee upon adjournment",
+    "summary": "Modifies the review period for energy facility siting applications and directs the Energy Facility Siting Council to publish a determination within a fixed interval following a completed application.",
+    "subjects": ["Energy", "Land Use", "Administrative Procedure"],
+    "jurisdictions": ["Statewide", "Multnomah County", "Columbia County"],
+    "url": "https://olis.oregonlegislature.gov/liz/2026R1/Measures/Overview/SB1147"
+  },
+  {
+    "bill_id": "HB 4092",
+    "title": "Relating to regional transportation district governance",
+    "session": "2026 Regular",
+    "sponsors": ["House Interim Committee on Transportation"],
+    "committee": "House Interim Committee on Transportation",
+    "action": "Public hearing scheduled",
+    "action_at": "2026-05-26T17:00:00+00:00",
+    "status": "Referred to committee",
+    "summary": "Adjusts appointment procedures for the board of a mass transit district serving a metropolitan service district and revises reporting requirements to the regional government.",
+    "subjects": ["Transportation", "Local Government"],
+    "jurisdictions": ["Metro", "TriMet", "Multnomah County", "Washington County"],
+    "url": "https://olis.oregonlegislature.gov/liz/2026R1/Measures/Overview/HB4092"
+  }
+]
