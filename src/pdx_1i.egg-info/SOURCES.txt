@@ -2,9 +2,15 @@ LICENSE
 README.md
 pyproject.toml
 src/pdx1/__init__.py
+src/pdx1/models.py
+src/pdx1/pipeline.py
+src/pdx1/publication/__init__.py
+src/pdx1/sources/__init__.py
+src/pdx1/watch/__init__.py
 src/pdx_1i.egg-info/PKG-INFO
 src/pdx_1i.egg-info/SOURCES.txt
 src/pdx_1i.egg-info/dependency_links.txt
 src/pdx_1i.egg-info/requires.txt
 src/pdx_1i.egg-info/top_level.txt
 tests/test_basic.py
+tests/test_core_scaffold.py
