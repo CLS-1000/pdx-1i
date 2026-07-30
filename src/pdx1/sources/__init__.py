@@ -1,12 +1,18 @@
-from __future__ import annotations
+"""Source adapters for the PDX-1i feeds."""
 
-from typing import Protocol, Sequence
+from .base import FetchResult, SourceAdapter
+from .olis import OlisAdapter
+from .orestar import OrestarAdapter
+from .portland_press import PortlandPressAdapter
+from .sei import SeiAdapter
+from .wa_pdc import WaPdcAdapter
 
-from pdx1.models import Signal
-
-
-class SourceAdapter(Protocol):
-    name: str
-
-    def fetch(self) -> Sequence[Signal]:
-        """Collect and normalize source records into Signal objects."""
+__all__ = [
+    "FetchResult",
+    "SourceAdapter",
+    "OlisAdapter",
+    "OrestarAdapter",
+    "PortlandPressAdapter",
+    "SeiAdapter",
+    "WaPdcAdapter",
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "tran_id": "ORE-2026-4417392",
+    "committee": "Friends of Metro Transit Access",
+    "committee_id": "PAC-19442",
+    "contributor": "Regional Utility Workers PAC",
+    "contributor_city": "Portland",
+    "contributor_state": "OR",
+    "contributor_employer": "Portland General Electric",
+    "contribution_type": "Cash Contribution",
+    "amount": 12500.00,
+    "aggregate": 41000.00,
+    "transaction_date": "2026-05-26",
+    "filed_at": "2026-05-27T16:40:00+00:00",
+    "purpose": "General campaign support",
+    "url": "https://secure.sos.state.or.us/orestar/gotoPublicTransactionDetail.do?tranId=4417392"
+  },
+  {
+    "tran_id": "ORE-2026-4417511",
+    "committee": "Clackamas Forward Committee",
+    "committee_id": "PAC-20118",
+    "contributor": "NW Natural Employees Fund",
+    "contributor_city": "Portland",
+    "contributor_state": "OR",
+    "contributor_employer": "NW Natural",
+    "contribution_type": "In-Kind Contribution",
+    "amount": 4800.00,
+    "aggregate": 9600.00,
+    "transaction_date": "2026-05-27",
+    "filed_at": "2026-05-27T21:05:00+00:00",
+    "purpose": "Printing and mailing services",
+    "url": "https://secure.sos.state.or.us/orestar/gotoPublicTransactionDetail.do?tranId=4417511"
+  },
+  {
+    "tran_id": "ORE-2026-4402118",
+    "committee": "Washington County Neighbors United",
+    "committee_id": "PAC-18830",
+    "contributor": "Sunset Corridor Business Alliance",
+    "contributor_city": "Hillsboro",
+    "contributor_state": "OR",
+    "contributor_employer": null,
+    "contribution_type": "Cash Contribution",
+    "amount": 2200.00,
+    "aggregate": 2200.00,
+    "transaction_date": "2026-03-02",
+    "filed_at": "2026-03-04T18:15:00+00:00",
+    "purpose": "General campaign support",
+    "url": "https://secure.sos.state.or.us/orestar/gotoPublicTransactionDetail.do?tranId=4402118"
+  }
+]

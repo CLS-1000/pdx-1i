@@ -1,0 +1,43 @@
+[
+  {
+    "filing_id": "SEI-2026-00871",
+    "seat": "Metro Councilor - District 4",
+    "jurisdiction": "Metro Council",
+    "year": 2025,
+    "filing_type": "amendment",
+    "filed_at": "2026-05-26T15:20:00+00:00",
+    "prior_filing_id": "SEI-2025-00744",
+    "status": "accepted",
+    "interests": [
+      {
+        "kind": "Position held",
+        "description": "Unpaid advisory board position",
+        "entity": "OHSU"
+      },
+      {
+        "kind": "Source of household income",
+        "description": "Consulting services, transportation planning",
+        "entity": "not stated"
+      }
+    ],
+    "url": "https://www.oregon.gov/ogec/Pages/sei-filings.aspx"
+  },
+  {
+    "filing_id": "SEI-2026-00902",
+    "seat": "County Commissioner - Position 2",
+    "jurisdiction": "Washington County",
+    "year": 2025,
+    "filing_type": "original",
+    "filed_at": "2026-05-27T14:05:00+00:00",
+    "prior_filing_id": null,
+    "status": "accepted",
+    "interests": [
+      {
+        "kind": "Business investment",
+        "description": "Publicly traded equity holding above the reporting threshold",
+        "entity": "Intel Corporation"
+      }
+    ],
+    "url": "https://www.oregon.gov/ogec/Pages/sei-filings.aspx"
+  }
+]

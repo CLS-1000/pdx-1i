@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Willamette Week</title>
+    <link>https://www.wweek.com/</link>
+    <description>Portland news, politics and culture</description>
+    <item>
+      <title>Metro Council weighs siting rule changes ahead of summer recess</title>
+      <link>https://www.wweek.com/news/2026/05/27/metro-council-siting-rule/</link>
+      <pubDate>Wed, 27 May 2026 22:15:00 +0000</pubDate>
+      <author>newsroom@wweek.com</author>
+      <description>The regional government took up proposed changes to energy facility siting review this week, with a work session that adopted an amendment to the review timeline. Councilors heard testimony from utility representatives, neighborhood associations and two county planning departments over roughly three hours before adjourning without a final vote on the underlying measure.</description>
+    </item>
+    <item>
+      <title>Clark County committee reports Oregon-based contribution</title>
+      <link>https://www.wweek.com/news/2026/05/27/clark-county-contribution/</link>
+      <pubDate>Wed, 27 May 2026 19:40:00 +0000</pubDate>
+      <author>newsroom@wweek.com</author>
+      <description>A candidate committee in Clark County reported a contribution originating from a political committee registered in Oregon, according to a filing received by the Washington Public Disclosure Commission. Cross-border contributions are permitted under Washington law and are reported through the same disclosure system as in-state receipts. The filing lists the contribution date as the twenty-fifth of May.</description>
+    </item>
+    <item>
+      <title>Short item with no body</title>
+      <link>https://www.wweek.com/news/2026/05/27/short/</link>
+      <pubDate>Wed, 27 May 2026 12:00:00 +0000</pubDate>
+      <description>Brief note.</description>
+    </item>
+  </channel>
+</rss>

@@ -2,7 +2,7 @@ name: Python package
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "claude/**" ]
   pull_request:
     branches: [ "main" ]
 
@@ -15,27 +15,27 @@ jobs:
         python-version: ["3.12"]
 
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
         pip install ruff bandit
-    
+
     - name: Lint with ruff
       run: ruff check src/ tests/
-    
+
     - name: Security check with bandit
-      run: bandit -r src/ -ll || true
-    
+      run: bandit -r src/ -ll
+
     - name: Test with pytest
       run: pytest tests/ -v --tb=short
-    
+
     - name: Coverage report
-      run: pytest --cov=src --cov-report=term-missing tests/ || true
+      run: pytest --cov=src --cov-report=term-missing tests/

@@ -1,0 +1,34 @@
+[
+  {
+    "receipt_id": "WA-2026-778341",
+    "recipient": "Clark County Council District 2 Committee",
+    "recipient_type": "Candidate committee",
+    "jurisdiction": "Clark County",
+    "election_cycle": "2026",
+    "contributor": "Cascade Energy Advocacy Fund",
+    "contributor_city": "Portland",
+    "contributor_state": "OR",
+    "contributor_type": "Political committee",
+    "amount": 6000.00,
+    "aggregate": 15000.00,
+    "contribution_date": "2026-05-25",
+    "filed_at": "2026-05-27T18:10:00+00:00",
+    "url": "https://www.pdc.wa.gov/browse/campaign-explorer"
+  },
+  {
+    "receipt_id": "WA-2026-778402",
+    "recipient": "Vancouver City Council Position 4 Committee",
+    "recipient_type": "Candidate committee",
+    "jurisdiction": "City of Vancouver",
+    "election_cycle": "2026",
+    "contributor": "Columbia Crossing Trades Council",
+    "contributor_city": "Vancouver",
+    "contributor_state": "WA",
+    "contributor_type": "Labor organization",
+    "amount": 3500.00,
+    "aggregate": 3500.00,
+    "contribution_date": "2026-05-26",
+    "filed_at": "2026-05-27T20:45:00+00:00",
+    "url": "https://www.pdc.wa.gov/browse/campaign-explorer"
+  }
+]
