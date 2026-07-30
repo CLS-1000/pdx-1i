@@ -131,7 +131,7 @@ Writes are idempotent — re-running a cycle over the same input adds nothing.
 
 ```
 pdx-1i/
-├── src/pdx1/                  22 modules
+├── src/pdx1/                  25 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -143,9 +143,10 @@ pdx-1i/
 │   ├── pipeline.py            stage orchestration + CLI
 │   ├── sources/               ORESTAR · OLIS · SEI · WA PDC · Portland Press
 │   ├── neutrality/            tone gate · attribution gate
-│   ├── publication/           IssueBuilder — neutrality-gated assembly
+│   ├── publication/           IssueBuilder + BriefPublisher
+│   ├── watch/                 WatchTarget — infrastructure watch records
 │   └── demos/                 runnable walkthrough
-├── tests/                     10 test files, 216 tests
+├── tests/                     11 test files, 226 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -195,7 +196,7 @@ pytest --cov=src --cov-report=term-missing tests/
 ruff check src/ tests/
 ```
 
-216 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+226 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -215,7 +216,8 @@ Deliberately out of scope for the current engine, each a clean follow-on:
 - **Scheduler** — the daily 06:00 PT cycle.
 - **PDF newsletters** and network diagrams.
 - **`watch/` infrastructure monitors** — OHSU, PPB, TriMet, PGE, NW Natural, Water
-  Bureau. These bodies exist in the graph as monitored entities, but nothing polls them.
+  Bureau. `WatchTarget` records a name and endpoint, and these bodies exist in the graph
+  as monitored entities, but nothing polls them yet.
 - **Web UI** — the SPEC-1 console and political surfaces. Should be built against a
   real API, not fixtures.
 

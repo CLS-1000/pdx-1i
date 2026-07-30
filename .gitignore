@@ -40,3 +40,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 .ruff_cache/
+
+# Pipeline output (JSONL ground truth + SQLite query layer). Scoped to the repo root
+# and the documented default names so fixture payloads under tests/ stay tracked.
+/pdx1_signals.jsonl
+/pdx1.db
+/*.jsonl
+/*.db

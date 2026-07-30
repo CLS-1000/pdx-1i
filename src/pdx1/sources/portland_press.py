@@ -70,6 +70,7 @@ class PortlandPressAdapter(SourceAdapter):
                     source=self.name,
                     source_type=self.source_type,
                     text=body,
+                    title=title or None,
                     url=getattr(entry, "link", None),
                     author=getattr(entry, "author", None) or outlet,
                     published_at=_entry_datetime(entry),

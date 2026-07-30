@@ -131,10 +131,21 @@ class Signal(BaseModel):
     source: str
     source_type: SourceType
     text: str
+    #: Optional headline. Adapters that have a natural title (press items) set it;
+    #: publication falls back to the opening of `text` when it is absent.
+    title: str | None = None
     url: str | None = None
     author: str | None = None
     published_at: datetime
     credibility: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @property
+    def display_title(self) -> str:
+        """Headline for rendering -- the title if set, otherwise the opening of the text."""
+        if self.title:
+            return self.title
+        head = self.text.strip()
+        return head if len(head) <= 80 else head[:80].rsplit(" ", 1)[0] + "..."
 
     @field_validator("published_at")
     @classmethod
@@ -352,3 +363,25 @@ class Brief(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     sources: list[str] = Field(default_factory=list)
     produced_at: datetime = Field(default_factory=utcnow)
+
+
+# ── Run reporting ────────────────────────────────────────────────────────────
+
+
+class PipelineRunSummary(BaseModel):
+    """
+    Coarse summary of one pipeline run.
+
+    Reports what a run touched without carrying the records themselves -- suitable for
+    a status endpoint or a log line. `CycleResult` in pipeline.py is the detailed
+    counterpart used inside the engine.
+    """
+
+    started_at: datetime
+    finished_at: datetime
+    sources_processed: int
+    signals_collected: int
+
+    @property
+    def duration_seconds(self) -> float:
+        return (self.finished_at - self.started_at).total_seconds()

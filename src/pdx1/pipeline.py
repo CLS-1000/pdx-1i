@@ -41,14 +41,17 @@ from .models import (
     Opportunity,
     Outcome,
     ParsedSignal,
+    PipelineRunSummary,
     Priority,
     Signal,
     SourceType,
     content_hash,
+    utcnow,
 )
 from .publication import IssueBuilder
 from .resolver import EntityResolver
 from .sources import (
+    FetchResult,
     OlisAdapter,
     OrestarAdapter,
     PortlandPressAdapter,
@@ -115,6 +118,29 @@ def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> lis
 
 def make_run_id(now: datetime) -> str:
     return f"pdx1_{now:%Y_%m%d_%H%M%S}"
+
+
+# ── Stage 01: Harvest ────────────────────────────────────────────────────────
+
+
+def harvest(adapter: object) -> FetchResult:
+    """
+    Pull signals from one adapter, never raising.
+
+    Accepts both adapter shapes: a `SourceAdapter` subclass, whose `safe_fetch` already
+    converts failures into errors on the result, and any duck-typed object exposing
+    `fetch() -> Sequence[Signal]`. The second form keeps lightweight adapters -- tests,
+    one-off scripts -- usable without subclassing.
+    """
+    if isinstance(adapter, SourceAdapter):
+        return adapter.safe_fetch()
+
+    name = getattr(adapter, "name", type(adapter).__name__)
+    try:
+        return FetchResult(source=name, signals=list(adapter.fetch()))
+    except Exception as exc:  # noqa: BLE001 - no adapter may halt a cycle
+        logger.warning("adapter %s failed: %s", name, exc)
+        return FetchResult(source=name, errors=[f"{type(exc).__name__}: {exc}"])
 
 
 # ── Stage 02: Parse ──────────────────────────────────────────────────────────
@@ -229,10 +255,12 @@ def run_cycle(
     signals: list[Signal] = []
     errors: list[str] = []
     for adapter in adapters:
-        result = adapter.safe_fetch()
+        result = harvest(adapter)
         signals.extend(result.signals)
-        errors.extend(f"{adapter.name}: {e}" for e in result.errors)
-        logger.info("harvest %s: %d signal(s), ok=%s", adapter.name, len(result), result.ok)
+        errors.extend(f"{result.source}: {e}" for e in result.errors)
+        logger.info(
+            "harvest %s: %d signal(s), ok=%s", result.source, len(result), result.ok
+        )
 
     if now is None:
         now = max((s.published_at for s in signals), default=datetime.now(timezone.utc))
@@ -321,6 +349,50 @@ def run_cycle(
             errors.append(f"section {rejection.title!r} dropped: {rejection.reason}")
 
     return result
+
+
+# ── Object-oriented facade ───────────────────────────────────────────────────
+
+
+class Pipeline:
+    """
+    Adapter-holding facade over `run_cycle`.
+
+    `collect` stops after harvest, for callers that only want raw signals. `run` drives
+    a full cycle and reports a coarse summary; use `run_cycle` directly when you need
+    the records, the gate drops, or the assembled brief.
+    """
+
+    def __init__(
+        self,
+        adapters: list[SourceAdapter] | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        self.adapters: list[SourceAdapter] = list(adapters or [])
+        self.settings = settings or Settings.from_env()
+
+    def add_adapter(self, adapter: SourceAdapter) -> None:
+        self.adapters.append(adapter)
+
+    def collect(self) -> list[Signal]:
+        """Harvest every adapter. A failing adapter is skipped, not raised."""
+        signals: list[Signal] = []
+        for adapter in self.adapters:
+            signals.extend(harvest(adapter).signals)
+        return signals
+
+    def run(self, store: DualWriteStore | None = None) -> PipelineRunSummary:
+        """Run a full cycle and summarise it."""
+        started_at = utcnow()
+        result = run_cycle(
+            settings=self.settings, adapters=self.adapters, store=store
+        )
+        return PipelineRunSummary(
+            started_at=started_at,
+            finished_at=utcnow(),
+            sources_processed=len(self.adapters),
+            signals_collected=result.harvested,
+        )
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
