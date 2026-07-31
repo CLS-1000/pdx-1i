@@ -122,8 +122,23 @@ print(len(result), "signals", "ok" if result.ok else result.errors)
 
 Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
 needs no connectivity. Set `PDX1_LIVE=true` (and install the `live` extra) to fetch over
-HTTP instead: `LiveSourceAdapter` overrides only `_read_raw`, so the parse logic and its
-tests are identical either way.
+HTTP instead: `LiveSourceAdapter` overrides only `_read_raw`, so the parse logic is the
+same either way.
+
+> **Live mode is a transport, not a working integration.** The HTTP plumbing is real and
+> tested, but two things stand between it and live data, and neither is done:
+>
+> 1. **The parsers expect the fixtures' schema.** Every `parse` requires the exact keys
+>    the fixtures use — `tran_id`, `filed_at`, `contributor_city`. A real government
+>    export uses different field names and raises `KeyError` on the first record. Each
+>    adapter needs a field mapping written against its actual feed.
+> 2. **The `feed_url` values are unverified.** They are plausible-looking guesses, and
+>    the only test covering them asserts that the string is non-empty and starts with
+>    `https://` — which cannot fail for a wrong URL.
+>
+> The live tests mock `httpx.get` and hand back fixture content, so they prove the
+> request is made with the right URL and timeout. They do not prove that anything on the
+> other end parses. Treat `PDX1_LIVE=true` as unimplemented until the mappings land.
 
 Because the fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the
 **newest harvested signal** rather than wall-clock time — otherwise a replay would drop
@@ -272,6 +287,9 @@ capability is described anywhere above, it exists and has tests.
   it. Needs two pieces: a `GET /graph` endpoint emitting nodes and ties, and a canvas or
   SVG renderer in the UI. Node shape encodes type (jurisdiction, official seat, entity),
   line style encodes tie kind, and disclosure ties render dashed.
+- **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
+  adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
+  needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
