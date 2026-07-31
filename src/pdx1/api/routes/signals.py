@@ -25,14 +25,13 @@ def list_signals(
     """
     store = request.app.state.store
     total = store.count_query(source=source)
-    records = store.query(source=source, limit=limit + offset)
-    page = records[offset : offset + limit]
+    records = store.query(source=source, limit=limit, offset=offset)
 
     # Reconstruct minimal signal-like views from stored records.
     from pdx1.models import Signal
 
     signals = []
-    for r in page:
+    for r in records:
         signals.append(
             Signal(
                 signal_id=r.signal_id,

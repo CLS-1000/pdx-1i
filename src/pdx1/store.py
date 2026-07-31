@@ -188,11 +188,30 @@ class DualWriteStore:
                 if line:
                     yield IntelligenceRecord.model_validate_json(line)
 
+    def count_query(
+        self,
+        outcome: str | None = None,
+        source: str | None = None,
+    ) -> int:
+        """Return the total number of records matching the given filters."""
+        with closing(self._connect()) as conn:
+            return int(
+                conn.execute(
+                    """
+                    SELECT count(*) FROM intelligence_records
+                     WHERE (? IS NULL OR outcome = ?)
+                       AND (? IS NULL OR source  = ?)
+                    """,
+                    (outcome, outcome, source, source),
+                ).fetchone()[0]
+            )
+
     def query(
         self,
         outcome: str | None = None,
         source: str | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> list[IntelligenceRecord]:
         """
         Read records back out of the query layer.
@@ -209,9 +228,9 @@ class DualWriteStore:
                  WHERE (? IS NULL OR outcome = ?)
                    AND (? IS NULL OR source  = ?)
                  ORDER BY published_at DESC
-                 LIMIT ?
+                 LIMIT ? OFFSET ?
                 """,
-                (outcome, outcome, source, source, limit),
+                (outcome, outcome, source, source, limit, offset),
             ).fetchall()
 
         return [IntelligenceRecord.model_validate_json(row["payload"]) for row in rows]
