@@ -362,7 +362,7 @@ def run_cycle(
 
     decision = trigger.evaluate(now)
     if decision.should_publish and records:
-        builder = IssueBuilder(run_id=run_id)
+        builder = IssueBuilder(run_id=run_id, tone_gate=settings.tone_gate)
         result.brief = builder.build(records, date=now.date().isoformat())
         if result.brief is not None:
             # Persist before marking published. A brief that was assembled but not

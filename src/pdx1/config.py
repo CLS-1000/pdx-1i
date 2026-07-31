@@ -98,6 +98,9 @@ class Settings:
     cron_minute: int = 0
 
     live_fetch: bool = False
+    #: When False the tone-vocabulary gate is bypassed; source language is
+    #: published as-is while citation discipline (attribution gate) remains enforced.
+    tone_gate: bool = True
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -139,4 +142,5 @@ class Settings:
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
             live_fetch=_env_bool("PDX1_LIVE", False),
+            tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )
