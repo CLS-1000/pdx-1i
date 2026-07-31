@@ -41,10 +41,11 @@ logger = logging.getLogger(__name__)
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Load settings and open the store on startup; nothing to tear down."""
     settings = Settings.from_env()
-    store = DualWriteStore(settings.store_path, settings.db_path)
+    store = DualWriteStore(
+        settings.store_path, settings.db_path, settings.briefs_path
+    )
     app.state.settings = settings
     app.state.store = store
-    app.state.last_brief = None
     logger.info(
         "PDX-1i API started — store=%s db=%s live=%s",
         settings.store_path,

@@ -260,7 +260,9 @@ def run_cycle(
     """
     settings = settings or Settings.from_env()
     adapters = adapters if adapters is not None else default_adapters(settings)
-    store = store or DualWriteStore(settings.store_path, settings.db_path)
+    store = store or DualWriteStore(
+        settings.store_path, settings.db_path, settings.briefs_path
+    )
 
     resolver = EntityResolver(NODES, ALIASES)
     baselines = BaselineRegistry(settings.baseline_window_days)
@@ -363,6 +365,10 @@ def run_cycle(
         builder = IssueBuilder(run_id=run_id)
         result.brief = builder.build(records, date=now.date().isoformat())
         if result.brief is not None:
+            # Persist before marking published. A brief that was assembled but not
+            # stored would be unrecoverable -- the novelty gate drops these signals on
+            # the next cycle, so nothing would regenerate it.
+            store.write_brief(result.brief)
             trigger.mark_published(now)
         for rejection in builder.rejected:
             errors.append(f"section {rejection.title!r} dropped: {rejection.reason}")

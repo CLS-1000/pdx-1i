@@ -9,6 +9,10 @@ scores them through a four-gate deterministic filter, resolves the entities they
 measures them against a rolling baseline, and writes structured intelligence records —
 then assembles a neutrality-gated brief when publication triggers.
 
+Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily cycle,
+a PDF renderer for the brief, and a single-page brief viewer. What is *not* built is
+listed at the bottom — the force-directed web map is the notable gap.
+
 ## What it does, and what it refuses to do
 
 The engine reports **structure and timing**. It makes conflict-of-interest structure
@@ -75,18 +79,30 @@ cd pdx-1i
 pip install -e ".[dev]"
 ```
 
-**Requires Python 3.12+.** The engine itself needs only `pydantic`, `feedparser` and
-`python-dotenv`; storage uses the standard library's `sqlite3`. Extras (`live`, `api`,
-`pdf`, `llm`) cover capabilities that are not built yet — see *Not built yet* below.
+**Requires Python 3.12+.** The core engine needs only `pydantic`, `feedparser` and
+`python-dotenv`; storage uses the standard library's `sqlite3`. Optional extras add the
+surfaces built on top of it:
+
+| Extra | Adds |
+|---|---|
+| `live` | HTTP fetching for the adapters and watch monitors (`httpx`, `requests`, `bs4`, `lxml`) |
+| `api` | the FastAPI surface and the APScheduler cron (`fastapi`, `uvicorn`, `apscheduler`) |
+| `pdf` | PDF brief output (`reportlab`) |
+| `llm` | optional written explanations. Not used by scoring, which stays deterministic |
+
+`pip install -e ".[dev]"` pulls the extras needed to run the full test suite.
 
 ## Quick start
 
 ```bash
 # Run one full cycle over the checked-in fixtures
-python -m pdx1.pipeline
+python -m pdx1.pipeline          # or: pdx1
 
-# Or, installed as a console script
-pdx1
+# Serve the API on :8000
+pdx1-api                          # or: python -m pdx1.api.app
+
+# Run the daily cycle on a cron schedule (default 06:00 PT)
+pdx1-scheduler
 
 # See every stage's work — what each adapter returned, which gate dropped what
 python -m pdx1.demos.walkthrough
@@ -102,17 +118,60 @@ result = press.safe_fetch()
 print(len(result), "signals", "ok" if result.ok else result.errors)
 ```
 
-Adapters currently replay checked-in fixtures rather than fetching over the network, so
-a cycle is reproducible and CI needs no connectivity. Because the fixtures carry fixed
-dates, `run_cycle` anchors the velocity gate to the **newest harvested signal** rather
-than wall-clock time — otherwise a replay would drop everything on velocity as the
-fixtures age. Override with `--as-of`:
+### Fixture replay vs live fetch
+
+Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
+needs no connectivity. Set `PDX1_LIVE=true` (and install the `live` extra) to fetch over
+HTTP instead: `LiveSourceAdapter` overrides only `_read_raw`, so the parse logic is the
+same either way.
+
+> **Live mode is a transport, not a working integration.** The HTTP plumbing is real and
+> tested, but two things stand between it and live data, and neither is done:
+>
+> 1. **The parsers expect the fixtures' schema.** Every `parse` requires the exact keys
+>    the fixtures use — `tran_id`, `filed_at`, `contributor_city`. A real government
+>    export uses different field names and raises `KeyError` on the first record. Each
+>    adapter needs a field mapping written against its actual feed.
+> 2. **The `feed_url` values are unverified.** They are plausible-looking guesses, and
+>    the only test covering them asserts that the string is non-empty and starts with
+>    `https://` — which cannot fail for a wrong URL.
+>
+> The live tests mock `httpx.get` and hand back fixture content, so they prove the
+> request is made with the right URL and timeout. They do not prove that anything on the
+> other end parses. Treat `PDX1_LIVE=true` as unimplemented until the mappings land.
+
+Because the fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the
+**newest harvested signal** rather than wall-clock time — otherwise a replay would drop
+everything on velocity as the fixtures age. Override with `--as-of`:
 
 ```bash
 python -m pdx1.pipeline --as-of 2026-05-28T12:00:00+00:00
 ```
 
-Live adapters should pass the real clock.
+Live runs should pass the real clock.
+
+## HTTP API
+
+`pdx1-api` serves the store over HTTP.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | liveness probe |
+| `GET /signals` | harvested signals, paginated |
+| `GET /intel` | intelligence records, filterable by outcome and source |
+| `GET /leads` | the analyst queue — everything above `MONITOR` (`ESCALATE`, `CORROBORATED`, `INVESTIGATE`), confidence-sorted |
+| `GET /brief` | the most recently published brief |
+| `GET /brief/archive` | every published brief, newest first, paginated |
+| `GET /brief/{brief_id}` | one brief by ID |
+| `POST /cycle/run` | drives a full cycle and returns its summary |
+
+Set `PDX1_API_KEY` to require an `X-API-Key` header on every request; leave it blank and
+auth is bypassed, which is appropriate for local use only. `PDX1_CORS_ORIGINS` controls
+the allowed origins.
+
+`GET /brief` reads the store rather than process memory, so a brief assembled by
+`python -m pdx1.pipeline` or by `pdx1-scheduler` is served here, and survives a restart.
+It 404s only when no cycle has ever published one.
 
 ## Storage
 
@@ -127,11 +186,27 @@ holding a record ground truth never saw, which is the failure worth avoiding.
 
 Writes are idempotent — re-running a cycle over the same input adds nothing.
 
+Two streams are persisted, each with its own ground-truth file and its own table:
+
+| Stream | Ground truth | Table |
+|---|---|---|
+| `IntelligenceRecord` | `pdx1_signals.jsonl` | `intelligence_records` |
+| `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
+
+They are kept apart rather than interleaved so each file stays a homogeneous stream that
+reads back without discriminating on type. The briefs path is derived from the records
+path; override it with `PDX1_BRIEFS_PATH`.
+
+Briefs are persisted because they are the product. A brief assembled by the 06:00
+scheduler has to outlive the process that built it, and a re-run cannot recreate one —
+the novelty gate correctly drops signals already stored, so a second cycle over the same
+input yields no records and therefore no brief.
+
 ## Repository layout
 
 ```
 pdx-1i/
-├── src/pdx1/                  25 modules
+├── src/pdx1/                  39 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -139,14 +214,17 @@ pdx-1i/
 │   ├── anomaly.py             RollingBaseline — 90-day rolling sigma
 │   ├── trigger.py             TriggerState — weight | TIER_1 | floor cadence
 │   ├── store.py               dual-write JSONL + SQLite
-│   ├── graph.py               jurisdictions, seats, entities, ties
+│   ├── graph.py               jurisdictions, seats, entities, ties (data only)
 │   ├── pipeline.py            stage orchestration + CLI
+│   ├── scheduler.py           APScheduler cron — daily cycle, default 06:00 PT
 │   ├── sources/               ORESTAR · OLIS · SEI · WA PDC · Portland Press
+│   ├── watch/                 6 infrastructure monitors
 │   ├── neutrality/            tone gate · attribution gate
-│   ├── publication/           IssueBuilder + BriefPublisher
-│   ├── watch/                 WatchTarget — infrastructure watch records
+│   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
+│   ├── api/                   FastAPI app, routes, API-key auth
 │   └── demos/                 runnable walkthrough
-├── tests/                     11 test files, 226 tests
+├── ui/index.html              single-page brief viewer (see UI below)
+├── tests/                     17 test files, 293 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -188,38 +266,60 @@ A disclosure is a completed legal obligation, not a finding. `validate()` runs i
 catch dangling ties — a record linked to a node that does not exist must never reach
 publication.
 
+**The registry is data only.** `graph.py` holds 31 nodes and 40 ties, and the resolver
+uses them to attach `entity_ids` to records — but nothing renders the graph and no
+endpoint serves it. The force-directed web map is not built; see *Not built yet*.
+
 ## Testing
 
 ```bash
 pytest tests/ -v
 pytest --cov=src --cov-report=term-missing tests/
 ruff check src/ tests/
+bandit -r src/ -ll
 ```
 
-226 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+293 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
+All four commands are hard gates in CI. None of them are allowed to fail soft.
+
 ## Configuration
 
-Copy `.env.example` to `.env`. Every key in its first half is read by
-`pdx1.config.Settings`; keys below the divider belong to surfaces that do not exist yet
-and are commented out.
+Copy `.env.example` to `.env`. Every key is read by `pdx1.config.Settings` except the
+`ANTHROPIC_API_KEY` / `PDX1_LLM_MODEL` pair, which is reserved for optional written
+explanations and is not consumed by scoring.
+
+## UI
+
+`ui/index.html` is a single self-contained page that reads the API and renders the
+current brief. It is a brief viewer, not the SPEC-1 console — it does not implement the
+five political-intelligence panels (Overview, District Map, Web Map, Signal Feed,
+Statistics), and its palette does not follow the SPEC-1 monochrome design system.
 
 ## Not built yet
 
-Deliberately out of scope for the current engine, each a clean follow-on:
+Each of these is a clean follow-on. What is listed here is genuinely absent — if a
+capability is described anywhere above, it exists and has tests.
 
-- **Live HTTP fetching** — adapters replay fixtures. Live fetch is a thin layer over
-  the same `parse` methods; only `_read_raw` changes.
-- **FastAPI surface** — `GET /signals /intel /leads /brief`, `POST /cycle/run`.
-- **Scheduler** — the daily 06:00 PT cycle.
-- **PDF newsletters** and network diagrams.
-- **`watch/` infrastructure monitors** — OHSU, PPB, TriMet, PGE, NW Natural, Water
-  Bureau. `WatchTarget` records a name and endpoint, and these bodies exist in the graph
-  as monitored entities, but nothing polls them yet.
-- **Web UI** — the SPEC-1 console and political surfaces. Should be built against a
-  real API, not fixtures.
+- **The web map.** The force-directed political-web diagram is the largest gap. The
+  data is ready (`graph.py`: 31 nodes, 40 ties, five tie kinds) and the resolver already
+  attaches `entity_ids` to every record, but nothing serves that graph and nothing draws
+  it. Needs two pieces: a `GET /graph` endpoint emitting nodes and ties, and a canvas or
+  SVG renderer in the UI. Node shape encodes type (jurisdiction, official seat, entity),
+  line style encodes tie kind, and disclosure ties render dashed.
+- **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
+  adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
+  needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
+- **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
+  and tables. No diagram is drawn.
+- **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
+  with per-record four-gate expansion, Statistics. All depend on graph and record
+  endpoints that mostly exist; the work is front-end.
+- **SPEC-1 visual language for the UI** — monochrome `#000` canvas, hierarchy by white
+  opacity ramp, severity by brightness rather than hue, `#00FF00`/`#FF0000` reserved for
+  live status only.
 
 ## License
 

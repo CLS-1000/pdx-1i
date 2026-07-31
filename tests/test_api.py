@@ -146,3 +146,82 @@ def test_cycle_run_populates_brief(client):
         r = client.get("/brief")
         assert r.status_code == 200
         assert r.json()["brief_id"] == data["brief_id"]
+
+
+# ── Brief persistence across processes ────────────────────────────────────────
+#
+# GET /brief reads the store, not process memory. Before that, a brief assembled by
+# the CLI or the scheduler was invisible here and a restart lost it — and because the
+# novelty gate drops already-stored signals, no later cycle could rebuild it.
+
+
+@pytest.fixture
+def api_env(tmp_path, monkeypatch):
+    """Env pointing at one isolated store, so several app instances can share it."""
+    monkeypatch.setenv("PDX1_STORE_PATH", str(tmp_path / "s.jsonl"))
+    monkeypatch.setenv("PDX1_DB_PATH", str(tmp_path / "d.db"))
+    monkeypatch.delenv("PDX1_API_KEY", raising=False)
+    return tmp_path
+
+
+def test_brief_survives_an_api_restart(api_env):
+    """The exact reported failure: records survived a restart, the brief did not."""
+    with TestClient(create_app()) as first:
+        assert first.post("/cycle/run").status_code == 200
+        original = first.get("/brief")
+        assert original.status_code == 200
+        brief_id = original.json()["brief_id"]
+
+    # A brand new app instance over the same store — i.e. a restarted server.
+    with TestClient(create_app()) as second:
+        assert second.get("/intel").json()["total"] == 10
+        again = second.get("/brief")
+        assert again.status_code == 200
+        assert again.json()["brief_id"] == brief_id
+
+
+def test_brief_persists_after_a_barren_second_cycle(api_env):
+    """A re-run yields no records, and must not erase the brief already published."""
+    with TestClient(create_app()) as c:
+        c.post("/cycle/run")
+        brief_id = c.get("/brief").json()["brief_id"]
+
+        second = c.post("/cycle/run").json()
+        assert second["opportunities"] == 0
+        assert second["brief_id"] is None
+
+        assert c.get("/brief").json()["brief_id"] == brief_id
+
+
+def test_a_cli_assembled_brief_is_visible_to_the_api(api_env):
+    """The scheduler case — a different process assembles, the API serves."""
+    from pdx1.config import Settings
+    from pdx1.pipeline import default_adapters, run_cycle
+    from pdx1.store import DualWriteStore
+
+    settings = Settings.from_env()
+    store = DualWriteStore(settings.store_path, settings.db_path, settings.briefs_path)
+    result = run_cycle(
+        settings=settings, adapters=default_adapters(settings), store=store
+    )
+    assert result.brief is not None
+
+    with TestClient(create_app()) as c:
+        assert c.get("/brief").json()["brief_id"] == result.brief.brief_id
+
+
+def test_brief_404s_only_when_none_was_ever_published(client):
+    assert client.get("/brief").status_code == 404
+
+
+def test_brief_archive_and_lookup_by_id(api_env):
+    with TestClient(create_app()) as c:
+        c.post("/cycle/run")
+        brief_id = c.get("/brief").json()["brief_id"]
+
+        archive = c.get("/brief/archive")
+        assert archive.status_code == 200
+        assert [b["brief_id"] for b in archive.json()] == [brief_id]
+
+        assert c.get(f"/brief/{brief_id}").json()["brief_id"] == brief_id
+        assert c.get("/brief/brief_does_not_exist").status_code == 404
