@@ -160,27 +160,18 @@ Live runs should pass the real clock.
 | `GET /signals` | harvested signals, paginated |
 | `GET /intel` | intelligence records, filterable by outcome and source |
 | `GET /leads` | the analyst queue — everything above `MONITOR` (`ESCALATE`, `CORROBORATED`, `INVESTIGATE`), confidence-sorted |
-| `GET /brief` | the brief assembled by this process, if any — see the caveat below |
+| `GET /brief` | the most recently published brief |
+| `GET /brief/archive` | every published brief, newest first, paginated |
+| `GET /brief/{brief_id}` | one brief by ID |
 | `POST /cycle/run` | drives a full cycle and returns its summary |
 
 Set `PDX1_API_KEY` to require an `X-API-Key` header on every request; leave it blank and
 auth is bypassed, which is appropriate for local use only. `PDX1_CORS_ORIGINS` controls
 the allowed origins.
 
-> **`GET /brief` is unreliable by construction, because briefs are never persisted.**
-> The store writes `IntelligenceRecord`s only. An assembled brief lives in
-> `app.state.last_brief` — process memory — so:
->
-> - a brief assembled by `python -m pdx1.pipeline` or by `pdx1-scheduler` is invisible
->   to the API, and is discarded when that process exits;
-> - restarting the API loses the brief while the records survive;
-> - re-running a cycle does **not** regenerate it. The novelty gate correctly drops
->   already-stored signals, so the second cycle yields zero records and therefore no
->   brief.
->
-> The practical consequence: on any store that has already been through one cycle,
-> `/brief` returns 404 permanently. Fixing it means persisting briefs alongside records
-> — a `briefs` table and a `latest_brief()` read — which is not done.
+`GET /brief` reads the store rather than process memory, so a brief assembled by
+`python -m pdx1.pipeline` or by `pdx1-scheduler` is served here, and survives a restart.
+It 404s only when no cycle has ever published one.
 
 ## Storage
 
@@ -194,6 +185,22 @@ SQLite. If the second step fails, ground truth still holds the record and
 holding a record ground truth never saw, which is the failure worth avoiding.
 
 Writes are idempotent — re-running a cycle over the same input adds nothing.
+
+Two streams are persisted, each with its own ground-truth file and its own table:
+
+| Stream | Ground truth | Table |
+|---|---|---|
+| `IntelligenceRecord` | `pdx1_signals.jsonl` | `intelligence_records` |
+| `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
+
+They are kept apart rather than interleaved so each file stays a homogeneous stream that
+reads back without discriminating on type. The briefs path is derived from the records
+path; override it with `PDX1_BRIEFS_PATH`.
+
+Briefs are persisted because they are the product. A brief assembled by the 06:00
+scheduler has to outlive the process that built it, and a re-run cannot recreate one —
+the novelty gate correctly drops signals already stored, so a second cycle over the same
+input yields no records and therefore no brief.
 
 ## Repository layout
 
@@ -217,7 +224,7 @@ pdx-1i/
 │   ├── api/                   FastAPI app, routes, API-key auth
 │   └── demos/                 runnable walkthrough
 ├── ui/index.html              single-page brief viewer (see UI below)
-├── tests/                     16 test files, 271 tests
+├── tests/                     17 test files, 293 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -272,7 +279,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-271 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+293 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -305,9 +312,6 @@ capability is described anywhere above, it exists and has tests.
 - **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
   adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
   needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
-- **Brief persistence.** Briefs are assembled and then dropped on the floor. Nothing
-  writes them to the store, so `GET /brief` cannot serve one across a restart or from a
-  scheduler-run cycle. Needs a `briefs` table and a `latest_brief()` accessor.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed

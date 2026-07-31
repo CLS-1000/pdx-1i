@@ -79,6 +79,8 @@ class Settings:
 
     store_path: Path = Path("pdx1_signals.jsonl")
     db_path: Path = Path("pdx1.db")
+    #: Ground truth for assembled briefs. None derives it from `store_path`.
+    briefs_path: Path | None = None
     environment: str = "development"
     log_level: str = "INFO"
 
@@ -109,6 +111,11 @@ class Settings:
         return cls(
             store_path=Path(_env("PDX1_STORE_PATH", "pdx1_signals.jsonl")),
             db_path=Path(_env("PDX1_DB_PATH", "pdx1.db")),
+            briefs_path=(
+                Path(os.environ["PDX1_BRIEFS_PATH"])
+                if os.environ.get("PDX1_BRIEFS_PATH", "").strip()
+                else None
+            ),
             environment=_env("PDX1_ENVIRONMENT", "development"),
             log_level=_env("PDX1_LOG_LEVEL", "INFO").upper(),
             gates=GateConfig(

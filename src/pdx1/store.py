@@ -13,6 +13,18 @@ this module does not pretend otherwise. The write order is deliberate:
 If step 2 fails, the JSONL still holds the record and `rebuild_from_jsonl` restores the
 database. The reverse order would let SQLite hold a record that ground truth never saw,
 which is the failure mode worth avoiding.
+
+Two streams are persisted, each with its own ground-truth file and table:
+
+    IntelligenceRecord  ->  <store>.jsonl          + intelligence_records
+    Brief               ->  <store>_briefs.jsonl   + briefs
+
+They are kept apart rather than interleaved so each file stays a homogeneous stream that
+can be read back without discriminating on type. Briefs are persisted because they are
+the product: a brief assembled by the scheduler at 06:00 has to outlive the process that
+built it, and a re-run cannot regenerate it -- the novelty gate correctly drops signals
+already stored, so a second cycle over the same input produces no records and therefore
+no brief.
 """
 
 from __future__ import annotations
@@ -25,7 +37,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
-from .models import IntelligenceRecord
+from .models import Brief, IntelligenceRecord
 
 logger = logging.getLogger(__name__)
 
@@ -52,20 +64,45 @@ CREATE TABLE IF NOT EXISTS intelligence_records (
 CREATE INDEX IF NOT EXISTS idx_records_run     ON intelligence_records(run_id);
 CREATE INDEX IF NOT EXISTS idx_records_outcome ON intelligence_records(outcome);
 CREATE INDEX IF NOT EXISTS idx_records_source  ON intelligence_records(source);
+
+CREATE TABLE IF NOT EXISTS briefs (
+    brief_id     TEXT PRIMARY KEY,
+    run_id       TEXT NOT NULL,
+    date         TEXT NOT NULL,
+    headline     TEXT NOT NULL,
+    confidence   REAL NOT NULL,
+    section_count INTEGER NOT NULL,
+    produced_at  TEXT NOT NULL,
+    payload      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_briefs_produced ON briefs(produced_at);
+CREATE INDEX IF NOT EXISTS idx_briefs_run      ON briefs(run_id);
 """
 
 
 class DualWriteStore:
     """Writes IntelligenceRecords to JSONL and SQLite."""
 
-    def __init__(self, jsonl_path: Path | str, db_path: Path | str) -> None:
+    def __init__(
+        self,
+        jsonl_path: Path | str,
+        db_path: Path | str,
+        briefs_path: Path | str | None = None,
+    ) -> None:
         self.jsonl_path = Path(jsonl_path)
         self.db_path = Path(db_path)
+        # Derived from the records path so a caller that only knows about records --
+        # including every existing call site -- still gets a working brief store.
+        self.briefs_path = (
+            Path(briefs_path)
+            if briefs_path is not None
+            else self.jsonl_path.with_name(f"{self.jsonl_path.stem}_briefs.jsonl")
+        )
         self._ensure_paths()
         self._init_db()
 
     def _ensure_paths(self) -> None:
-        for path in (self.jsonl_path, self.db_path):
+        for path in (self.jsonl_path, self.db_path, self.briefs_path):
             path.parent.mkdir(parents=True, exist_ok=True)
 
     def _connect(self) -> sqlite3.Connection:
@@ -217,6 +254,107 @@ class DualWriteStore:
 
         return [IntelligenceRecord.model_validate_json(row["payload"]) for row in rows]
 
+    # ── Briefs ───────────────────────────────────────────────────────────────
+
+    def write_brief(self, brief: Brief) -> bool:
+        """
+        Persist an assembled brief. Returns True if written, False if already present.
+
+        Same ordering as records: ground truth first, then the query layer.
+        """
+        if self.has_brief(brief.brief_id):
+            return False
+
+        with self.briefs_path.open("a", encoding="utf-8") as fh:
+            fh.write(brief.model_dump_json() + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+
+        self._insert_brief(brief)
+        return True
+
+    def _insert_brief(self, brief: Brief) -> None:
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO briefs
+                    (brief_id, run_id, date, headline, confidence, section_count,
+                     produced_at, payload)
+                VALUES (?,?,?,?,?,?,?,?)
+                """,
+                (
+                    brief.brief_id,
+                    brief.run_id,
+                    brief.date,
+                    brief.headline,
+                    brief.confidence,
+                    len(brief.sections),
+                    brief.produced_at.isoformat(),
+                    brief.model_dump_json(),
+                ),
+            )
+            conn.commit()
+
+    def has_brief(self, brief_id: str) -> bool:
+        with closing(self._connect()) as conn:
+            cur = conn.execute(
+                "SELECT 1 FROM briefs WHERE brief_id = ? LIMIT 1", (brief_id,)
+            )
+            return cur.fetchone() is not None
+
+    def brief_count(self) -> int:
+        with closing(self._connect()) as conn:
+            return int(conn.execute("SELECT count(*) FROM briefs").fetchone()[0])
+
+    def latest_brief(self) -> Brief | None:
+        """
+        Most recently produced brief, or None if none has been assembled.
+
+        Ordered by `produced_at`, with rowid as the tiebreak so two briefs produced in
+        the same second still resolve deterministically to the one written later.
+        """
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT payload FROM briefs ORDER BY produced_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        return Brief.model_validate_json(row["payload"]) if row else None
+
+    def brief(self, brief_id: str) -> Brief | None:
+        """Fetch one brief by ID."""
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT payload FROM briefs WHERE brief_id = ?", (brief_id,)
+            ).fetchone()
+        return Brief.model_validate_json(row["payload"]) if row else None
+
+    def briefs(self, limit: int = 50, offset: int = 0) -> list[Brief]:
+        """Briefs newest first — the archive."""
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT payload FROM briefs ORDER BY produced_at DESC, rowid DESC "
+                "LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [Brief.model_validate_json(r["payload"]) for r in rows]
+
+    def iter_briefs(self) -> Iterator[Brief]:
+        """Stream brief ground truth back as models."""
+        if not self.briefs_path.exists():
+            return
+        with self.briefs_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    yield Brief.model_validate_json(line)
+
+    def briefs_jsonl_count(self) -> int:
+        if not self.briefs_path.exists():
+            return 0
+        with self.briefs_path.open(encoding="utf-8") as fh:
+            return sum(1 for line in fh if line.strip())
+
+    # ── Novelty seeding ──────────────────────────────────────────────────────
+
     def known_signal_hashes(self) -> set[str]:
         """
         Content hashes of everything already recorded, for seeding the novelty gate.
@@ -228,13 +366,31 @@ class DualWriteStore:
     # ── Recovery ─────────────────────────────────────────────────────────────
 
     def rebuild_from_jsonl(self) -> int:
-        """Drop and repopulate SQLite from ground truth. Returns the row count."""
+        """
+        Drop and repopulate SQLite from ground truth. Returns the record count.
+
+        Rebuilds both streams -- records and briefs. The return value counts records
+        only, for backwards compatibility; use `brief_count()` for the other.
+        """
         with closing(self._connect()) as conn:
             conn.execute("DELETE FROM intelligence_records")
+            conn.execute("DELETE FROM briefs")
             conn.commit()
 
         records = list(self.iter_jsonl())
         if records:
             self._insert_sqlite(records)
-        logger.info("rebuilt %s from %s: %d rows", self.db_path, self.jsonl_path, len(records))
+
+        briefs = list(self.iter_briefs())
+        for brief in briefs:
+            self._insert_brief(brief)
+
+        logger.info(
+            "rebuilt %s: %d record(s) from %s, %d brief(s) from %s",
+            self.db_path,
+            len(records),
+            self.jsonl_path,
+            len(briefs),
+            self.briefs_path,
+        )
         return len(records)
