@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDX-1i — Portland Metro Intelligence</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:  #1a1a2e;
+      --slate: #2c3e50;
+      --teal:  #16a085;
+      --light: #ecf0f1;
+      --muted: #7f8c8d;
+      --red:   #e74c3c;
+      --orange:#e67e22;
+      --green: #27ae60;
+      --bg:    #f4f6f8;
+      --card:  #ffffff;
+      --border:#dde1e7;
+      --font:  "Inter", system-ui, -apple-system, sans-serif;
+    }
+
+    body { font-family: var(--font); background: var(--bg); color: var(--slate); }
+
+    /* ── Layout ── */
+    header {
+      background: var(--navy); color: #fff; padding: 0 1.5rem;
+      display: flex; align-items: center; gap: 1rem; height: 56px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: .02em; }
+    header .tagline { font-size: .75rem; color: #aaa; margin-left: auto; }
+
+    nav { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--card); }
+    nav button {
+      padding: .6rem 1.25rem; border: none; background: none; cursor: pointer;
+      font-size: .875rem; color: var(--muted); border-bottom: 3px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    nav button.active { color: var(--navy); border-bottom-color: var(--teal); font-weight: 600; }
+    nav button:hover:not(.active) { color: var(--slate); }
+
+    #auth-bar {
+      background: #fff8e1; border-bottom: 1px solid #ffe082;
+      padding: .5rem 1.5rem; display: flex; align-items: center; gap: .75rem; font-size: .8rem;
+    }
+    #auth-bar input {
+      border: 1px solid var(--border); border-radius: 4px; padding: .3rem .6rem;
+      font-size: .8rem; width: 260px; font-family: monospace;
+    }
+    #auth-bar label { color: var(--muted); }
+
+    main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .toolbar { display: flex; gap: .75rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
+    .toolbar select, .toolbar input[type=text] {
+      border: 1px solid var(--border); border-radius: 4px; padding: .35rem .65rem;
+      font-size: .825rem; background: #fff;
+    }
+    .toolbar button {
+      padding: .38rem .85rem; background: var(--teal); color: #fff; border: none;
+      border-radius: 4px; cursor: pointer; font-size: .825rem; font-weight: 500;
+    }
+    .toolbar button:hover { background: #138d75; }
+    .toolbar button.danger { background: var(--red); }
+    .toolbar button.danger:hover { background: #c0392b; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar .count { font-size: .8rem; color: var(--muted); }
+
+    /* ── Card grid ── */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem; display: flex; flex-direction: column; gap: .5rem;
+      transition: box-shadow .15s;
+    }
+    .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+
+    .card-header { display: flex; align-items: flex-start; gap: .5rem; }
+    .card-title { font-size: .9rem; font-weight: 600; line-height: 1.3; flex: 1; }
+    .card-meta { font-size: .75rem; color: var(--muted); display: flex; gap: .5rem; flex-wrap: wrap; }
+    .card-body { font-size: .8rem; color: #444; line-height: 1.45; }
+
+    .badge {
+      display: inline-block; font-size: .68rem; font-weight: 600; border-radius: 4px;
+      padding: .15em .5em; white-space: nowrap; text-transform: uppercase;
+    }
+    .badge-ESCALATE, .badge-CORROBORATED { background: #fde8e8; color: var(--red); }
+    .badge-INVESTIGATE                   { background: #fef3cd; color: #856404; }
+    .badge-MONITOR                       { background: #d1ecf1; color: #0c5460; }
+    .badge-ARCHIVE                       { background: #f1f3f5; color: var(--muted); }
+    .badge-HARD_RECORD                   { background: #d4edda; color: #155724; }
+    .badge-REPORTED                      { background: #e2e3e5; color: #383d41; }
+    .badge-INFERRED                      { background: #f8d7da; color: #721c24; }
+
+    /* ── Brief view ── */
+    .brief-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1.5rem; max-width: 760px;
+    }
+    .brief-card h2 { font-size: 1.1rem; margin-bottom: .5rem; color: var(--navy); }
+    .brief-card .brief-date { font-size: .8rem; color: var(--muted); margin-bottom: 1rem; }
+    .brief-card .brief-headline { font-size: 1rem; font-weight: 600; margin-bottom: .5rem; }
+    .brief-card .brief-summary { font-size: .85rem; color: #444; margin-bottom: 1.25rem; line-height: 1.5; }
+    .brief-section { margin-bottom: 1.25rem; }
+    .brief-section h3 { font-size: .9rem; font-weight: 600; color: var(--slate); margin-bottom: .4rem; border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
+    .brief-section pre { white-space: pre-wrap; font-size: .78rem; line-height: 1.5; font-family: inherit; color: #333; }
+    .brief-footer { font-size: .75rem; color: var(--muted); margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+
+    /* ── Empty / error states ── */
+    .empty { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: .9rem; }
+    .error-msg { background: #fde8e8; border: 1px solid #f5c6cb; border-radius: 6px; padding: .75rem 1rem; font-size: .85rem; color: #721c24; margin-bottom: 1rem; }
+
+    /* ── Spinner ── */
+    .spinner { display: inline-block; width: 1.2rem; height: 1.2rem; border: 2px solid var(--border); border-top-color: var(--teal); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .875rem; padding: 2rem 0; justify-content: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>PDX-1i</h1>
+  <span style="color:#aaa;font-size:.85rem;">Portland Metro Intelligence</span>
+  <span class="tagline">SPEC-1 OSINT Engine</span>
+</header>
+
+<div id="auth-bar">
+  <label for="api-key-input">X-API-Key</label>
+  <input id="api-key-input" type="password" placeholder="leave blank if auth is disabled" autocomplete="off" />
+  <span id="api-status" style="color:var(--muted);">not tested</span>
+</div>
+
+<nav>
+  <button class="active" data-view="signals">Signals</button>
+  <button data-view="intel">Intel Records</button>
+  <button data-view="leads">Leads</button>
+  <button data-view="brief">Brief</button>
+</nav>
+
+<main>
+  <!-- ── Signals ── -->
+  <section id="view-signals" class="view active">
+    <div class="toolbar">
+      <input type="text" id="signals-source" placeholder="Filter by source…" />
+      <button onclick="App.loadSignals()">Load</button>
+      <span class="spacer"></span>
+      <span class="count" id="signals-count"></span>
+    </div>
+    <div id="signals-error"></div>
+    <div id="signals-container"></div>
+  </section>
+
+  <!-- ── Intel ── -->
+  <section id="view-intel" class="view">
+    <div class="toolbar">
+      <select id="intel-outcome">
+        <option value="">All outcomes</option>
+        <option value="ESCALATE">ESCALATE</option>
+        <option value="CORROBORATED">CORROBORATED</option>
+        <option value="INVESTIGATE">INVESTIGATE</option>
+        <option value="MONITOR">MONITOR</option>
+        <option value="ARCHIVE">ARCHIVE</option>
+      </select>
+      <input type="text" id="intel-source" placeholder="Filter by source…" />
+      <button onclick="App.loadIntel()">Load</button>
+      <span class="spacer"></span>
+      <span class="count" id="intel-count"></span>
+    </div>
+    <div id="intel-error"></div>
+    <div id="intel-container"></div>
+  </section>
+
+  <!-- ── Leads ── -->
+  <section id="view-leads" class="view">
+    <div class="toolbar">
+      <button onclick="App.loadLeads()">Load Leads</button>
+      <button onclick="App.runCycle()" class="danger">▶ Run Cycle</button>
+      <span class="spacer"></span>
+      <span class="count" id="leads-count"></span>
+    </div>
+    <div id="leads-error"></div>
+    <div id="cycle-result" style="margin-bottom:1rem;"></div>
+    <div id="leads-container"></div>
+  </section>
+
+  <!-- ── Brief ── -->
+  <section id="view-brief" class="view">
+    <div class="toolbar">
+      <button onclick="App.loadBrief()">Load Brief</button>
+    </div>
+    <div id="brief-error"></div>
+    <div id="brief-container"></div>
+  </section>
+</main>
+
+<script>
+const App = (() => {
+  const BASE = "";  // same origin; change to "http://localhost:8000" for dev
+
+  function apiKey() {
+    return document.getElementById("api-key-input").value.trim();
+  }
+
+  function headers() {
+    const h = { "Content-Type": "application/json" };
+    const k = apiKey();
+    if (k) h["X-API-Key"] = k;
+    return h;
+  }
+
+  async function apiFetch(path, options = {}) {
+    const r = await fetch(BASE + path, { headers: headers(), ...options });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`${r.status} ${r.statusText}: ${text}`);
+    }
+    return r.json();
+  }
+
+  function showError(containerId, msg) {
+    document.getElementById(containerId).innerHTML =
+      msg ? `<div class="error-msg">${escHtml(msg)}</div>` : "";
+  }
+
+  function showLoading(containerId) {
+    document.getElementById(containerId).innerHTML =
+      '<div class="loading"><span class="spinner"></span> Loading…</div>';
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function badge(cls, label) {
+    return `<span class="badge badge-${escHtml(cls)}">${escHtml(label)}</span>`;
+  }
+
+  function fmt(dt) {
+    if (!dt) return "—";
+    return new Date(dt).toLocaleString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "2-digit", minute: "2-digit", timeZoneName: "short",
+    });
+  }
+
+  // ── Signals ──────────────────────────────────────────────────────────────
+
+  async function loadSignals() {
+    showLoading("signals-container");
+    showError("signals-error", "");
+    const source = document.getElementById("signals-source").value.trim();
+    const qs = source ? `?source=${encodeURIComponent(source)}&limit=100` : "?limit=100";
+    try {
+      const data = await apiFetch("/signals" + qs);
+      document.getElementById("signals-count").textContent = `${data.total} total`;
+      if (!data.items.length) {
+        document.getElementById("signals-container").innerHTML =
+          '<div class="empty">No signals yet. Run a cycle first.</div>';
+        return;
+      }
+      const html = data.items.map(s => `
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">${escHtml(s.title || s.text?.slice(0,80) || "(no title)")}</div>
+            ${badge(s.source_type, s.source_type)}
+          </div>
+          <div class="card-meta">
+            <span>${escHtml(s.source)}</span>
+            <span>cred ${(s.credibility * 100).toFixed(0)}%</span>
+            <span>${fmt(s.published_at)}</span>
+          </div>
+          ${s.url ? `<div class="card-meta"><a href="${escHtml(s.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);">${escHtml(s.url.slice(0, 60))}…</a></div>` : ""}
+        </div>
+      `).join("");
+      document.getElementById("signals-container").innerHTML = `<div class="card-grid">${html}</div>`;
+    } catch (e) {
+      showError("signals-error", e.message);
+      document.getElementById("signals-container").innerHTML = "";
+    }
+  }
+
+  // ── Intel ─────────────────────────────────────────────────────────────────
+
+  async function loadIntel() {
+    showLoading("intel-container");
+    showError("intel-error", "");
+    const outcome = document.getElementById("intel-outcome").value;
+    const source = document.getElementById("intel-source").value.trim();
+    const params = new URLSearchParams({ limit: 100 });
+    if (outcome) params.set("outcome", outcome);
+    if (source) params.set("source", source);
+    try {
+      const data = await apiFetch("/intel?" + params);
+      document.getElementById("intel-count").textContent = `${data.total} total`;
+      if (!data.items.length) {
+        document.getElementById("intel-container").innerHTML = '<div class="empty">No records match.</div>';
+        return;
+      }
+      const html = data.items.map(r => `
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">${escHtml(r.pattern?.slice(0, 100) || r.record_id)}</div>
+            ${badge(r.outcome, r.outcome)}
+          </div>
+          <div class="card-meta">
+            ${badge(r.tier, r.tier)}
+            <span>${escHtml(r.source)}</span>
+            <span>conf ${(r.confidence * 100).toFixed(0)}%</span>
+            <span>${badge(r.priority, r.priority)}</span>
+            <span>${fmt(r.published_at)}</span>
+          </div>
+          ${r.entity_ids?.length ? `<div class="card-meta">Entities: ${r.entity_ids.map(e => escHtml(e)).join(", ")}</div>` : ""}
+          ${r.anomaly ? `<div class="card-meta" style="color:var(--red);">⚠ ${escHtml(r.anomaly.tier)} — ${escHtml(r.anomaly.sigma?.toFixed(1))}σ</div>` : ""}
+        </div>
+      `).join("");
+      document.getElementById("intel-container").innerHTML = `<div class="card-grid">${html}</div>`;
+    } catch (e) {
+      showError("intel-error", e.message);
+      document.getElementById("intel-container").innerHTML = "";
+    }
+  }
+
+  // ── Leads ─────────────────────────────────────────────────────────────────
+
+  async function loadLeads() {
+    showLoading("leads-container");
+    showError("leads-error", "");
+    try {
+      const data = await apiFetch("/leads?limit=100");
+      document.getElementById("leads-count").textContent = `${data.total} total`;
+      if (!data.items.length) {
+        document.getElementById("leads-container").innerHTML = '<div class="empty">No leads found.</div>';
+        return;
+      }
+      const html = data.items.map(r => `
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">${escHtml(r.pattern?.slice(0, 100) || r.record_id)}</div>
+            ${badge(r.outcome, r.outcome)}
+          </div>
+          <div class="card-meta">
+            ${badge(r.tier, r.tier)}
+            <span>${escHtml(r.source)}</span>
+            <span>conf ${(r.confidence * 100).toFixed(0)}%</span>
+            <span>${fmt(r.published_at)}</span>
+          </div>
+          ${r.anomaly ? `<div class="card-meta" style="color:var(--red);">⚠ ${escHtml(r.anomaly.tier)} — ${escHtml(r.anomaly.sigma?.toFixed(1))}σ</div>` : ""}
+        </div>
+      `).join("");
+      document.getElementById("leads-container").innerHTML = `<div class="card-grid">${html}</div>`;
+    } catch (e) {
+      showError("leads-error", e.message);
+      document.getElementById("leads-container").innerHTML = "";
+    }
+  }
+
+  async function runCycle() {
+    document.getElementById("cycle-result").innerHTML =
+      '<div class="loading"><span class="spinner"></span> Running cycle…</div>';
+    showError("leads-error", "");
+    try {
+      const result = await apiFetch("/cycle/run", { method: "POST" });
+      document.getElementById("cycle-result").innerHTML = `
+        <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:.75rem 1rem;font-size:.85rem;color:#155724;">
+          Cycle complete: run <code>${escHtml(result.run_id)}</code> —
+          ${result.harvested} harvested, ${result.written} written
+          ${result.brief_id ? `, brief <code>${escHtml(result.brief_id)}</code> published` : ""}
+          ${result.errors?.length ? `<br><span style="color:var(--red);">Warnings: ${result.errors.map(escHtml).join("; ")}</span>` : ""}
+        </div>`;
+      loadLeads();
+    } catch (e) {
+      document.getElementById("cycle-result").innerHTML = "";
+      showError("leads-error", e.message);
+    }
+  }
+
+  // ── Brief ─────────────────────────────────────────────────────────────────
+
+  async function loadBrief() {
+    showLoading("brief-container");
+    showError("brief-error", "");
+    try {
+      const b = await apiFetch("/brief");
+      const sectionsHtml = (b.sections || []).map(s => `
+        <div class="brief-section">
+          <h3>${escHtml(s.title)}</h3>
+          <pre>${escHtml(s.body)}</pre>
+        </div>`).join("");
+
+      document.getElementById("brief-container").innerHTML = `
+        <div class="brief-card">
+          <h2>Metro Citizens Brief</h2>
+          <div class="brief-date">${escHtml(b.date)} · ${escHtml(b.brief_id)}</div>
+          <div class="brief-headline">${escHtml(b.headline)}</div>
+          <div class="brief-summary">${escHtml(b.summary)}</div>
+          ${sectionsHtml}
+          <div class="brief-footer">
+            Sources: ${(b.sources || []).map(escHtml).join(", ")} ·
+            Confidence: ${((b.confidence || 0) * 100).toFixed(0)}% ·
+            Run: ${escHtml(b.run_id)} ·
+            Produced: ${fmt(b.produced_at)}
+          </div>
+        </div>`;
+    } catch (e) {
+      showError("brief-error", e.message);
+      document.getElementById("brief-container").innerHTML = "";
+    }
+  }
+
+  // ── Nav ───────────────────────────────────────────────────────────────────
+
+  function initNav() {
+    document.querySelectorAll("nav button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById("view-" + btn.dataset.view).classList.add("active");
+      });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", initNav);
+
+  return { loadSignals, loadIntel, loadLeads, runCycle, loadBrief };
+})();
+</script>
+</body>
+</html>

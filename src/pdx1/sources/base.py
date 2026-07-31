@@ -6,8 +6,18 @@ independently fault-tolerant: `safe_fetch` catches anything a single adapter rai
 returns it as an error on the result rather than propagating. A dead feed must never
 halt a cycle -- the other adapters still run and the write still happens.
 
-This pass reads from checked-in fixture payloads. Live HTTP is a thin layer over the
-same `parse` methods: swap where `_read_raw` gets its bytes and nothing else changes.
+Two adapter shapes exist:
+
+- `SourceAdapter`      — fixture-backed; reads from a local file. Default for CI and
+                         replay mode. Subclass this when you only need fixture support.
+- `LiveSourceAdapter`  — extends SourceAdapter; falls back to live HTTP (via httpx) when
+                         no fixture_path is configured. Only `_read_raw` changes; parse
+                         logic is identical. Requires the `live` extra to fetch over the
+                         network.
+
+Gating: the pipeline passes `fixture_path=` in fixture mode and omits it in live mode.
+Individual adapters declare their `feed_url` as a class attribute; `_read_raw` uses it
+when no fixture is present.
 """
 
 from __future__ import annotations
@@ -82,3 +92,49 @@ class SourceAdapter(ABC):
         except Exception as exc:  # noqa: BLE001 - deliberate: no adapter may halt a cycle
             logger.warning("adapter %s failed: %s", self.name, exc)
             return FetchResult(source=self.name, errors=[f"{type(exc).__name__}: {exc}"])
+
+
+class LiveSourceAdapter(SourceAdapter):
+    """
+    SourceAdapter that can fetch its payload over HTTP when live mode is enabled.
+
+    Subclasses declare ``feed_url`` as a class attribute. The pipeline passes
+    ``fixture_path=`` in fixture/CI mode and ``live=True`` (without a fixture_path) in
+    production. When ``live=False`` (default) and no ``fixture_path`` is given, the
+    adapter raises the same error as the base class -- live fetch must be explicitly
+    opted in to.
+
+    Requires the ``live`` extra for network fetches::
+
+        pip install "pdx-1i[live]"
+    """
+
+    #: Live endpoint for this feed. Set as a class attribute on each subclass.
+    feed_url: str = ""
+
+    def __init__(
+        self,
+        fixture_path=None,
+        timeout: int = 30,
+        live: bool = False,
+    ) -> None:
+        super().__init__(fixture_path=fixture_path, timeout=timeout)
+        self._live = live
+
+    def _read_raw(self) -> str:
+        if self.fixture_path is not None:
+            return self.fixture_path.read_text(encoding="utf-8")
+        if self._live and self.feed_url:
+            try:
+                import httpx
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError(
+                    f"{self.name}: httpx is required for live fetch -- "
+                    "install it with: pip install 'pdx-1i[live]'"
+                ) from exc
+            response = httpx.get(self.feed_url, timeout=self.timeout, follow_redirects=True)
+            response.raise_for_status()
+            return response.text
+        raise RuntimeError(
+            f"{self.name}: no fixture_path configured and live fetch is not enabled"
+        )

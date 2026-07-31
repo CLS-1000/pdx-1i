@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import feedparser
 
 from ..models import Signal, SourceType
-from .base import SourceAdapter
+from .base import LiveSourceAdapter
 
 #: Tracked feeds. URLs are used once live fetching is enabled; the fixture path
 #: exercises the same parse method in the meantime.
@@ -26,6 +26,10 @@ FEEDS: dict[str, str] = {
     "Pamplin Media": "https://pamplinmedia.com/feed/",
     "NW Politics": "https://www.opb.org/news/feed/",
 }
+
+# Primary live feed (OregonLive); others can be added by instantiating with different
+# fixture_path or by subclassing.
+_PRIMARY_FEED_URL = FEEDS["OregonLive"]
 
 
 def _entry_datetime(entry: object) -> datetime:
@@ -44,12 +48,13 @@ def _entry_datetime(entry: object) -> datetime:
     return datetime(*parsed[:6], tzinfo=timezone.utc)
 
 
-class PortlandPressAdapter(SourceAdapter):
+class PortlandPressAdapter(LiveSourceAdapter):
     """Parses Portland-area news RSS into signals."""
 
     name = "PORTLAND_PRESS"
     source_type = SourceType.PORTLAND_PRESS
     credibility = 0.6
+    feed_url = _PRIMARY_FEED_URL
 
     def parse(self, raw: str) -> list[Signal]:
         feed = feedparser.parse(raw)

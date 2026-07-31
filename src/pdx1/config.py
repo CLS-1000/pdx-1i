@@ -95,6 +95,8 @@ class Settings:
     cron_hour: int = 6
     cron_minute: int = 0
 
+    live_fetch: bool = False
+
     @classmethod
     def from_env(cls) -> Settings:
         """Build settings from the current environment."""
@@ -129,4 +131,5 @@ class Settings:
             timezone=_env("PDX1_TIMEZONE", "America/Los_Angeles"),
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
+            live_fetch=_env_bool("PDX1_LIVE", False),
         )

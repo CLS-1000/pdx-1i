@@ -61,6 +61,7 @@ from .sources import (
 )
 from .store import DualWriteStore
 from .trigger import TriggerState
+from .watch import WATCH_TARGETS, WatchAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ _TIER_BY_SOURCE: dict[SourceType, ConfidenceTier] = {
     SourceType.SEI: ConfidenceTier.HARD_RECORD,
     SourceType.WA_PDC: ConfidenceTier.HARD_RECORD,
     SourceType.PORTLAND_PRESS: ConfidenceTier.REPORTED,
+    SourceType.WATCH: ConfidenceTier.REPORTED,
 }
 
 _WS = re.compile(r"\s+")
@@ -100,13 +102,30 @@ class CycleResult:
 
 def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> list[SourceAdapter]:
     """
-    The five PDX-1i feeds, fixture-backed.
+    The PDX-1i feeds.
 
-    Live HTTP is not wired up in this pass; adapters read checked-in payloads so a cycle
-    is reproducible and CI needs no network.
+    Fixture mode (default, `settings.live_fetch=False`): adapters read checked-in
+    payloads so a cycle is reproducible and CI needs no network.
+
+    Live mode (`PDX1_LIVE=true`): adapters fetch from their registered `feed_url` and
+    the watch targets are included. Requires the `live` extra.
     """
     fx = fixture_dir or FIXTURE_DIR
     t = settings.timeouts
+
+    if settings.live_fetch:
+        # No fixture paths — adapters fetch from their registered feed_url.
+        adapters: list[SourceAdapter] = [
+            OrestarAdapter(timeout=t.orestar, live=True),
+            OlisAdapter(timeout=t.olis, live=True),
+            SeiAdapter(timeout=t.sei, live=True),
+            WaPdcAdapter(timeout=t.wa_pdc, live=True),
+            PortlandPressAdapter(timeout=30, live=True),
+        ]
+        for target in WATCH_TARGETS:
+            adapters.append(WatchAdapter(target, timeout=60, live=True))
+        return adapters
+
     return [
         OrestarAdapter(fixture_path=fx / "orestar.json", timeout=t.orestar),
         OlisAdapter(fixture_path=fx / "olis.json", timeout=t.olis),

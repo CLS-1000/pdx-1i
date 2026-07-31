@@ -35,6 +35,7 @@ class SourceType(str, Enum):
     SEI = "SEI"
     WA_PDC = "WA_PDC"
     PORTLAND_PRESS = "PORTLAND_PRESS"
+    WATCH = "WATCH"
 
 
 class ConfidenceTier(str, Enum):
