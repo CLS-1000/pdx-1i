@@ -159,13 +159,28 @@ Live runs should pass the real clock.
 | `GET /health` | liveness probe |
 | `GET /signals` | harvested signals, paginated |
 | `GET /intel` | intelligence records, filterable by outcome and source |
-| `GET /leads` | records at elevated disposition |
-| `GET /brief` | the most recent assembled brief (404 until a cycle has run) |
+| `GET /leads` | the analyst queue — everything above `MONITOR` (`ESCALATE`, `CORROBORATED`, `INVESTIGATE`), confidence-sorted |
+| `GET /brief` | the brief assembled by this process, if any — see the caveat below |
 | `POST /cycle/run` | drives a full cycle and returns its summary |
 
 Set `PDX1_API_KEY` to require an `X-API-Key` header on every request; leave it blank and
 auth is bypassed, which is appropriate for local use only. `PDX1_CORS_ORIGINS` controls
 the allowed origins.
+
+> **`GET /brief` is unreliable by construction, because briefs are never persisted.**
+> The store writes `IntelligenceRecord`s only. An assembled brief lives in
+> `app.state.last_brief` — process memory — so:
+>
+> - a brief assembled by `python -m pdx1.pipeline` or by `pdx1-scheduler` is invisible
+>   to the API, and is discarded when that process exits;
+> - restarting the API loses the brief while the records survive;
+> - re-running a cycle does **not** regenerate it. The novelty gate correctly drops
+>   already-stored signals, so the second cycle yields zero records and therefore no
+>   brief.
+>
+> The practical consequence: on any store that has already been through one cycle,
+> `/brief` returns 404 permanently. Fixing it means persisting briefs alongside records
+> — a `briefs` table and a `latest_brief()` read — which is not done.
 
 ## Storage
 
@@ -290,6 +305,9 @@ capability is described anywhere above, it exists and has tests.
 - **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
   adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
   needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
+- **Brief persistence.** Briefs are assembled and then dropped on the floor. Nothing
+  writes them to the store, so `GET /brief` cannot serve one across a restart or from a
+  scheduler-run cycle. Needs a `briefs` table and a `latest_brief()` accessor.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
