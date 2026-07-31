@@ -154,6 +154,24 @@ class DualWriteStore:
                 conn.execute("SELECT count(*) FROM intelligence_records").fetchone()[0]
             )
 
+    def count_query(
+        self,
+        outcome: str | None = None,
+        source: str | None = None,
+    ) -> int:
+        """Return the total number of records matching the given filters."""
+        with closing(self._connect()) as conn:
+            return int(
+                conn.execute(
+                    """
+                    SELECT count(*) FROM intelligence_records
+                     WHERE (? IS NULL OR outcome = ?)
+                       AND (? IS NULL OR source  = ?)
+                    """,
+                    (outcome, outcome, source, source),
+                ).fetchone()[0]
+            )
+
     def jsonl_count(self) -> int:
         if not self.jsonl_path.exists():
             return 0

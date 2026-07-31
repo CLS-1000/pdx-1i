@@ -24,6 +24,7 @@ def list_signals(
     full Signal payload is reconstructed from the stored record fields.
     """
     store = request.app.state.store
+    total = store.count_query(source=source)
     records = store.query(source=source, limit=limit + offset)
     page = records[offset : offset + limit]
 
@@ -44,4 +45,4 @@ def list_signals(
             )
         )
 
-    return SignalPage(total=len(records), limit=limit, offset=offset, items=signals)
+    return SignalPage(total=total, limit=limit, offset=offset, items=signals)
