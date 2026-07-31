@@ -32,7 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..config import Settings
 from ..store import DualWriteStore
-from .routes import brief, cycle, intel, leads, signals
+from .routes import brief, cycle, graph, intel, leads, signals
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(leads.router)
     app.include_router(brief.router)
     app.include_router(cycle.router)
+    app.include_router(graph.router)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:

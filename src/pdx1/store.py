@@ -353,6 +353,48 @@ class DualWriteStore:
         with self.briefs_path.open(encoding="utf-8") as fh:
             return sum(1 for line in fh if line.strip())
 
+    # ── Entity activity ──────────────────────────────────────────────────────
+
+    def entity_record_counts(self) -> dict[str, int]:
+        """
+        How many stored records mention each entity, keyed by node ID.
+
+        `entity_ids` is a JSON array in a text column, so this tallies in Python
+        rather than SQL. The record set is one metro's public filings, not a firehose;
+        if that stops being true, this wants a join table rather than a cleverer query.
+
+        A count is a count. It says how often a body appears in the record set and
+        nothing about why, which is the only claim the graph is entitled to make.
+        """
+        counts: dict[str, int] = {}
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT entity_ids FROM intelligence_records").fetchall()
+        for row in rows:
+            for node_id in json.loads(row["entity_ids"]):
+                counts[node_id] = counts.get(node_id, 0) + 1
+        return counts
+
+    def records_for_entity(self, node_id: str, limit: int = 50) -> list[IntelligenceRecord]:
+        """
+        Records mentioning one entity, newest first.
+
+        Matched against the stored JSON array rather than a substring of it, so `pge`
+        cannot match a record that only mentions some other id containing those letters.
+        """
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT payload, entity_ids FROM intelligence_records "
+                "ORDER BY published_at DESC"
+            ).fetchall()
+
+        out: list[IntelligenceRecord] = []
+        for row in rows:
+            if node_id in json.loads(row["entity_ids"]):
+                out.append(IntelligenceRecord.model_validate_json(row["payload"]))
+            if len(out) >= limit:
+                break
+        return out
+
     # ── Novelty seeding ──────────────────────────────────────────────────────
 
     def known_signal_hashes(self) -> set[str]:

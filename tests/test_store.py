@@ -173,3 +173,57 @@ def test_reopening_an_existing_store_keeps_data(tmp_path):
     paths = (tmp_path / "s.jsonl", tmp_path / "p.db")
     DualWriteStore(*paths).write([make_record(1)])
     assert DualWriteStore(*paths).count() == 1
+
+
+# ── Entity activity ───────────────────────────────────────────────────────────
+
+
+def test_entity_counts_tally_across_records(store):
+    store.write([make_record(i) for i in range(4)])
+    # make_record puts entity_ids=["pge"] on every record.
+    assert store.entity_record_counts() == {"pge": 4}
+
+
+def test_entity_counts_are_empty_on_a_fresh_store(store):
+    assert store.entity_record_counts() == {}
+
+
+def test_entity_counts_handle_records_with_no_entities(store):
+    bare = make_record(9).model_copy(update={"entity_ids": []})
+    store.write([make_record(1), bare])
+    assert store.entity_record_counts() == {"pge": 1}
+
+
+def test_entity_counts_tally_each_id_on_a_multi_entity_record(store):
+    multi = make_record(2).model_copy(update={"entity_ids": ["pge", "metro", "nwn"]})
+    store.write([make_record(1), multi])
+
+    counts = store.entity_record_counts()
+    assert counts["pge"] == 2
+    assert counts["metro"] == 1
+    assert counts["nwn"] == 1
+
+
+def test_records_for_entity_returns_only_matching_records(store):
+    other = make_record(5).model_copy(update={"entity_ids": ["metro"]})
+    store.write([make_record(1), other])
+
+    assert [r.record_id for r in store.records_for_entity("metro")] == [other.record_id]
+    assert [r.record_id for r in store.records_for_entity("pge")] == ["rec_test_0001"]
+
+
+def test_records_for_entity_matches_ids_exactly(store):
+    """A prefix must not match — 'pg' is not 'pge'."""
+    store.write([make_record(1)])
+    assert store.records_for_entity("pg") == []
+    assert store.records_for_entity("pge")
+
+
+def test_records_for_entity_is_empty_for_an_unknown_id(store):
+    store.write([make_record(1)])
+    assert store.records_for_entity("no_such_entity") == []
+
+
+def test_records_for_entity_honours_the_limit(store):
+    store.write([make_record(i) for i in range(10)])
+    assert len(store.records_for_entity("pge", limit=3)) == 3

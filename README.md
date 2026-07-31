@@ -11,7 +11,7 @@ then assembles a neutrality-gated brief when publication triggers.
 
 Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily cycle,
 a PDF renderer for the brief, and a single-page brief viewer. What is *not* built is
-listed at the bottom — the force-directed web map is the notable gap.
+listed at the bottom — the web map's data is served, but nothing draws it yet.
 
 ## What it does, and what it refuses to do
 
@@ -163,6 +163,9 @@ Live runs should pass the real clock.
 | `GET /brief` | the most recently published brief |
 | `GET /brief/archive` | every published brief, newest first, paginated |
 | `GET /brief/{brief_id}` | one brief by ID |
+| `GET /graph` | the political web — every node and tie, with record activity |
+| `GET /graph/districts` | the district roster, for the District Map |
+| `GET /graph/{node_id}` | one node, its ties, its neighbours, and the records touching it |
 | `POST /cycle/run` | drives a full cycle and returns its summary |
 
 Set `PDX1_API_KEY` to require an `X-API-Key` header on every request; leave it blank and
@@ -206,7 +209,7 @@ input yields no records and therefore no brief.
 
 ```
 pdx-1i/
-├── src/pdx1/                  39 modules
+├── src/pdx1/                  40 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -221,10 +224,10 @@ pdx-1i/
 │   ├── watch/                 6 infrastructure monitors
 │   ├── neutrality/            tone gate · attribution gate
 │   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
-│   ├── api/                   FastAPI app, routes, API-key auth
+│   ├── api/                   FastAPI app, routes (incl. /graph), API-key auth
 │   └── demos/                 runnable walkthrough
 ├── ui/index.html              single-page brief viewer (see UI below)
-├── tests/                     17 test files, 293 tests
+├── tests/                     18 test files, 326 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -266,9 +269,31 @@ A disclosure is a completed legal obligation, not a finding. `validate()` runs i
 catch dangling ties — a record linked to a node that does not exist must never reach
 publication.
 
-**The registry is data only.** `graph.py` holds 31 nodes and 40 ties, and the resolver
-uses them to attach `entity_ids` to records — but nothing renders the graph and no
-endpoint serves it. The force-directed web map is not built; see *Not built yet*.
+### Serving the graph
+
+`GET /graph` returns the whole registry — small and fixed, so it ships in one response
+and a renderer can lay it out without a second round trip:
+
+```json
+{
+  "nodes": [{"id": "pge", "label": "Portland General Electric", "group": "E",
+             "weight": 0.9, "flag": null, "record_count": 1}],
+  "ties":  [{"source": "mcp", "target": "pge", "kind": "disclosure", "flagged": true}],
+  "node_count": 31, "tie_count": 40
+}
+```
+
+`group` drives node shape, `kind` drives line style, and `disclosure` ties render dashed.
+`record_count` is how many stored records mention that node, so the map reflects actual
+activity rather than a static diagram — and it is a count, nothing more. It says how
+often a body appears in the record set and nothing about why, which is the same
+discipline the neutrality gates enforce on published prose.
+
+`GET /graph/{node_id}` returns one node with its ties, its neighbours and the records
+touching it — what a click on the map needs. `GET /graph/districts` returns the seat
+roster for the District Map.
+
+**Still not drawn.** The data is now served; no renderer consumes it. See *Not built yet*.
 
 ## Testing
 
@@ -279,7 +304,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-293 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+326 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -303,12 +328,10 @@ Statistics), and its palette does not follow the SPEC-1 monochrome design system
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **The web map.** The force-directed political-web diagram is the largest gap. The
-  data is ready (`graph.py`: 31 nodes, 40 ties, five tie kinds) and the resolver already
-  attaches `entity_ids` to every record, but nothing serves that graph and nothing draws
-  it. Needs two pieces: a `GET /graph` endpoint emitting nodes and ties, and a canvas or
-  SVG renderer in the UI. Node shape encodes type (jurisdiction, official seat, entity),
-  line style encodes tie kind, and disclosure ties render dashed.
+- **Drawing the web map.** The data is now served — `GET /graph` emits nodes, ties and
+  record counts, and `GET /graph/{node_id}` backs a click-through detail panel. What is
+  missing is the renderer: a canvas or SVG force-directed layout in the UI, with node
+  shape by `group`, line style by `kind`, and disclosure ties dashed.
 - **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
   adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
   needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
