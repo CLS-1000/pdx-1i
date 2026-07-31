@@ -10,8 +10,8 @@ measures them against a rolling baseline, and writes structured intelligence rec
 then assembles a neutrality-gated brief when publication triggers.
 
 Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily cycle,
-a PDF renderer for the brief, and a single-page brief viewer. What is *not* built is
-listed at the bottom — the web map's data is served, but nothing draws it yet.
+a PDF renderer for the brief, and two single-page viewers — the daily brief and the
+force-directed political web. What is *not* built is listed at the bottom.
 
 ## What it does, and what it refuses to do
 
@@ -226,8 +226,8 @@ pdx-1i/
 │   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
 │   ├── api/                   FastAPI app, routes (incl. /graph), API-key auth
 │   └── demos/                 runnable walkthrough
-├── ui/index.html              single-page brief viewer (see UI below)
-├── tests/                     18 test files, 326 tests
+├── ui/                        index.html (brief viewer) · webmap.html (political web)
+├── tests/                     19 test files, 338 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -293,7 +293,26 @@ discipline the neutrality gates enforce on published prose.
 touching it — what a click on the map needs. `GET /graph/districts` returns the seat
 roster for the District Map.
 
-**Still not drawn.** The data is now served; no renderer consumes it. See *Not built yet*.
+### Drawing it
+
+`ui/webmap.html` renders the graph: a force-directed layout where node shape carries
+`group` (diamond jurisdiction, square seat, circle entity), line style carries `kind`,
+declared interests are dashed, and node size grows with `record_count`. Clicking a node
+pins a panel showing its ties, its neighbours and the records that mention it.
+
+```bash
+pdx1-api                                  # terminal 1
+python -m http.server 8300 --directory ui # terminal 2
+# open http://localhost:8300/webmap.html?api=http://localhost:8000
+```
+
+Set `PDX1_CORS_ORIGINS` to the page's origin, and pass `?key=` if `PDX1_API_KEY` is set.
+
+The page has no built-in dataset. If the API is unreachable it says so and draws nothing,
+rather than falling back to baked-in nodes that would drift from the store while still
+looking authoritative. `tests/test_webmap_ui.py` pins that, along with the neutrality
+constraints — no names of individuals, no affiliation labels, no characterising language,
+and no hue beyond the vacancy signal.
 
 ## Testing
 
@@ -304,7 +323,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-326 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+338 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -328,10 +347,6 @@ Statistics), and its palette does not follow the SPEC-1 monochrome design system
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Drawing the web map.** The data is now served — `GET /graph` emits nodes, ties and
-  record counts, and `GET /graph/{node_id}` backs a click-through detail panel. What is
-  missing is the renderer: a canvas or SVG force-directed layout in the UI, with node
-  shape by `group`, line style by `kind`, and disclosure ties dashed.
 - **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
   adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
   needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
