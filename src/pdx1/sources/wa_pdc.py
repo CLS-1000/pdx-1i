@@ -12,15 +12,17 @@ import json
 from datetime import datetime
 
 from ..models import Signal, SourceType
-from .base import SourceAdapter
+from .base import LiveSourceAdapter
 
 
-class WaPdcAdapter(SourceAdapter):
+class WaPdcAdapter(LiveSourceAdapter):
     """Parses WA PDC contribution filings."""
 
     name = "WA_PDC"
     source_type = SourceType.WA_PDC
     credibility = 0.85
+    # Washington PDC contributions API (JSON export).
+    feed_url = "https://api.pdc.wa.gov/public/v1/contributions?format=json"
 
     def parse(self, raw: str) -> list[Signal]:
         records = json.loads(raw)

@@ -13,16 +13,18 @@ import json
 from datetime import datetime
 
 from ..models import Signal, SourceType
-from .base import SourceAdapter
+from .base import LiveSourceAdapter
 
 
-class OrestarAdapter(SourceAdapter):
+class OrestarAdapter(LiveSourceAdapter):
     """Parses ORESTAR contribution filings."""
 
     name = "ORESTAR"
     source_type = SourceType.ORESTAR
     # A filed contribution report is a primary public record.
     credibility = 0.9
+    # Oregon Secretary of State campaign finance API (JSON export).
+    feed_url = "https://sos.oregon.gov/elections/Documents/orestar_contributions.json"
 
     def parse(self, raw: str) -> list[Signal]:
         records = json.loads(raw)

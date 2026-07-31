@@ -48,10 +48,19 @@ dev = [
     "pytest-timeout>=2.3",
     "ruff",
     "bandit",
+    # Needed to run tests for the API surface and live-fetch adapters.
+    "fastapi>=0.110",
+    "httpx>=0.27",
+    "apscheduler>=3.10",
+    "tzlocal>=4.0",
+    "reportlab>=4.0",
+    "uvicorn[standard]>=0.29",
 ]
 
 [project.scripts]
 pdx1 = "pdx1.pipeline:main"
+pdx1-api = "pdx1.api.app:main"
+pdx1-scheduler = "pdx1.scheduler:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

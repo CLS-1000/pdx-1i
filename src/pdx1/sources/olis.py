@@ -12,15 +12,17 @@ import json
 from datetime import datetime
 
 from ..models import Signal, SourceType
-from .base import SourceAdapter
+from .base import LiveSourceAdapter
 
 
-class OlisAdapter(SourceAdapter):
+class OlisAdapter(LiveSourceAdapter):
     """Parses OLIS bill and committee-action records."""
 
     name = "OLIS"
     source_type = SourceType.OLIS
     credibility = 0.9
+    # Oregon Legislative Information System bill activity API (JSON export).
+    feed_url = "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$format=json"
 
     def parse(self, raw: str) -> list[Signal]:
         records = json.loads(raw)

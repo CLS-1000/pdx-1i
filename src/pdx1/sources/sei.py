@@ -16,15 +16,17 @@ import json
 from datetime import datetime
 
 from ..models import Signal, SourceType
-from .base import SourceAdapter
+from .base import LiveSourceAdapter
 
 
-class SeiAdapter(SourceAdapter):
+class SeiAdapter(LiveSourceAdapter):
     """Parses SEI filings and amendments."""
 
     name = "SEI"
     source_type = SourceType.SEI
     credibility = 0.85
+    # Oregon Government Ethics Commission SEI public filings (JSON export).
+    feed_url = "https://ogec.oregon.gov/sei/api/public/filings.json"
 
     def parse(self, raw: str) -> list[Signal]:
         records = json.loads(raw)
