@@ -31,7 +31,8 @@ def require_api_key(api_key: str | None = Security(_API_KEY_HEADER)) -> None:
     if not expected:
         # No key configured; auth is disabled (development mode).
         return
-    if not api_key or api_key != expected:
+    import secrets
+    if not api_key or not secrets.compare_digest(api_key, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-API-Key header",
