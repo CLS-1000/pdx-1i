@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portland Political Web — SPEC-1</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0c0f;
+  --mayor:#e8572a;--admin:#f0a500;--council:#3a9fd6;
+  --progressive:#5ecf8a;--dsa:#c44aff;--county:#ff6b9d;
+  --state:#7ab8f5;--topic:#6e7f8a;--business:#f5c842;
+  --civic:#a0d4b5;--judicial:#d4af37;--enforcement:#c0392b;--bureau:#8090a0;
+  --text:#e0e4ea;--mono:'Courier Prime','Courier New',monospace;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);overflow:hidden}
+#header{position:fixed;top:0;left:0;right:0;padding:10px 18px 8px;z-index:100;
+  background:linear-gradient(180deg,#0a0c0fff 65%,transparent);
+  display:flex;align-items:center;gap:14px;border-bottom:1px solid rgba(255,255,255,0.05)}
+#header h1{font-family:var(--mono);font-size:17px;font-weight:700;letter-spacing:.18em;color:#fff;line-height:1}
+.header-pub{font-size:8.5px;letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,0.3);
+  border-left:1px solid rgba(255,255,255,0.12);padding-left:10px}
+.header-sub{font-size:8px;letter-spacing:.12em;color:rgba(255,255,255,0.25);text-transform:uppercase;margin-top:3px}
+.live-dot{display:inline-block;width:5px;height:5px;background:#5ecf8a;border-radius:50%;margin-right:5px;animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+#cycle-status{position:fixed;top:0;right:18px;height:52px;display:flex;align-items:center;gap:8px;z-index:100}
+.status-pill{font-family:var(--mono);font-size:7px;letter-spacing:.14em;text-transform:uppercase;
+  padding:3px 7px;border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.3)}
+.status-pill.live{border-color:rgba(94,207,138,.35);color:#5ecf8a}
+#legend{position:fixed;bottom:20px;left:16px;z-index:100;display:flex;flex-direction:column;gap:4px;
+  background:rgba(10,12,15,.94);border:1px solid rgba(255,255,255,0.07);padding:10px 13px;backdrop-filter:blur(8px)}
+#legend h3{font-size:7px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.22);margin-bottom:5px}
+.leg-item{display:flex;align-items:center;gap:7px;font-size:8.5px;letter-spacing:.06em;color:rgba(255,255,255,.45)}
+.leg-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+#tooltip{position:fixed;pointer-events:none;background:rgba(10,12,15,.97);border:1px solid rgba(255,255,255,.1);
+  border-top:2px solid rgba(255,255,255,.28);padding:10px 14px;max-width:270px;z-index:200;opacity:0;transition:opacity .15s;backdrop-filter:blur(12px)}
+.tt-label{font-size:7px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.22);margin-bottom:4px}
+#tooltip h4{font-size:12px;font-weight:700;letter-spacing:.05em;color:#fff;margin-bottom:3px}
+#tooltip .tt-role{font-size:7.5px;color:rgba(255,255,255,.32);text-transform:uppercase;letter-spacing:.14em;margin-bottom:7px}
+#tooltip p{font-size:9.5px;color:rgba(255,255,255,.52);line-height:1.6;letter-spacing:.02em}
+#footer{position:fixed;bottom:20px;right:16px;font-size:7.5px;color:rgba(255,255,255,.18);
+  text-align:right;line-height:1.9;letter-spacing:.1em;z-index:100}
+.reg{position:fixed;pointer-events:none;z-index:200}
+.reg-tl{top:8px;left:8px}.reg-tr{top:8px;right:8px}.reg-bl{bottom:8px;left:8px}.reg-br{bottom:8px;right:8px}
+.ht{position:fixed;pointer-events:none;z-index:50;opacity:.12}
+.ht-br{bottom:0;right:0}.ht-tl{top:0;left:0;transform:rotate(180deg)}
+svg{display:block;cursor:grab}
+svg:active{cursor:grabbing}
+.node{cursor:pointer}
+.node circle{transition:r .2s,filter .2s}
+.node:hover circle{filter:brightness(1.45)}
+.node text{pointer-events:none}
+.link{stroke-linecap:round}
+body::after{content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.05) 2px,rgba(0,0,0,.05) 4px);
+  pointer-events:none;z-index:999}
+</style>
+</head>
+<body>
+
+<svg class="reg reg-tl" width="16" height="16"><line x1="0" y1="8" x2="16" y2="8" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/><line x1="8" y1="0" x2="8" y2="16" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/></svg>
+<svg class="reg reg-tr" width="16" height="16"><line x1="0" y1="8" x2="16" y2="8" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/><line x1="8" y1="0" x2="8" y2="16" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/></svg>
+<svg class="reg reg-bl" width="16" height="16"><line x1="0" y1="8" x2="16" y2="8" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/><line x1="8" y1="0" x2="8" y2="16" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/></svg>
+<svg class="reg reg-br" width="16" height="16"><line x1="0" y1="8" x2="16" y2="8" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/><line x1="8" y1="0" x2="8" y2="16" stroke="rgba(255,255,255,0.18)" stroke-width=".7"/></svg>
+
+<svg class="ht ht-br" width="110" height="90">
+  <circle cx="100" cy="80" r="4" fill="white"/><circle cx="82" cy="80" r="3.2" fill="white"/><circle cx="64" cy="80" r="2.4" fill="white"/><circle cx="46" cy="80" r="1.6" fill="white"/>
+  <circle cx="100" cy="63" r="3.2" fill="white"/><circle cx="82" cy="63" r="2.4" fill="white"/><circle cx="64" cy="63" r="1.6" fill="white"/>
+  <circle cx="100" cy="46" r="2.4" fill="white"/><circle cx="82" cy="46" r="1.6" fill="white"/>
+  <circle cx="100" cy="29" r="1.6" fill="white"/>
+</svg>
+
+<header id="header">
+  <svg width="32" height="32" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="250" cy="250" r="56" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.1"/>
+    <circle cx="250" cy="194" r="56" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width=".7"/>
+    <circle cx="298" cy="222" r="56" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width=".7"/>
+    <circle cx="298" cy="278" r="56" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width=".7"/>
+    <circle cx="250" cy="306" r="56" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width=".7"/>
+    <circle cx="202" cy="278" r="56" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width=".7"/>
+    <circle cx="202" cy="222" r="56" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width=".7"/>
+    <polygon points="250,80 418,172 418,328 250,420 82,328 82,172" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width=".7"/>
+    <circle cx="250" cy="250" r="44" fill="#0a0c0f" stroke="rgba(255,255,255,0.5)" stroke-width=".9"/>
+    <path d="M206,250 Q228,214 250,208 Q272,214 294,250" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M206,250 Q228,286 250,292 Q272,286 294,250" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="250" cy="250" r="6" fill="white"/>
+  </svg>
+  <div>
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <h1>SPEC-1</h1>
+      <span class="header-pub">Signal Intelligence Engine</span>
+    </div>
+    <div class="header-sub"><span class="live-dot"></span>Portland Political Web · 2025–26 · New mayor-council gov · Full local network · 46 nodes · Verified Aug 2026</div>
+  </div>
+</header>
+
+<div id="cycle-status">
+  <span class="status-pill live">● Live</span>
+  <span class="status-pill">284 signals</span>
+  <span class="status-pill">v3 Full Local</span>
+</div>
+
+<div id="legend">
+  <h3>Node Type</h3>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--mayor)"></div>Mayor</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--admin)"></div>City Administration</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--council)"></div>City Council</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--progressive)"></div>Progressive Caucus</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--dsa)"></div>DSA Member</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--judicial)"></div>Judicial</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--enforcement)"></div>Law Enforcement</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--county)"></div>County / Regional</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--state)"></div>State Level</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--bureau)"></div>City Bureau</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--topic)"></div>Key Issue</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--business)"></div>Business / Interest</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--civic)"></div>Civic Watchdog</div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-label">SPEC-1 · Political Web</div>
+  <h4 id="tt-name"></h4>
+  <div class="tt-role" id="tt-role"></div>
+  <p id="tt-desc"></p>
+</div>
+
+<div id="footer">
+  SPEC-1 · Signal Intelligence Engine<br>
+  EVASTARARCANA LLC · Portland, OR<br>
+  drag · scroll to zoom · click to focus
+</div>
+
+<svg id="graph"></svg>
+
+<script>
+const COLOR = {
+  mayor:'#e8572a', admin:'#f0a500', council:'#3a9fd6',
+  progressive:'#5ecf8a', dsa:'#c44aff', county:'#ff6b9d',
+  state:'#7ab8f5', topic:'#6e7f8a', business:'#f5c842',
+  civic:'#a0d4b5', judicial:'#d4af37', enforcement:'#c0392b', bureau:'#8090a0',
+};
+
+const nodes = [
+  // ── EXECUTIVE ──
+  { id:'wilson',      label:'Keith\nWilson',        role:'Mayor',                     type:'mayor',
+    desc:'First mayor under new charter. Elected 2024. Former trucking exec. Led shelter plan targeting unsheltered population by Dec 2025. Author of the camping ban enforcement push.' },
+  { id:'city_admin',  label:'Raymond\nLee III\nCity Admin', role:'City Administrator (Exec)', type:'admin',
+    desc:'Raymond C. Lee III. Appointed by Mayor Wilson Dec 2025. Professional manager overseeing all city bureaus and day-to-day ops. Replaced the old "five mini-mayors" commission model. PPB Chief Bob Day reports directly to him.' },
+  { id:'auditor',     label:'Simone Rede\nCity Auditor', role:'City Auditor',          type:'admin',
+    desc:'Simone Rede. Independently elected. First elected May 2022, reelected November 2024. Provides fiscal and operational oversight of city ops. Not part of city council or under mayor.' },
+  { id:'city_attorney', label:'City\nAttorney',      role:'Portland City Attorney',    type:'admin',
+    desc:'Robert Taylor (as of 2025). Legal counsel for the City of Portland. Defends city in litigation — including camping ban suits, protest arrests, employment claims, and civil rights cases. Works closely with both mayor and council.' },
+
+  // ── COUNCIL ──
+  { id:'pirtle',      label:'Elana\nPirtle-Guiney', role:'Councilor · D2 (fmr. President)', type:'progressive',
+    desc:'Inaugural Council President Jan 2025–Jan 14, 2026. D2 (Cully, St. Johns). Led formation of 8 policy committees. Peacock caucus. Oregon Ethics Commission investigation for Aug 2025 private quorum meeting. Replaced as president by Dunphy Jan 14, 2026.' },
+  { id:'clark',       label:'Olivia\nClark',         role:'Council VP · D4 (since Jan 2026)', type:'council',
+    desc:'Council VP since January 14, 2026 (succeeded Koyama Lane). Represents D4 (NW, Downtown, Sellwood, D4). More centrist. Counterbalance to Peacock caucus on enforcement and budget.' },
+  { id:'avalos',      label:'Candace\nAvalos',        role:'Councilor · D1',            type:'dsa',
+    desc:'D1 (Powellhurst-Gilbert, Hazelwood, Centennial). DSA member. Progressive caucus. 4-year term 2025–2028.' },
+  { id:'dunphy',      label:'Jamie\nDunphy',          role:'Council President · D1 (since Jan 14 2026)', type:'council',
+    desc:'Council President since January 14, 2026. Succeeded Pirtle-Guiney. D1. 4-year term 2025–2028. Represents East Portland neighborhoods including Powellhurst-Gilbert, Hazelwood, Centennial. Generally moderate.' },
+  { id:'lsmith',      label:'Loretta\nSmith',         role:'Councilor · D1',            type:'council',
+    desc:'D1. 4-year term 2025–2028. Former Multnomah County Commissioner. Brings county-level perspective on homelessness and services.' },
+  { id:'kanal',       label:'Sameer\nKanal',           role:'Councilor · D2',            type:'progressive',
+    desc:'D2 (Cully, St. Johns, Concordia). Progressive caucus. 4-year term 2025–2028.' },
+  { id:'ryan',        label:'Dan Ryan',                role:'Councilor · D2',            type:'council',
+    desc:'D2. Veteran of the old city commission. Moderate voice. Often bridges Peacock caucus and conservative bloc.' },
+  { id:'koyama',      label:'Tiffany\nKoyama Lane',   role:'Councilor · D3',            type:'progressive',
+    desc:'D3 (Montavilla, Brentwood). Former Council VP. DSA member. Progressive caucus. 2-year term 2025–2026.' },
+  { id:'morillo',     label:'Angelita\nMorillo',       role:'Councilor · D3',            type:'dsa',
+    desc:'D3. DSA member. Proposed $4.3M cut to Impact Reduction Program (camp sweeps) Nov 2025. Progressive caucus. 2-year term.' },
+  { id:'novick',      label:'Steve\nNovick',           role:'Councilor · D3',            type:'progressive',
+    desc:'D3. Veteran Portland politician; previously served on old city commission. Progressive caucus. 2-year term 2025–2026.' },
+  { id:'green',       label:'Mitch\nGreen',            role:'Councilor · D4',            type:'dsa',
+    desc:'D4 (NW, Downtown, Sellwood). DSA member. Co-sponsored Morillo sweep-cut amendment. Progressive caucus. 2-year term 2025–2026.' },
+  { id:'zimmerman',   label:'Eric\nZimmerman',         role:'Councilor · D4',            type:'council',
+    desc:'D4. 2-year term 2025–2026. Generally moderate on public safety and budget.' },
+  { id:'peacock',     label:'"Peacock"\nCaucus',       role:'Progressive Caucus (6 members)', type:'progressive',
+    desc:'Six left-leaning councilors forming the council majority. Nicknamed "Peacock." Members: Pirtle-Guiney, Kanal, Koyama Lane, Morillo, Novick, Green. Under Oregon Ethics Commission investigation for private Aug 2025 meeting.' },
+
+  // ── JUDICIAL ──
+  { id:'fed_court',   label:'US District\nCourt D. Or.', role:'Chief Judge Marco Hernandez · Federal', type:'judicial',
+    desc:'Chief Judge Marco Hernandez oversees the USDC District of Oregon. Hears federal civil rights cases — including Portland protest litigation, houseless rights lawsuits (Martin v. Boise impact), and 42 USC §1983 actions against PPB. Key check on enforcement overreach.' },
+  { id:'ore_supreme', label:'Oregon\nSupreme Court',   role:'Oregon Supreme Court',      type:'judicial',
+    desc:'State\'s highest court. Chief Justice Meagan Flynn. Handles constitutional challenges to camping bans, property rights, Measure 110 legality, and land use law. Sets precedent that flows down to circuit and city-level enforcement.' },
+  { id:'ore_appeals', label:'Oregon\nCourt of Appeals', role:'Intermediate Appellate Court', type:'judicial',
+    desc:'Hears appeals from circuit courts including Multnomah County. Handles eviction appeals, criminal conviction reviews, land use challenges, and administrative law disputes. Volume of eviction appeals rising sharply with housing crisis.' },
+  { id:'moco_circuit', label:'Multnomah Co.\nCircuit Court', role:'Presiding Judge Judith Matarazzo', type:'judicial',
+    desc:'Presiding Judge Judith Matarazzo. Oregon\'s largest circuit court by caseload. Hears evictions, criminal matters (PPB-referred cases), and civil disputes. DA Vasquez cases adjudicated here. High eviction docket is a direct signal of Portland\'s housing crisis severity. LPSCC coordinating committee member.' },
+  { id:'ore_tax_court', label:'Oregon\nTax Court',     role:'Specialized State Court',   type:'judicial',
+    desc:'Handles property tax appeals and business tax disputes. Relevant to Portland\'s planned business tax relief threshold changes and commercial property reassessments downtown.' },
+
+  // ── LAW ENFORCEMENT ──
+  { id:'da',          label:'Nathan\nVasquez\nMoCo DA', role:'Multnomah County District Attorney', type:'enforcement',
+    desc:'MoCo DA since Jan 1, 2025. Defeated incumbent Mike Schmidt in May 2024 primary. Former senior deputy DA in Schmidt\'s own office — ran as more traditional prosecutor. Less prosecutorial discretion, harder line on drug offenses and street crime. Relationship with PPB, circuit court, and sheriff is core SPEC-1 cluster. Named on LPSCC public safety coordinating committee.' },
+  { id:'sheriff',     label:'Nicole Morrisey\nO\'Donnell', role:'Multnomah County Sheriff',   type:'enforcement',
+    desc:'Sheriff since 2019, reelected 2022. Operates county jails, Multnomah County Sheriff\'s Office. Distinct from Portland Police Bureau. Manages detention for DA\'s cases and county-level enforcement. Interfaces with ICE on immigration holds — politically sensitive.' },
+  { id:'ppb_chief',   label:'Bob Day\nPPB Chief',      role:'51st Portland Police Bureau Chief', type:'enforcement',
+    desc:'Bob Day, 51st PPB Chief. Assumed office Oct 2023 under Wheeler, continued under Wilson. Bureau at ~809 sworn as of mid-2026 after retirements. Reports to City Administrator Raymond Lee III. Overseeing camping ban enforcement operations. Hiring goal achieved FY2025-26. DOJ oversight legacy frameworks still active.' },
+
+  // ── COUNTY / REGIONAL ──
+  { id:'vega',        label:'Jessica\nVega Pederson', role:'Multnomah County Chair',    type:'county',
+    desc:'County Chair overseeing $420M homeless services budget. Proposed 22% cut to homeless services FY2026. Partner with Wilson on 1,000 shelter bed commitment.' },
+  { id:'county',      label:'Multnomah\nCounty Board', role:'County Commission',         type:'county',
+    desc:'Lead agency for housing placement and homeless services under the city-county Homelessness Response System (HRS). Coordinates with state on OHCS funding.' },
+  { id:'metro',       label:'Metro\nRegional Gov',    role:'Regional Government',       type:'county',
+    desc:'Tri-county regional government. Council President Lynn Peterson. Oversees land use, transit, and regional planning for greater Portland area.' },
+
+  // ── STATE ──
+  { id:'kotek',       label:'Tina Kotek',             role:'Oregon Governor',           type:'state',
+    desc:'Declared homelessness state of emergency Day 1. Proposed $800M housing/homelessness budget. Extended emergency through early 2026. Direct line to both Wilson and Vega on shelter commitments.' },
+  { id:'ore_leg',     label:'Oregon\nLegislature',    role:'State Legislature',         type:'state',
+    desc:'Passed HB 5011: $2.6B housing bill, cutting eviction prevention from $173M requested to $33.6M. Passed HB 3644 statewide shelter system framework.' },
+
+  // ── CITY BUREAUS ──
+  { id:'psr',         label:'Portland\nStreet\nResponse', role:'Non-Police Crisis Response', type:'bureau',
+    desc:'Dispatches mental health professionals and medics to non-violent 911 calls. Sub-bureau within Public Safety service area. Progressive caucus views as essential alternative to policing. Mayor supports but under budget pressure.' },
+  { id:'fire_bds',    label:'Fire & Rescue /\nDev Services', role:'Core City Bureaus',    type:'bureau',
+    desc:'Portland Fire & Rescue and Bureau of Development Services. BDS oversees permitting critical to housing supply. Both under City Administrator framework after charter reform eliminated commissioner bureaus.' },
+  { id:'pbot',        label:'Portland\nBureau of\nTransportation', role:'PBOT Director',  type:'bureau',
+    desc:'Manages city streets, sidewalks, bike infrastructure, and right-of-way. Directly involved in encampment clearances on public ROW. Coordinates with IRP on sweep logistics. Budget pressure from deferred maintenance.' },
+  { id:'housing_bureau', label:'Portland\nHousing\nBureau',  role:'Housing Bureau Director', type:'bureau',
+    desc:'Manages $100M+ housing investment fund, rental assistance programs, and affordable housing policy. Key node connecting housing crisis issue to both city budget and county HRS system. Reports to City Administrator.' },
+  { id:'prosper',     label:'Prosper\nPortland',       role:'City Economic Dev Agency',  type:'bureau',
+    desc:'City\'s economic development and urban renewal agency. Manages urban renewal districts and TIF funding. Key actor in downtown revitalization and commercial recovery post-2020. Not directly under council but politically accountable to mayor.' },
+  { id:'trimet',      label:'TriMet',                  role:'Regional Transit Agency · GM Selene Stephan', type:'bureau',
+    desc:'Regional transit authority serving Portland metro. GM Selene Stephan. Under intense pressure on safety and homelessness on buses and MAX. Coordinating with city on service-connected shelter outreach. Budget cuts threaten frequency.' },
+  { id:'pps',         label:'Portland\nPublic\nSchools', role:'PPS Superintendent',        type:'bureau',
+    desc:'Portland Public Schools serves ~45,000 students. Superintendent under pressure on budget shortfalls, building closures, and student stability issues linked to homelessness and housing displacement. School board independently elected.' },
+  { id:'irp',         label:'Impact\nReduction\nProgram', role:'Encampment Management',   type:'topic',
+    desc:'City team managing camp cleanups and removals. Primary node of friction: Morillo/Green $4.3M cut amendment vs. Mayor\'s enforcement agenda. Coordinates with PPB, PBOT, and PSR on sweep operations.' },
+
+  // ── ISSUES ──
+  { id:'homelessness', label:'Homelessness\n& Sweeps',  role:'Issue',                     type:'topic',
+    desc:'Portland\'s #1 flashpoint. Wilson: shelter-first, camping ban, sweeps. Progressives: housing investment, anti-sweep. 5,000+ unsheltered residents. Deaths quadrupled 2019–2023. Federal court constraints on enforcement via Martin v. Boise lineage.' },
+  { id:'housing',      label:'Housing\nCrisis',         role:'Issue',                     type:'topic',
+    desc:'Rental costs outpace wages. Record eviction filings in Multnomah Circuit Court. Fewer permits issued. Ongoing tension between shelter beds vs. permanent housing investment.' },
+  { id:'budget',       label:'City\nBudget',            role:'Issue',                     type:'topic',
+    desc:'Mayor writes budget; council approves. FY2026: major tension over IRP funding, service area cuts, Vibrant Communities dissolution.' },
+  { id:'charter',      label:'Charter\nReform 2022',    role:'Issue',                     type:'topic',
+    desc:'Voter-approved (57%) overhaul: 12-seat council, 4 districts, ranked-choice voting, mayor-council model. Ended 111 years of commission government.' },
+  { id:'rcv',          label:'Ranked-Choice\nVoting',   role:'Issue',                     type:'topic',
+    desc:'Portland now only major U.S. city using Single Transferable Vote for council. 98 candidates ran in 2024. Three winners per district.' },
+  { id:'police',       label:'Public Safety\n& Police', role:'Issue',                     type:'topic',
+    desc:'PPB under City Administrator\'s Public Safety service area. Camping ban enforcement began Nov 1 2025 — 40+ arrested on outstanding warrants in 10 days. DOJ oversight legacy still active.' },
+  { id:'ethics',       label:'Ethics\nScrutiny',        role:'Issue',                     type:'topic',
+    desc:'Oregon Gov Ethics Commission investigating Aug 2025 private meeting of the 6-member progressive caucus, who represented a quorum of 4 council committees. Possible open meetings law violation.' },
+  { id:'business_tax', label:'Business Tax\nRelief',    role:'Issue',                     type:'topic',
+    desc:'Proposal to raise income threshold from $50K to $75K in 2026, $100K in 2027. Key PBA priority. Budget revenue impact under analysis.' },
+
+  // ── BUSINESS / CIVIC ──
+  { id:'pba',          label:'Portland\nBusiness\nAlliance', role:'Regional Chamber of Commerce', type:'business',
+    desc:'Represents major downtown employers. Lobbies on tax policy, public safety, and downtown economic revitalization. Key advocate for business tax relief and aggressive sweep enforcement. Major donor ecosystem.' },
+  { id:'lwv',          label:'League of\nWomen Voters', role:'Civic Watchdog',            type:'civic',
+    desc:'Non-partisan civic organization actively monitoring RCV implementation and new council transition. Tracks open meetings compliance and Oregon Ethics Commission proceedings.' },
+];
+
+const links = [
+  // Mayor ──
+  {source:'wilson',    target:'city_admin',    strength:2.5, label:'appoints'},
+  {source:'wilson',    target:'homelessness',  strength:2,   label:'shelter plan'},
+  {source:'wilson',    target:'budget',        strength:2,   label:'writes budget'},
+  {source:'wilson',    target:'police',        strength:1.5, label:'camping ban'},
+  {source:'wilson',    target:'vega',          strength:1.2, label:'shelter pact'},
+  {source:'wilson',    target:'pirtle',        strength:1.2, label:'exec↔legis'},
+  {source:'wilson',    target:'pba',           strength:1.2, label:'business outreach'},
+  {source:'wilson',    target:'business_tax',  strength:1.2, label:'championed'},
+  {source:'wilson',    target:'irp',           strength:1.5, label:'drives sweeps'},
+  {source:'wilson',    target:'city_attorney', strength:1.5, label:'legal counsel'},
+  {source:'wilson',    target:'ppb_chief',     strength:1.8, label:'public safety agenda'},
+  {source:'wilson',    target:'prosper',       strength:1,   label:'economic recovery'},
+
+  // City Admin ──
+  {source:'city_admin', target:'budget',       strength:1.5, label:'manages'},
+  {source:'city_admin', target:'police',       strength:1.2, label:'oversees PPB'},
+  {source:'city_admin', target:'psr',          strength:1.2, label:'oversees PSR'},
+  {source:'city_admin', target:'fire_bds',     strength:1.2, label:'oversees bureaus'},
+  {source:'city_admin', target:'pbot',         strength:1,   label:'oversees PBOT'},
+  {source:'city_admin', target:'housing_bureau', strength:1.2, label:'oversees HPB'},
+  {source:'city_admin', target:'ppb_chief',    strength:2,   label:'direct report'},
+  {source:'auditor',    target:'wilson',       strength:.8,  label:'oversight'},
+  {source:'auditor',    target:'city_admin',   strength:.8,  label:'audits bureaus'},
+  {source:'city_attorney', target:'fed_court', strength:1.5, label:'defends city'},
+  {source:'city_attorney', target:'moco_circuit', strength:1, label:'city litigant'},
+  {source:'city_attorney', target:'police',    strength:1.2, label:'legal coverage'},
+  {source:'city_attorney', target:'homelessness', strength:1, label:'camping ban defense'},
+
+  // Council / caucus ──
+  {source:'pirtle',    target:'peacock',       strength:2,   label:'leads'},
+  {source:'pirtle',    target:'budget',        strength:1.2, label:'sets agenda'},
+  {source:'pirtle',    target:'ethics',        strength:1,   label:'investigated'},
+  {source:'clark',     target:'pirtle',        strength:1,   label:'VP 2026'},
+  {source:'avalos',    target:'peacock',       strength:1.5},
+  {source:'dunphy',    target:'pirtle',        strength:.5},
+  {source:'lsmith',    target:'pirtle',        strength:.5},
+  {source:'lsmith',    target:'county',        strength:1.2, label:'former commissioner'},
+  {source:'kanal',     target:'peacock',       strength:1.5},
+  {source:'ryan',      target:'pirtle',        strength:.5},
+  {source:'koyama',    target:'peacock',       strength:1.5},
+  {source:'morillo',   target:'peacock',       strength:1.5},
+  {source:'morillo',   target:'homelessness',  strength:2,   label:'anti-sweep'},
+  {source:'morillo',   target:'irp',           strength:2,   label:'$4.3M cut amend.'},
+  {source:'morillo',   target:'ethics',        strength:1,   label:'investigated'},
+  {source:'green',     target:'morillo',       strength:1.5, label:'co-sponsored'},
+  {source:'green',     target:'peacock',       strength:1.5},
+  {source:'green',     target:'irp',           strength:1.5, label:'anti-sweep'},
+  {source:'zimmerman', target:'pirtle',        strength:.5},
+  {source:'peacock',   target:'homelessness',  strength:2,   label:'anti-sweeps'},
+  {source:'peacock',   target:'housing',       strength:1.5, label:'priority'},
+  {source:'peacock',   target:'budget',        strength:1.5, label:'pushback'},
+  {source:'peacock',   target:'ethics',        strength:1.5, label:'investigated'},
+  {source:'peacock',   target:'psr',           strength:1.2, label:'defends PSR'},
+  {source:'peacock',   target:'housing_bureau', strength:1.2, label:'funding push'},
+
+  // Judicial ──
+  {source:'fed_court', target:'homelessness',  strength:2,   label:'houseless rights'},
+  {source:'fed_court', target:'police',        strength:1.8, label:'civil rights suits'},
+  {source:'fed_court', target:'da',            strength:1,   label:'federal referrals'},
+  {source:'fed_court', target:'wilson',        strength:.8,  label:'injunction risk'},
+  {source:'ore_supreme',target:'homelessness', strength:1.5, label:'camping ban const.'},
+  {source:'ore_supreme',target:'housing',      strength:1.2, label:'property rights'},
+  {source:'ore_supreme',target:'ore_appeals',  strength:1.5, label:'reviews'},
+  {source:'ore_appeals',target:'moco_circuit', strength:1.5, label:'appellate review'},
+  {source:'ore_appeals',target:'housing',      strength:1.2, label:'eviction appeals'},
+  {source:'moco_circuit', target:'da',         strength:2,   label:'adjudicates cases'},
+  {source:'moco_circuit', target:'sheriff',    strength:1.5, label:'warrants / jail'},
+  {source:'moco_circuit', target:'housing',    strength:1.8, label:'eviction docket'},
+  {source:'moco_circuit', target:'police',     strength:1.2, label:'PPB referrals'},
+  {source:'ore_tax_court', target:'business_tax', strength:1.5, label:'appeals venue'},
+  {source:'ore_tax_court', target:'prosper',   strength:.8,  label:'TIF disputes'},
+
+  // Law Enforcement ──
+  {source:'da',        target:'moco_circuit',  strength:2,   label:'prosecution'},
+  {source:'da',        target:'police',        strength:1.8, label:'charges decisions'},
+  {source:'da',        target:'sheriff',       strength:1.5, label:'jail pipeline'},
+  {source:'da',        target:'homelessness',  strength:1.5, label:'enforcement policy'},
+  {source:'da',        target:'wilson',        strength:1,   label:'alignment pressure'},
+  {source:'sheriff',   target:'county',        strength:1.5, label:'reports to'},
+  {source:'sheriff',   target:'vega',          strength:1.2, label:'county exec'},
+  {source:'sheriff',   target:'police',        strength:1.2, label:'mutual aid'},
+  {source:'sheriff',   target:'homelessness',  strength:1,   label:'encampment response'},
+  {source:'ppb_chief', target:'police',        strength:2.5, label:'leads PPB'},
+  {source:'ppb_chief', target:'city_admin',    strength:2,   label:'reports to'},
+  {source:'ppb_chief', target:'da',            strength:1.5, label:'case referrals'},
+  {source:'ppb_chief', target:'irp',           strength:1.5, label:'sweep coordination'},
+  {source:'ppb_chief', target:'psr',           strength:1.2, label:'alternative dispatch'},
+  {source:'ppb_chief', target:'fed_court',     strength:.8,  label:'civil rights exposure'},
+
+  // County / Regional ──
+  {source:'vega',      target:'county',        strength:1.5},
+  {source:'vega',      target:'homelessness',  strength:2,   label:'HRS lead'},
+  {source:'vega',      target:'housing',       strength:1.5, label:'22% budget cut'},
+  {source:'vega',      target:'kotek',         strength:.8,  label:'state partner'},
+  {source:'county',    target:'homelessness',  strength:1.5},
+  {source:'metro',     target:'housing',       strength:1,   label:'land use'},
+  {source:'metro',     target:'county',        strength:.8},
+  {source:'metro',     target:'trimet',        strength:1.2, label:'transit oversight'},
+
+  // State ──
+  {source:'kotek',     target:'housing',       strength:2,   label:'$800M proposal'},
+  {source:'kotek',     target:'homelessness',  strength:2,   label:'emergency declared'},
+  {source:'kotek',     target:'ore_leg',       strength:1.5, label:'works with'},
+  {source:'ore_leg',   target:'housing',       strength:1.5, label:'HB 5011'},
+  {source:'ore_leg',   target:'homelessness',  strength:1.2, label:'HB 3644'},
+
+  // Bureaus ──
+  {source:'psr',       target:'police',        strength:1.5, label:'alternative to PPB'},
+  {source:'psr',       target:'homelessness',  strength:1.5, label:'crisis response'},
+  {source:'fire_bds',  target:'budget',        strength:1.2, label:'bureau realignment'},
+  {source:'fire_bds',  target:'housing',       strength:1,   label:'permitting supply'},
+  {source:'pbot',      target:'irp',           strength:1.5, label:'ROW clearance'},
+  {source:'pbot',      target:'homelessness',  strength:1.2, label:'encampment ROW'},
+  {source:'pbot',      target:'budget',        strength:1,   label:'deferred maintenance'},
+  {source:'housing_bureau', target:'housing',  strength:2,   label:'investment fund'},
+  {source:'housing_bureau', target:'homelessness', strength:1.5, label:'prevention'},
+  {source:'housing_bureau', target:'budget',   strength:1.5, label:'$100M+ allocation'},
+  {source:'prosper',   target:'budget',        strength:1,   label:'TIF revenue'},
+  {source:'prosper',   target:'business_tax',  strength:.8,  label:'economic dev'},
+  {source:'prosper',   target:'housing',       strength:1,   label:'URD housing'},
+  {source:'trimet',    target:'homelessness',  strength:1.5, label:'transit crisis'},
+  {source:'trimet',    target:'police',        strength:1,   label:'safety coordination'},
+  {source:'trimet',    target:'county',        strength:.8,  label:'service area'},
+  {source:'pps',       target:'housing',       strength:1.2, label:'student displacement'},
+  {source:'pps',       target:'budget',        strength:.8,  label:'city-school alignment'},
+  {source:'pps',       target:'homelessness',  strength:1,   label:'student stability'},
+
+  // Issues ──
+  {source:'homelessness', target:'budget',     strength:1.5, label:'funding fight'},
+  {source:'homelessness', target:'police',     strength:1.2, label:'sweeps'},
+  {source:'homelessness', target:'irp',        strength:1.5, label:'operational arm'},
+  {source:'housing',      target:'budget',     strength:1,   label:'underfunded'},
+  {source:'charter',      target:'rcv',        strength:1.5, label:'reform package'},
+  {source:'charter',      target:'wilson',     strength:.8,  label:'enabled new govt'},
+  {source:'rcv',          target:'peacock',    strength:.8,  label:'elected via STV'},
+  {source:'business_tax', target:'budget',     strength:1,   label:'revenue impact'},
+  {source:'irp',          target:'budget',     strength:1.5, label:'flashpoint line item'},
+  {source:'irp',          target:'police',     strength:1,   label:'PPB coordination'},
+  {source:'ethics',       target:'ore_appeals',strength:1,   label:'potential appeal'},
+
+  // Business / Civic ──
+  {source:'pba',       target:'business_tax',  strength:1.8, label:'lobbies for'},
+  {source:'pba',       target:'wilson',        strength:1.2, label:'aligns with mayor'},
+  {source:'pba',       target:'homelessness',  strength:1.2, label:'sweep advocacy'},
+  {source:'pba',       target:'police',        strength:1,   label:'downtown safety'},
+  {source:'pba',       target:'prosper',       strength:1,   label:'downtown revital.'},
+  {source:'lwv',       target:'charter',       strength:1.5, label:'monitors transition'},
+  {source:'lwv',       target:'rcv',           strength:1.5, label:'tracks impl.'},
+  {source:'lwv',       target:'ethics',        strength:1.2, label:'watchdog'},
+];
+
+// ── VIZ ──
+const W = window.innerWidth, H = window.innerHeight;
+const svg = d3.select('#graph').attr('width', W).attr('height', H);
+svg.append('defs').append('pattern')
+  .attr('id','grid').attr('width',40).attr('height',40).attr('patternUnits','userSpaceOnUse')
+  .append('path').attr('d','M 40 0 L 0 0 0 40').attr('fill','none').attr('stroke','#131820').attr('stroke-width',1);
+svg.append('rect').attr('width','100%').attr('height','100%').attr('fill','url(#grid)');
+const g = svg.append('g');
+svg.call(d3.zoom().scaleExtent([0.18,3]).on('zoom', e => g.attr('transform', e.transform)));
+const defs = svg.select('defs');
+Object.entries(COLOR).forEach(([type, col]) => {
+  const grad = defs.append('radialGradient').attr('id',`grad-${type}`).attr('cx','40%').attr('cy','35%');
+  grad.append('stop').attr('offset','0%').attr('stop-color', d3.color(col).brighter(0.6));
+  grad.append('stop').attr('offset','100%').attr('stop-color', d3.color(col).darker(0.8));
+});
+const flt = defs.append('filter').attr('id','glow');
+flt.append('feGaussianBlur').attr('stdDeviation','4').attr('result','blur');
+const fm = flt.append('feMerge');
+fm.append('feMergeNode').attr('in','blur');
+fm.append('feMergeNode').attr('in','SourceGraphic');
+
+const nodeMap = {};
+nodes.forEach(n => nodeMap[n.id] = n);
+
+function nodeR(d) {
+  if (d.type==='mayor') return 34;
+  if (d.id==='peacock') return 28;
+  if (d.type==='judicial') return 22;
+  if (d.type==='enforcement') return 21;
+  if (d.type==='topic') return 20;
+  if (d.type==='admin') return 22;
+  if (d.type==='bureau') return 18;
+  if (d.type==='county'||d.type==='state') return 19;
+  if (d.type==='business') return 20;
+  if (d.type==='civic') return 17;
+  return 15;
+}
+function nodeColor(d) { return COLOR[d.type] || '#6e7f8a'; }
+function fontColor(d) {
+  if (['mayor','admin','enforcement'].includes(d.type)) return '#fff';
+  if (d.type==='judicial') return '#1a1200';
+  if (d.type==='topic') return '#b0bec5';
+  if (d.type==='business') return '#1a1600';
+  if (d.type==='civic') return '#0a1f12';
+  return '#d0dae2';
+}
+
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d=>d.id)
+    .distance(d => {
+      if (d.source.type==='judicial'||d.target.type==='judicial') return 170;
+      if (d.source.type==='enforcement'||d.target.type==='enforcement') return 140;
+      if (d.source.type==='topic'||d.target.type==='topic') return 155;
+      if (d.source.type==='bureau'||d.target.type==='bureau') return 145;
+      return Math.max(90, 200/(d.strength||1));
+    })
+    .strength(d => Math.min(0.5, (d.strength||1)*0.15))
+  )
+  .force('charge', d3.forceManyBody().strength(d => {
+    if (d.type==='mayor') return -1600;
+    if (d.id==='peacock') return -950;
+    if (d.type==='judicial') return -800;
+    if (d.type==='topic') return -700;
+    if (d.type==='enforcement') return -650;
+    return -480;
+  }))
+  .force('center', d3.forceCenter(W/2, H/2).strength(0.035))
+  .force('collision', d3.forceCollide(d => nodeR(d)+14))
+  .alphaDecay(0.011);
+
+const linkSel = g.append('g').selectAll('line').data(links).join('line')
+  .attr('class','link')
+  .attr('stroke', d => {
+    const sId = d.source.id||d.source;
+    const sNode = nodeMap[sId];
+    return sNode ? d3.color(nodeColor(sNode)).copy({opacity:.2}) : 'rgba(255,255,255,0.05)';
+  })
+  .attr('stroke-width', d => Math.max(0.4,(d.strength||1)*0.55));
+
+const nodeSel = g.append('g').selectAll('g').data(nodes).join('g')
+  .attr('class','node')
+  .call(d3.drag()
+    .on('start',(e,d)=>{ if(!e.active) sim.alphaTarget(.2).restart(); d.fx=d.x; d.fy=d.y; })
+    .on('drag', (e,d)=>{ d.fx=e.x; d.fy=e.y; })
+    .on('end',  (e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; })
+  );
+
+nodeSel.append('circle')
+  .attr('r', d => nodeR(d)+5).attr('fill','none')
+  .attr('stroke', d => d3.color(nodeColor(d)).copy({opacity:.1}))
+  .attr('stroke-width', 1.5);
+nodeSel.append('circle')
+  .attr('r', d => nodeR(d))
+  .attr('fill', d => `url(#grad-${d.type})`)
+  .attr('stroke', d => nodeColor(d))
+  .attr('stroke-width', d => (d.type==='mayor'||d.type==='judicial') ? 2.5 : 1.5)
+  .attr('filter', d => (d.type==='mayor'||d.id==='peacock'||d.type==='judicial') ? 'url(#glow)' : null);
+
+nodeSel.each(function(d) {
+  const el = d3.select(this), lines = d.label.split('\n'), r = nodeR(d);
+  const fs = r>25?9.5:r>18?8.5:7.5, lh = fs*1.2, th = lines.length*lh;
+  lines.forEach((line,i) => {
+    el.append('text')
+      .attr('text-anchor','middle').attr('dominant-baseline','middle')
+      .attr('y', -th/2+i*lh+lh/2).attr('fill', fontColor(d))
+      .attr('font-size', fs).attr('font-family',"'Courier Prime','Courier New',monospace")
+      .attr('font-weight', (d.type==='mayor'||d.type==='judicial') ? 700 : 400)
+      .attr('letter-spacing','0.04em').text(line);
+  });
+});
+
+const tooltip = d3.select('#tooltip');
+const API_BASE = 'http://localhost:8000/api/v1/nodes';
+let selected = null;
+
+function posTooltip(e) {
+  const [mx,my] = d3.pointer(e, document.body);
+  tooltip.style('left', Math.min(mx+18,window.innerWidth-290)+'px')
+         .style('top',  Math.min(my-10,window.innerHeight-180)+'px');
+}
+
+async function fetchAndShow(e, d) {
+  posTooltip(e); tooltip.style('opacity',1);
+  d3.select('#tt-name').text(d.label.replace(/\n/g,' '));
+  d3.select('#tt-role').text(d.role);
+  d3.select('#tt-desc').html('<span style="color:rgba(255,255,255,0.2);font-size:8px;letter-spacing:.1em">· · · fetching signal</span>');
+  try {
+    const res = await fetch(`${API_BASE}/${d.id}/signal`);
+    if (!res.ok) throw new Error(res.status);
+    const payload = await res.json();
+    const sig = payload?.signal;
+    if (!sig) throw new Error('no signal');
+    const gates = sig.gates;
+    const gb = v => { const p=Math.round(v*100),c=v>.4?'#5ecf8a':'#e8572a'; return `<span style="color:${c}">${p}</span>`; };
+    d3.select('#tt-desc').html(`
+      <span style="color:rgba(255,255,255,0.22);font-size:7.5px;letter-spacing:.14em">
+        ${sig.freshness_label} · ${sig.source_domain} · ${new Date(sig.published_at).toLocaleDateString()}
+      </span><br><br>
+      <span style="font-size:9.5px;color:rgba(255,255,255,0.75);line-height:1.6">${sig.summary}</span><br><br>
+      <span style="font-size:7px;letter-spacing:.1em;color:rgba(255,255,255,0.2)">
+        CRED ${gb(gates.credibility)} &nbsp; VOL ${gb(gates.volume)} &nbsp; VEL ${gb(gates.velocity)} &nbsp; NOV ${gb(gates.novelty)}
+      </span>
+    `);
+  } catch {
+    d3.select('#tt-desc').html(
+      `<span style="color:rgba(255,120,80,0.5);font-size:7.5px;letter-spacing:.1em">API OFFLINE — STATIC FALLBACK</span><br><br>` +
+      `<span style="color:rgba(255,255,255,0.35);font-size:8.5px">${d.desc}</span>`
+    );
+  }
+}
+
+nodeSel
+  .on('mousemove', (e,d) => { if(!selected) posTooltip(e); })
+  .on('mouseenter',(e,d) => { if(!selected) fetchAndShow(e,d); })
+  .on('mouseleave',() => { if(!selected) tooltip.style('opacity',0); });
+
+nodeSel.on('click', function(e,d) {
+  e.stopPropagation();
+  if (selected===d.id) { selected=null; resetHL(); tooltip.style('opacity',0); return; }
+  selected = d.id;
+  fetchAndShow(e,d);
+  const conn = new Set([d.id]);
+  links.forEach(l => {
+    const s=typeof l.source==='object'?l.source.id:l.source;
+    const t=typeof l.target==='object'?l.target.id:l.target;
+    if (s===d.id) conn.add(t);
+    if (t===d.id) conn.add(s);
+  });
+  nodeSel.selectAll('circle').attr('opacity', n => conn.has(n.id)?1:.08);
+  nodeSel.selectAll('text').attr('opacity', n => conn.has(n.id)?1:.05);
+  linkSel.attr('opacity', l => {
+    const s=typeof l.source==='object'?l.source.id:l.source;
+    const t=typeof l.target==='object'?l.target.id:l.target;
+    return (s===d.id||t===d.id)?1:.02;
+  }).attr('stroke-width', l => {
+    const s=typeof l.source==='object'?l.source.id:l.source;
+    const t=typeof l.target==='object'?l.target.id:l.target;
+    return (s===d.id||t===d.id)?2.5:.4;
+  });
+});
+
+svg.on('click', () => { selected=null; resetHL(); tooltip.style('opacity',0); });
+function resetHL() {
+  nodeSel.selectAll('circle').attr('opacity',1);
+  nodeSel.selectAll('text').attr('opacity',1);
+  linkSel.attr('opacity',1).attr('stroke-width', d => Math.max(.4,(d.strength||1)*.55));
+}
+
+sim.on('tick', () => {
+  linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  nodeSel.attr('transform', d=>`translate(${d.x},${d.y})`);
+});
+
+window.addEventListener('resize', () => {
+  const nW=window.innerWidth, nH=window.innerHeight;
+  svg.attr('width',nW).attr('height',nH);
+  sim.force('center',d3.forceCenter(nW/2,nH/2)).alpha(.1).restart();
+});
+</script>
+</body>
+</html>
