@@ -443,7 +443,7 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
 </head>
 <body>
 
-<a class="skip" href="#controls">Skip to the map</a>
+<a class="skip" href="#controls">Skip to controls</a>
 
 <!-- ═══ 1 · Header strip ═══════════════════════════════════════════════════ -->
 <header class="strip">
@@ -563,7 +563,7 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
 
 /* ── Configuration ────────────────────────────────────────────────────────── */
 
-const API_BASE      = 'http://localhost:8000/api/v1/nodes';
+const API_BASE      = '/api/v1/nodes';
 const NOTITIA_BASE  = 'https://notitiacivica.com';
 const FRESH_LIVE_H  = 6;    // < 6h  → LIVE
 const FRESH_RECENT_H= 24;   // < 24h → RECENT, else STALE
@@ -920,7 +920,7 @@ function radius(n) {
 function hoursSince(iso) {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;
-  return (Date.now() - t) / 3.6e6;
+  return Math.max(0, (Date.now() - t) / 3.6e6);
 }
 
 function stateFor(hours) {
@@ -1443,16 +1443,38 @@ function buildControls() {
   });
 
   const sigHost = document.getElementById('sig-chips');
-  sigHost.innerHTML = SIG_FILTERS.map(s =>
-    `<button type="button" class="chip" role="radio" data-sig="${s}" aria-checked="${s === 'all'}">${esc(s.toUpperCase())}</button>`).join('');
+  sigHost.innerHTML = SIG_FILTERS.map((s, i) =>
+    `<button type="button" class="chip" role="radio" data-sig="${s}" aria-checked="${s === 'all'}" tabindex="${i === 0 ? 0 : -1}">${esc(s.toUpperCase())}</button>`).join('');
+
+  function activateSig(b) {
+    sigFilter = b.dataset.sig;
+    sigHost.querySelectorAll('[data-sig]').forEach(x => {
+      const active = x.dataset.sig === sigFilter;
+      x.setAttribute('aria-checked', String(active));
+      x.tabIndex = active ? 0 : -1;
+    });
+    b.focus();
+    unpin();
+    refresh();
+  }
+
   sigHost.addEventListener('click', e => {
     const b = e.target.closest('[data-sig]');
     if (!b) return;
-    sigFilter = b.dataset.sig;
-    sigHost.querySelectorAll('[data-sig]').forEach(x =>
-      x.setAttribute('aria-checked', String(x.dataset.sig === sigFilter)));
-    unpin();
-    refresh();
+    activateSig(b);
+  });
+
+  sigHost.addEventListener('keydown', e => {
+    const buttons = Array.from(sigHost.querySelectorAll('[data-sig]'));
+    const idx = buttons.indexOf(document.activeElement);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      activateSig(buttons[(idx + 1) % buttons.length]);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      activateSig(buttons[(idx - 1 + buttons.length) % buttons.length]);
+    }
   });
 }
 
