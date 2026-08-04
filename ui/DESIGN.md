@@ -62,8 +62,8 @@ color-vision deficiency and greyscale print.
 |---|---|---|---|
 | LIVE | < 6h | `--live` `#61A96F` | solid 1.8px + animated pulse ring |
 | RECENT | < 24h | `--recent` `#D9A441` | solid 1.6px + static outer ring |
-| STALE | ≥ 24h | `--stale` `#7A7266` | dashed 1.4px |
-| NO SIGNAL | API offline or no record | `--none` `#514B43` | dashed 1px, no centre dot |
+| STALE | ≥ 24h | `--stale` `#8A8175` | dashed 1.4px |
+| NO SIGNAL | API offline or no record | `--none` `#6A6357` | dashed 1px, no centre dot |
 
 Node fill is the state color at 18% opacity; stroke is the state color at full.
 Node **size** is relationship degree, not signal state.
