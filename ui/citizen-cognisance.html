@@ -476,7 +476,7 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
   </section>
 
   <!-- ═══ 3 · Control bar ══════════════════════════════════════════════════ -->
-  <section class="controls" id="controls" aria-label="Map filters">
+  <section class="controls" id="controls" aria-label="Map filters" tabindex="-1">
     <div class="shell controls-in">
       <div class="ctl-group">
         <span class="ctl-label" id="lbl-type">Node type</span>
@@ -920,7 +920,9 @@ function radius(n) {
 function hoursSince(iso) {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;
-  return Math.max(0, (Date.now() - t) / 3.6e6);
+  const h = (Date.now() - t) / 3.6e6;
+  if (h < 0) return null;
+  return h;
 }
 
 function stateFor(hours) {
