@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CITIZEN COGNISANCE · pdx-1i — Portland Metropolitan Political Intelligence</title>
+<meta name="description" content="A live map of Portland's political ecosystem: who holds authority over whom, where the money moves, and where the friction is. Signal data from the SPEC-1 engine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   MCM EDITORIAL — pdx-1i public surface.
+
+   Warm neutrals and near-black carry every surface; one accent (deep teal)
+   carries the product. Hierarchy is type and rule weight, not decoration.
+   The full system is written up in ui/DESIGN.md.
+
+   This is NOT the SWITCHBOARD phosphor palette in ui/webmap.html — that one is
+   for internal ops and does not appear on public surfaces.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Page surfaces — warm neutrals, never pure white or pure black */
+  --paper: #F5F1E8;
+  --paper-2: #EFEADD;
+  --card: #FBF8F1;
+  --ink: #1A1815;
+  --ink-2: #3E3830;
+  --ink-3: #6B635A;
+  --rule: #DCD4C4;
+  --rule-2: #C9BFAC;
+
+  /* pdx-1i accent — deep muted teal: civic, not governmental */
+  --accent: #14625C;
+  --accent-2: #2E8C82;
+  --accent-wash: #E2EBE7;
+
+  /* The plate — the dark warm ground the map is drawn on */
+  --plate: #1C1A17;
+  --plate-2: #26231E;
+  --plate-rule: #3A352E;
+  --plate-ink: #EDE7DA;
+  --plate-ink-2: #9A9184;
+
+  /* Signal state */
+  --live: #61A96F;
+  --recent: #D9A441;
+  --stale: #8A8175;
+  --none: #6A6357;
+
+  /* Relationship type */
+  --rel-oversight: #4C7FA0;
+  --rel-funding: #B98526;
+  --rel-conflict: #BF5B45;
+  --rel-coalition: #3E8F84;
+
+  --f-display: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --f-body: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, 'Courier New', monospace;
+
+  --shell: 1440px;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers are data. Data is tabular. */
+.mono, .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plate :focus-visible, svg :focus-visible { outline-color: var(--accent-2); }
+
+.skip {
+  position: absolute; left: 12px; top: -60px; z-index: 100;
+  background: var(--accent); color: var(--paper);
+  padding: 9px 16px; font-family: var(--f-mono); font-size: 11px;
+  letter-spacing: .12em; text-transform: uppercase;
+  transition: top .12s;
+}
+.skip:focus { top: 12px; text-decoration: none; }
+
+.shell { max-width: var(--shell); margin: 0 auto; padding: 0 26px; }
+
+/* ── 1 · Header strip ────────────────────────────────────────────────────── */
+
+.strip {
+  position: sticky; top: 0; z-index: 60;
+  background: var(--paper);
+  border-top: 2px solid var(--accent);
+  border-bottom: 1px solid var(--rule);
+}
+.strip-in {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; gap: 20px; min-height: 62px;
+}
+.mark { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; }
+.mark h1 {
+  font-family: var(--f-display); font-weight: 700; font-size: 19px;
+  letter-spacing: .26em; text-transform: uppercase; line-height: 1;
+  color: var(--ink);
+}
+.submark {
+  font-family: var(--f-mono); font-weight: 500; font-size: 10px;
+  letter-spacing: .16em; color: var(--ink-3);
+  border-left: 1px solid var(--rule-2); padding-left: 11px; line-height: 1;
+}
+.descriptor {
+  font-family: var(--f-mono); font-size: 10px; font-weight: 500;
+  letter-spacing: .19em; text-transform: uppercase; color: var(--ink-3);
+  text-align: center; white-space: nowrap;
+}
+
+/* ── 2 · Signal status badge ─────────────────────────────────────────────── */
+
+.badge {
+  justify-self: end;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--card); border: 1px solid var(--rule-2);
+  padding: 5px 12px;
+  font-family: var(--f-mono); font-size: 10.5px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em; color: var(--ink-2); white-space: nowrap;
+}
+.badge .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-3); flex-shrink: 0;
+}
+.badge[data-state="online"] .dot { background: var(--live); animation: breathe 2.6s ease-in-out infinite; }
+.badge[data-state="offline"] .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--stale); }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* ── 3 · Lede ────────────────────────────────────────────────────────────── */
+
+.lede { padding: 46px 0 34px; }
+.lede-in { max-width: 820px; }
+.lede h2 {
+  font-family: var(--f-display); font-weight: 600;
+  font-size: clamp(22px, 3.1vw, 34px); line-height: 1.22; letter-spacing: -.005em;
+  color: var(--ink);
+}
+.lede h2 .num { font-weight: 700; }
+.lede p {
+  margin-top: 14px; font-size: 16px; line-height: 1.6;
+  color: var(--ink-2); max-width: 62ch;
+}
+.lede .disclaim {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule);
+  font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .07em;
+  color: var(--ink-3); max-width: 74ch; line-height: 1.7;
+}
+
+/* ── 4 · Control bar ─────────────────────────────────────────────────────── */
+
+.controls {
+  background: var(--paper-2);
+  border-top: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2);
+}
+/* These share .shell, so only the block padding may be set — overriding the
+   shorthand would wipe out the shell's inline gutters. */
+.controls-in {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 12px 30px; padding-block: 12px;
+}
+.ctl-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctl-label {
+  font-family: var(--f-mono); font-weight: 600; font-size: 10px;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3);
+}
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-family: var(--f-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase;
+  padding: 5px 11px; cursor: pointer;
+  background: transparent; color: var(--ink-3);
+  border: 1px solid var(--rule-2);
+  transition: background .12s, color .12s, border-color .12s;
+}
+.chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.chip[aria-pressed="true"], .chip[aria-checked="true"] {
+  background: var(--accent-wash); border-color: var(--accent); color: var(--accent);
+}
+.chip .glyph { display: inline-block; width: 9px; margin-right: 6px; vertical-align: middle; }
+.ctl-count {
+  margin-left: auto; font-family: var(--f-mono); font-size: 10.5px;
+  font-variant-numeric: tabular-nums; letter-spacing: .1em; color: var(--ink-3);
+}
+
+/* ── 5 · The plate (viz) ─────────────────────────────────────────────────── */
+
+.stage { background: var(--plate); position: relative; }
+.plate {
+  position: relative; height: clamp(520px, 74vh, 840px);
+  max-width: var(--shell); margin: 0 auto;
+}
+#graph { display: block; width: 100%; height: 100%; cursor: grab; }
+#graph:active { cursor: grabbing; }
+
+.node { cursor: pointer; }
+.node .body { transition: fill-opacity .12s, stroke-width .12s; }
+.node:hover .body { fill-opacity: .42; }
+.node .ring-focus { fill: none; stroke: var(--accent-2); stroke-width: 2; opacity: 0; }
+.node:focus { outline: none; }
+.node:focus-visible .ring-focus { opacity: 1; }
+.node text { pointer-events: none; font-family: var(--f-display); font-weight: 500; }
+.node.dim { opacity: .09; pointer-events: none; }
+.link { fill: none; stroke-linecap: round; }
+.link.dim { opacity: .035; }
+
+@keyframes pulse {
+  0%   { transform: scale(1);    opacity: .55; }
+  70%  { transform: scale(1.85); opacity: 0; }
+  100% { transform: scale(1.85); opacity: 0; }
+}
+.pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.4s ease-out infinite; }
+
+/* Floating chrome on the plate */
+.plate-box {
+  position: absolute; z-index: 5;
+  background: var(--plate-2); border: 1px solid var(--plate-rule);
+  color: var(--plate-ink-2);
+}
+.hint {
+  left: 18px; bottom: 16px; padding: 9px 12px;
+  font-family: var(--f-mono); font-size: 9.5px; letter-spacing: .13em;
+  text-transform: uppercase; line-height: 1.9;
+}
+.zoom { right: 18px; bottom: 16px; display: flex; }
+.zoom button {
+  width: 32px; height: 32px; background: transparent; border: 0;
+  border-left: 1px solid var(--plate-rule);
+  color: var(--plate-ink); font-family: var(--f-mono); font-size: 13px;
+  cursor: pointer; line-height: 1;
+}
+.zoom button:first-child { border-left: 0; }
+.zoom button:hover { background: #322e28; }
+.zoom .reset { font-size: 9.5px; letter-spacing: .1em; width: 54px; }
+
+/* ── 6 · Legend row ──────────────────────────────────────────────────────── */
+
+.key { background: var(--paper-2); border-bottom: 1px solid var(--rule); }
+/* Three equal columns keep the rules vertical and the groups balanced; items
+   wrap inside their own column rather than pushing a whole group onto row two. */
+.key-in { display: grid; grid-template-columns: repeat(3, 1fr); }
+.key-group {
+  padding: 16px 26px 16px 0; margin-right: 26px;
+  border-right: 1px solid var(--rule-2);
+}
+.key-group:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
+@media (max-width: 1180px) { .key-in { grid-template-columns: 1fr 1fr; }
+  .key-group:nth-child(2) { border-right: 0; margin-right: 0; } }
+.key-group h3 {
+  font-family: var(--f-mono); font-weight: 600; font-size: 10px;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: 9px;
+}
+.key-items { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.key-item {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+.key-bar { width: 16px; height: 2px; flex-shrink: 0; }
+
+/* ── 7 · Tooltip card ────────────────────────────────────────────────────── */
+
+#tip {
+  position: fixed; z-index: 80; width: 300px; display: none;
+  background: var(--card); border: 1px solid var(--rule-2);
+  border-top: 3px solid var(--accent);
+  box-shadow: 0 10px 30px rgba(26, 24, 21, .17);
+  pointer-events: none;
+}
+#tip.show { display: block; }
+#tip.pinned { pointer-events: auto; }
+.tip-in { padding: 13px 15px 14px; }
+.tip-head { display: flex; align-items: flex-start; gap: 10px; }
+.tip-state {
+  font-family: var(--f-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3);
+  display: flex; align-items: center; gap: 6px;
+}
+.tip-state .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.tip-close {
+  margin-left: auto; background: transparent; border: 1px solid var(--rule-2);
+  color: var(--ink-3); font-family: var(--f-mono); font-size: 11px; line-height: 1;
+  width: 20px; height: 20px; cursor: pointer; display: none;
+}
+#tip.pinned .tip-close { display: block; }
+.tip-close:hover { border-color: var(--ink); color: var(--ink); }
+.tip-name {
+  font-family: var(--f-display); font-weight: 700; font-size: 17px;
+  line-height: 1.2; letter-spacing: .01em; color: var(--ink); margin-top: 8px;
+}
+.tip-role {
+  font-family: var(--f-mono); font-size: 10px; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+  margin-top: 5px; line-height: 1.35;
+}
+.tip-rule { height: 1px; background: var(--rule); margin: 12px 0; }
+.tip-body { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); }
+.tip-loading {
+  font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.tip-meta {
+  font-family: var(--f-mono); font-size: 10.5px; font-variant-numeric: tabular-nums;
+  letter-spacing: .07em; color: var(--ink-3);
+}
+.tip-cta {
+  display: inline-block; margin-top: 10px;
+  font-family: var(--f-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--accent);
+}
+
+/* Gate bars — the 0.40 threshold is marked on every track */
+.gates-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--f-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: 8px;
+}
+.gate {
+  display: grid; grid-template-columns: 34px 1fr 32px;
+  align-items: center; gap: 9px; margin-bottom: 5px;
+}
+.gate-k {
+  font-family: var(--f-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+.gate-track { position: relative; height: 4px; background: var(--rule); }
+.gate-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.gate-fill.under { background: var(--rel-conflict); }
+.gate-track::after {
+  content: ''; position: absolute; left: var(--gate-threshold, 40%); top: -2px; bottom: -2px;
+  width: 1px; background: var(--ink-3);
+}
+.gate-v {
+  font-family: var(--f-mono); font-size: 10px; font-variant-numeric: tabular-nums;
+  text-align: right; color: var(--ink-2);
+}
+
+/* ── 8 · Signal list (mobile fallback / no-D3 fallback) ──────────────────── */
+
+.list-wrap { display: none; background: var(--paper); padding: 22px 0 30px; }
+.list-wrap.show { display: block; }
+.list-note {
+  font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
+  padding-bottom: 14px; border-bottom: 1px solid var(--rule); margin-bottom: 18px;
+}
+.cards { display: grid; gap: 12px; }
+.scard {
+  background: var(--card); border: 1px solid var(--rule);
+  border-left: 3px solid var(--stale); padding: 13px 15px 14px;
+}
+.scard[data-state="live"] { border-left-color: var(--live); }
+.scard[data-state="recent"] { border-left-color: var(--recent); }
+.scard[data-state="stale"] { border-left-color: var(--stale); }
+.scard[data-state="none"] { border-left-color: var(--none); }
+.scard-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-family: var(--f-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+}
+.scard-state { display: flex; align-items: center; gap: 6px; }
+.scard-state .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pips { display: flex; align-items: center; gap: 4px; }
+.pip { width: 6px; height: 6px; border: 1px solid var(--accent); }
+.pip.on { background: var(--accent); }
+.scard h3 {
+  font-family: var(--f-display); font-weight: 700; font-size: 17px;
+  line-height: 1.2; color: var(--ink); margin-top: 9px;
+}
+.scard .role {
+  font-family: var(--f-mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3); margin-top: 5px;
+}
+.scard p { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin-top: 10px; }
+.scard .meta {
+  font-family: var(--f-mono); font-size: 10.5px; font-variant-numeric: tabular-nums;
+  letter-spacing: .07em; color: var(--ink-3); margin-top: 10px;
+}
+.list-empty {
+  font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3); padding: 30px 0;
+}
+
+/* ── 9 · Footer ──────────────────────────────────────────────────────────── */
+
+footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
+.foot-in {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 16px; padding-block: 22px 26px;
+  font-family: var(--f-mono); font-size: 10px; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.foot-in .c { text-align: center; }
+.foot-in .r { text-align: right; }
+.foot-in strong { color: var(--ink); font-weight: 600; }
+/* The product code is lowercase by definition — the footer's caps must not eat it. */
+.foot-in .code { text-transform: none; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .descriptor { display: none; }
+  .strip-in { grid-template-columns: 1fr auto; }
+}
+@media (max-width: 768px) {
+  .shell { padding: 0 18px; }
+  .strip-in { grid-template-columns: 1fr; gap: 8px; padding-block: 11px; }
+  .badge { justify-self: start; }
+  .lede { padding: 30px 0 24px; }
+  .stage { display: none; }
+  .key { display: none; }
+  .controls-in { padding-block: 11px; gap: 10px 18px; }
+  .ctl-count { margin-left: 0; width: 100%; }
+  .foot-in { grid-template-columns: 1fr; gap: 8px; text-align: left; }
+  .foot-in .c, .foot-in .r { text-align: left; }
+}
+@media (max-width: 620px) {
+  .mark h1 { font-size: 16px; letter-spacing: .2em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip" href="#controls">Skip to the map</a>
+
+<!-- ═══ 1 · Header strip ═══════════════════════════════════════════════════ -->
+<header class="strip">
+  <div class="shell strip-in">
+    <div class="mark">
+      <h1>Citizen Cognisance</h1>
+      <span class="submark">pdx-1i · SPEC-1</span>
+    </div>
+    <div class="descriptor">Portland Metropolitan Political Intelligence</div>
+    <div class="badge" id="badge" data-state="loading" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span><span id="badge-text">polling signal index…</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ═══ 2 · Lede ═════════════════════════════════════════════════════════ -->
+  <section class="lede">
+    <div class="shell"><div class="lede-in">
+      <h2><span class="num" id="n-nodes">—</span> nodes. <span class="num" id="n-links">—</span> relationships.
+        Live signal from Portland's political ecosystem.</h2>
+      <p>Who holds authority over whom, where the money moves, and where the friction
+        sits — drawn from public records and refreshed as the engine indexes them.
+        Built for reporters, researchers and residents who need the structure, not the story.</p>
+      <p class="disclaim">The map reports structure and timing. A tie is a documented
+        relationship, not an allegation, and node size is a count of relationships — nothing
+        more is claimed by it.</p>
+    </div></div>
+  </section>
+
+  <!-- ═══ 3 · Control bar ══════════════════════════════════════════════════ -->
+  <section class="controls" id="controls" aria-label="Map filters">
+    <div class="shell controls-in">
+      <div class="ctl-group">
+        <span class="ctl-label" id="lbl-type">Node type</span>
+        <div class="chips" id="cat-chips" role="group" aria-labelledby="lbl-type"></div>
+      </div>
+      <div class="ctl-group">
+        <span class="ctl-label" id="lbl-sig">Signal</span>
+        <div class="chips" id="sig-chips" role="radiogroup" aria-labelledby="lbl-sig"></div>
+      </div>
+      <div class="ctl-count" id="ctl-count">—</div>
+    </div>
+  </section>
+
+  <!-- ═══ 4 · The viz ══════════════════════════════════════════════════════ -->
+  <section class="stage" id="stage" aria-label="Political relationship map">
+    <div class="plate">
+      <svg id="graph" role="group" aria-labelledby="graph-title"><title id="graph-title">Force-directed map of Portland metropolitan political relationships</title></svg>
+
+      <div class="plate-box hint" aria-hidden="true">
+        Drag to pan · ⌘/Ctrl + scroll to zoom<br>
+        Click a node to pin its signal · Tab to step through
+      </div>
+
+      <div class="plate-box zoom" role="group" aria-label="Zoom">
+        <button type="button" id="z-out" aria-label="Zoom out">−</button>
+        <button type="button" id="z-in" aria-label="Zoom in">+</button>
+        <button type="button" class="reset" id="z-reset">FIT</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 5 · Legend ═══════════════════════════════════════════════════════ -->
+  <section class="key" aria-label="Legend">
+    <div class="shell key-in">
+      <div class="key-group">
+        <h3>Relationship</h3>
+        <div class="key-items" id="key-rel"></div>
+      </div>
+      <div class="key-group">
+        <h3>Signal state</h3>
+        <div class="key-items" id="key-state"></div>
+      </div>
+      <div class="key-group">
+        <h3>Node type</h3>
+        <div class="key-items" id="key-cat"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 6 · Mobile / no-D3 fallback ══════════════════════════════════════ -->
+  <section class="list-wrap" id="list-wrap" aria-label="Ranked signal list">
+    <div class="shell">
+      <div class="list-note" id="list-note">Ranked by signal freshness</div>
+      <div class="cards" id="cards"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══ 7 · Footer ═════════════════════════════════════════════════════════ -->
+<footer>
+  <div class="shell foot-in">
+    <div class="l"><strong>Citizen Cognisance</strong> · <span class="code">pdx-1i</span></div>
+    <div class="c">Powered by SPEC-1 · EVASTARARCANA LLC</div>
+    <div class="r"><a href="https://notitiacivica.com" id="foot-notitia">Notitia Civica ↗</a></div>
+  </div>
+</footer>
+
+<!-- ═══ Tooltip card ═══════════════════════════════════════════════════════ -->
+<div id="tip" role="dialog" aria-live="polite" aria-label="Node signal"><div class="tip-in" id="tip-in"></div></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   CITIZEN COGNISANCE · pdx-1i landing page
+
+   One file, no build step. D3 from cdnjs, everything else inline. All state
+   lives in the module-scope variables below — no localStorage, no sessionStorage,
+   no analytics, no cookies.
+
+   Signal freshness, gate scores, summaries and coverage links come from the API
+   and nowhere else. The static node/tie dataset exists so the map still draws
+   when the API is down; it never fabricates a signal state.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Configuration ────────────────────────────────────────────────────────── */
+
+const API_BASE      = 'http://localhost:8000/api/v1/nodes';
+const NOTITIA_BASE  = 'https://notitiacivica.com';
+const FRESH_LIVE_H  = 6;    // < 6h  → LIVE
+const FRESH_RECENT_H= 24;   // < 24h → RECENT, else STALE
+const GATE_THRESHOLD= 0.40;
+const FETCH_TIMEOUT = 5000;
+const FETCH_POOL    = 6;
+const MOBILE_Q      = '(max-width: 768px)';
+
+/* ── Static dataset ───────────────────────────────────────────────────────── *
+   cat: people | issues | entities | jurisdictions  → filter + node shape
+   desc: the fallback shown when no live signal exists for the node.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const NODES = [
+  // ── Executive ──
+  { id:'wilson', cat:'people', label:'Keith\nWilson', role:'Mayor',
+    desc:'First mayor under the new charter. Elected 2024. Former trucking executive. Led the shelter plan targeting the unsheltered population by Dec 2025. Author of the camping ban enforcement push.' },
+  { id:'city_admin', cat:'people', label:'Raymond\nLee III', role:'City Administrator',
+    desc:'Appointed by Mayor Wilson Dec 2025. Professional manager overseeing all city bureaus and day-to-day operations. Replaced the old "five mini-mayors" commission model. PPB Chief Bob Day reports directly to him.' },
+  { id:'auditor', cat:'people', label:'Simone\nRede', role:'City Auditor',
+    desc:'Independently elected. First elected May 2022, reelected November 2024. Provides fiscal and operational oversight of city operations. Not part of city council or under the mayor.' },
+  { id:'city_attorney', cat:'people', label:'City\nAttorney', role:'Portland City Attorney',
+    desc:'Robert Taylor (as of 2025). Legal counsel for the City of Portland. Defends the city in litigation — camping ban suits, protest arrests, employment claims, civil rights cases. Works with both mayor and council.' },
+
+  // ── Council ──
+  { id:'pirtle', cat:'people', label:'Elana\nPirtle-Guiney', role:'Councilor · D2 · fmr. President',
+    desc:'Inaugural Council President Jan 2025 – Jan 14 2026. D2 (Cully, St. Johns). Led formation of 8 policy committees. Peacock caucus. Oregon Ethics Commission investigation over an Aug 2025 private quorum meeting. Replaced as president by Dunphy.' },
+  { id:'clark', cat:'people', label:'Olivia\nClark', role:'Council VP · D4',
+    desc:'Council VP since January 14 2026, succeeding Koyama Lane. Represents D4 (NW, Downtown, Sellwood). More centrist. Counterbalance to the Peacock caucus on enforcement and budget.' },
+  { id:'avalos', cat:'people', label:'Candace\nAvalos', role:'Councilor · D1',
+    desc:'D1 (Powellhurst-Gilbert, Hazelwood, Centennial). DSA member. Progressive caucus. Four-year term 2025–2028.' },
+  { id:'dunphy', cat:'people', label:'Jamie\nDunphy', role:'Council President · D1',
+    desc:'Council President since January 14 2026, succeeding Pirtle-Guiney. D1, four-year term 2025–2028. Represents East Portland neighborhoods including Powellhurst-Gilbert, Hazelwood and Centennial. Generally moderate.' },
+  { id:'lsmith', cat:'people', label:'Loretta\nSmith', role:'Councilor · D1',
+    desc:'D1, four-year term 2025–2028. Former Multnomah County Commissioner. Brings county-level perspective on homelessness and services.' },
+  { id:'kanal', cat:'people', label:'Sameer\nKanal', role:'Councilor · D2',
+    desc:'D2 (Cully, St. Johns, Concordia). Progressive caucus. Four-year term 2025–2028.' },
+  { id:'ryan', cat:'people', label:'Dan Ryan', role:'Councilor · D2',
+    desc:'D2. Veteran of the old city commission. Moderate voice. Often bridges the Peacock caucus and the conservative bloc.' },
+  { id:'koyama', cat:'people', label:'Tiffany\nKoyama Lane', role:'Councilor · D3',
+    desc:'D3 (Montavilla, Brentwood). Former Council VP. DSA member. Progressive caucus. Two-year term 2025–2026.' },
+  { id:'morillo', cat:'people', label:'Angelita\nMorillo', role:'Councilor · D3',
+    desc:'D3. DSA member. Proposed a $4.3M cut to the Impact Reduction Program (camp sweeps) in Nov 2025. Progressive caucus. Two-year term.' },
+  { id:'novick', cat:'people', label:'Steve\nNovick', role:'Councilor · D3',
+    desc:'D3. Veteran Portland politician; previously served on the old city commission. Progressive caucus. Two-year term 2025–2026.' },
+  { id:'green', cat:'people', label:'Mitch\nGreen', role:'Councilor · D4',
+    desc:'D4 (NW, Downtown, Sellwood). DSA member. Co-sponsored the Morillo sweep-cut amendment. Progressive caucus. Two-year term 2025–2026.' },
+  { id:'zimmerman', cat:'people', label:'Eric\nZimmerman', role:'Councilor · D4',
+    desc:'D4, two-year term 2025–2026. Generally moderate on public safety and budget.' },
+  { id:'peacock', cat:'entities', label:'"Peacock"\nCaucus', role:'Progressive Caucus · 6 members',
+    desc:'Six left-leaning councilors forming the council majority, nicknamed "Peacock". Members: Pirtle-Guiney, Kanal, Koyama Lane, Morillo, Novick, Green. Under Oregon Ethics Commission investigation over a private Aug 2025 meeting.' },
+
+  // ── Judicial ──
+  { id:'fed_court', cat:'jurisdictions', label:'US District\nCourt · D. Or.', role:'Federal · Chief Judge Marco Hernandez',
+    desc:'Hears federal civil rights cases — Portland protest litigation, houseless rights lawsuits in the Martin v. Boise lineage, and 42 USC §1983 actions against PPB. Key check on enforcement overreach.' },
+  { id:'ore_supreme', cat:'jurisdictions', label:'Oregon\nSupreme Court', role:'State High Court',
+    desc:'Chief Justice Meagan Flynn. Handles constitutional challenges to camping bans, property rights, Measure 110 legality and land use law. Sets precedent that flows down to circuit and city-level enforcement.' },
+  { id:'ore_appeals', cat:'jurisdictions', label:'Oregon\nCourt of Appeals', role:'Intermediate Appellate Court',
+    desc:'Hears appeals from circuit courts including Multnomah County — eviction appeals, criminal conviction reviews, land use challenges, administrative law disputes. Eviction appeal volume rising with the housing crisis.' },
+  { id:'moco_circuit', cat:'jurisdictions', label:'Multnomah Co.\nCircuit Court', role:'Presiding Judge Judith Matarazzo',
+    desc:"Oregon's largest circuit court by caseload. Hears evictions, PPB-referred criminal matters and civil disputes. DA Vasquez cases are adjudicated here. LPSCC coordinating committee member." },
+  { id:'ore_tax_court', cat:'jurisdictions', label:'Oregon\nTax Court', role:'Specialized State Court',
+    desc:"Handles property tax appeals and business tax disputes. Relevant to Portland's planned business tax relief threshold changes and downtown commercial property reassessments." },
+
+  // ── Law enforcement ──
+  { id:'da', cat:'people', label:'Nathan\nVasquez', role:'Multnomah County District Attorney',
+    desc:"MoCo DA since Jan 1 2025. Defeated incumbent Mike Schmidt in the May 2024 primary. Former senior deputy DA in Schmidt's office; ran as a more traditional prosecutor. Less prosecutorial discretion, harder line on drug offenses and street crime." },
+  { id:'sheriff', cat:'people', label:'Nicole Morrisey\nO’Donnell', role:'Multnomah County Sheriff',
+    desc:"Sheriff since 2019, reelected 2022. Operates county jails. Distinct from Portland Police Bureau. Manages detention for the DA's cases and county-level enforcement. Interfaces with ICE on immigration holds." },
+  { id:'ppb_chief', cat:'people', label:'Bob Day', role:'51st Portland Police Bureau Chief',
+    desc:'Assumed office Oct 2023 under Wheeler, continued under Wilson. Bureau at roughly 809 sworn as of mid-2026 after retirements. Reports to City Administrator Raymond Lee III. Overseeing camping ban enforcement operations.' },
+
+  // ── County / regional ──
+  { id:'vega', cat:'people', label:'Jessica\nVega Pederson', role:'Multnomah County Chair',
+    desc:'County Chair overseeing a $420M homeless services budget. Proposed a 22% cut to homeless services in FY2026. Partner with Wilson on the 1,000 shelter bed commitment.' },
+  { id:'county', cat:'jurisdictions', label:'Multnomah\nCounty Board', role:'County Commission',
+    desc:'Lead agency for housing placement and homeless services under the city-county Homelessness Response System. Coordinates with the state on OHCS funding.' },
+  { id:'metro', cat:'jurisdictions', label:'Metro', role:'Regional Government',
+    desc:'Tri-county regional government. Council President Lynn Peterson. Oversees land use, transit and regional planning for the greater Portland area.' },
+
+  // ── State ──
+  { id:'kotek', cat:'people', label:'Tina Kotek', role:'Oregon Governor',
+    desc:'Declared a homelessness state of emergency on day one. Proposed an $800M housing and homelessness budget. Extended the emergency through early 2026. Direct line to both Wilson and Vega on shelter commitments.' },
+  { id:'ore_leg', cat:'jurisdictions', label:'Oregon\nLegislature', role:'State Legislature',
+    desc:'Passed HB 5011, a $2.6B housing bill that cut eviction prevention from the $173M requested to $33.6M. Passed HB 3644, the statewide shelter system framework.' },
+
+  // ── City bureaus / programs ──
+  { id:'psr', cat:'entities', label:'Portland\nStreet Response', role:'Non-Police Crisis Response',
+    desc:'Dispatches mental health professionals and medics to non-violent 911 calls. Sub-bureau within the Public Safety service area. The progressive caucus views it as an essential alternative to policing; the mayor supports it but it is under budget pressure.' },
+  { id:'fire_bds', cat:'entities', label:'Fire & Rescue /\nDev Services', role:'Core City Bureaus',
+    desc:'Portland Fire & Rescue and the Bureau of Development Services. BDS oversees permitting critical to housing supply. Both sit under the City Administrator after charter reform eliminated commissioner bureaus.' },
+  { id:'pbot', cat:'entities', label:'Portland Bureau of\nTransportation', role:'PBOT',
+    desc:'Manages city streets, sidewalks, bike infrastructure and right-of-way. Directly involved in encampment clearances on public ROW. Coordinates with IRP on sweep logistics. Under budget pressure from deferred maintenance.' },
+  { id:'housing_bureau', cat:'entities', label:'Portland\nHousing Bureau', role:'Housing Bureau',
+    desc:'Manages a $100M+ housing investment fund, rental assistance programs and affordable housing policy. Connects the housing crisis to both the city budget and the county HRS system. Reports to the City Administrator.' },
+  { id:'prosper', cat:'entities', label:'Prosper\nPortland', role:'City Economic Development Agency',
+    desc:"The city's economic development and urban renewal agency. Manages urban renewal districts and TIF funding. Key actor in downtown revitalization. Not directly under council but politically accountable to the mayor." },
+  { id:'trimet', cat:'entities', label:'TriMet', role:'Regional Transit · GM Selene Stephan',
+    desc:'Regional transit authority serving the Portland metro. Under pressure on safety and homelessness on buses and MAX. Coordinating with the city on service-connected shelter outreach. Budget cuts threaten frequency.' },
+  { id:'pps', cat:'entities', label:'Portland\nPublic Schools', role:'PPS',
+    desc:'Serves roughly 45,000 students. Under pressure on budget shortfalls, building closures and student stability issues linked to homelessness and housing displacement. School board independently elected.' },
+  { id:'irp', cat:'entities', label:'Impact\nReduction Program', role:'Encampment Management',
+    desc:"City team managing camp cleanups and removals. Primary node of friction: the Morillo/Green $4.3M cut amendment against the mayor's enforcement agenda. Coordinates with PPB, PBOT and PSR on sweep operations." },
+
+  // ── Issues ──
+  { id:'homelessness', cat:'issues', label:'Homelessness\n& Sweeps', role:'Issue',
+    desc:"Portland's leading flashpoint. Wilson: shelter-first, camping ban, sweeps. Progressives: housing investment, anti-sweep. Over 5,000 unsheltered residents; deaths quadrupled 2019–2023. Federal court constraints on enforcement via the Martin v. Boise lineage." },
+  { id:'housing', cat:'issues', label:'Housing\nCrisis', role:'Issue',
+    desc:'Rental costs outpace wages. Record eviction filings in Multnomah Circuit Court. Fewer permits issued. Ongoing tension between shelter beds and permanent housing investment.' },
+  { id:'budget', cat:'issues', label:'City\nBudget', role:'Issue',
+    desc:'The mayor writes the budget; council approves it. FY2026: major tension over IRP funding, service area cuts and the Vibrant Communities dissolution.' },
+  { id:'charter', cat:'issues', label:'Charter\nReform 2022', role:'Issue',
+    desc:'Voter-approved (57%) overhaul: 12-seat council, 4 districts, ranked-choice voting, mayor-council model. Ended 111 years of commission government.' },
+  { id:'rcv', cat:'issues', label:'Ranked-Choice\nVoting', role:'Issue',
+    desc:'Portland is now the only major U.S. city using Single Transferable Vote for council. 98 candidates ran in 2024. Three winners per district.' },
+  { id:'police', cat:'issues', label:'Public Safety\n& Police', role:'Issue',
+    desc:"PPB sits under the City Administrator's Public Safety service area. Camping ban enforcement began Nov 1 2025 — more than 40 arrested on outstanding warrants in ten days. DOJ oversight legacy frameworks still active." },
+  { id:'ethics', cat:'issues', label:'Ethics\nScrutiny', role:'Issue',
+    desc:'The Oregon Government Ethics Commission is investigating an Aug 2025 private meeting of the six-member progressive caucus, who represented a quorum of four council committees. Possible open meetings law violation.' },
+  { id:'business_tax', cat:'issues', label:'Business Tax\nRelief', role:'Issue',
+    desc:'Proposal to raise the income threshold from $50K to $75K in 2026 and $100K in 2027. A key PBA priority. Budget revenue impact under analysis.' },
+
+  // ── Business / civic ──
+  { id:'pba', cat:'entities', label:'Portland\nBusiness Alliance', role:'Regional Chamber of Commerce',
+    desc:'Represents major downtown employers. Lobbies on tax policy, public safety and downtown economic revitalization. Key advocate for business tax relief and aggressive sweep enforcement.' },
+  { id:'lwv', cat:'entities', label:'League of\nWomen Voters', role:'Civic Watchdog',
+    desc:'Non-partisan civic organization monitoring RCV implementation and the new council transition. Tracks open meetings compliance and Oregon Ethics Commission proceedings.' },
+];
+
+/* rel: oversight | funding | conflict | coalition */
+const LINKS = [
+  // Mayor
+  { source:'wilson', target:'city_admin', strength:2.5, rel:'oversight', label:'appoints' },
+  { source:'wilson', target:'homelessness', strength:2, rel:'oversight', label:'shelter plan' },
+  { source:'wilson', target:'budget', strength:2, rel:'funding', label:'writes budget' },
+  { source:'wilson', target:'police', strength:1.5, rel:'oversight', label:'camping ban' },
+  { source:'wilson', target:'vega', strength:1.2, rel:'coalition', label:'shelter pact' },
+  { source:'wilson', target:'pirtle', strength:1.2, rel:'oversight', label:'exec ↔ legis' },
+  { source:'wilson', target:'pba', strength:1.2, rel:'coalition', label:'business outreach' },
+  { source:'wilson', target:'business_tax', strength:1.2, rel:'coalition', label:'championed' },
+  { source:'wilson', target:'irp', strength:1.5, rel:'oversight', label:'drives sweeps' },
+  { source:'wilson', target:'city_attorney', strength:1.5, rel:'oversight', label:'legal counsel' },
+  { source:'wilson', target:'ppb_chief', strength:1.8, rel:'oversight', label:'public safety agenda' },
+  { source:'wilson', target:'prosper', strength:1, rel:'coalition', label:'economic recovery' },
+
+  // City administration
+  { source:'city_admin', target:'budget', strength:1.5, rel:'funding', label:'manages' },
+  { source:'city_admin', target:'police', strength:1.2, rel:'oversight', label:'oversees PPB' },
+  { source:'city_admin', target:'psr', strength:1.2, rel:'oversight', label:'oversees PSR' },
+  { source:'city_admin', target:'fire_bds', strength:1.2, rel:'oversight', label:'oversees bureaus' },
+  { source:'city_admin', target:'pbot', strength:1, rel:'oversight', label:'oversees PBOT' },
+  { source:'city_admin', target:'housing_bureau', strength:1.2, rel:'oversight', label:'oversees PHB' },
+  { source:'city_admin', target:'ppb_chief', strength:2, rel:'oversight', label:'direct report' },
+  { source:'auditor', target:'wilson', strength:.8, rel:'oversight', label:'audits' },
+  { source:'auditor', target:'city_admin', strength:.8, rel:'oversight', label:'audits bureaus' },
+  { source:'city_attorney', target:'fed_court', strength:1.5, rel:'conflict', label:'defends city' },
+  { source:'city_attorney', target:'moco_circuit', strength:1, rel:'conflict', label:'city litigant' },
+  { source:'city_attorney', target:'police', strength:1.2, rel:'oversight', label:'legal coverage' },
+  { source:'city_attorney', target:'homelessness', strength:1, rel:'conflict', label:'camping ban defense' },
+
+  // Council / caucus
+  { source:'pirtle', target:'peacock', strength:2, rel:'coalition', label:'leads' },
+  { source:'pirtle', target:'budget', strength:1.2, rel:'funding', label:'sets agenda' },
+  { source:'pirtle', target:'ethics', strength:1, rel:'conflict', label:'investigated' },
+  { source:'clark', target:'pirtle', strength:1, rel:'coalition', label:'VP 2026' },
+  { source:'avalos', target:'peacock', strength:1.5, rel:'coalition', label:'member' },
+  { source:'dunphy', target:'pirtle', strength:.5, rel:'coalition', label:'succeeded as president' },
+  { source:'lsmith', target:'pirtle', strength:.5, rel:'coalition', label:'council' },
+  { source:'lsmith', target:'county', strength:1.2, rel:'coalition', label:'former commissioner' },
+  { source:'kanal', target:'peacock', strength:1.5, rel:'coalition', label:'member' },
+  { source:'ryan', target:'pirtle', strength:.5, rel:'coalition', label:'council' },
+  { source:'koyama', target:'peacock', strength:1.5, rel:'coalition', label:'member' },
+  { source:'morillo', target:'peacock', strength:1.5, rel:'coalition', label:'member' },
+  { source:'morillo', target:'homelessness', strength:2, rel:'conflict', label:'anti-sweep' },
+  { source:'morillo', target:'irp', strength:2, rel:'funding', label:'$4.3M cut amendment' },
+  { source:'morillo', target:'ethics', strength:1, rel:'conflict', label:'investigated' },
+  { source:'green', target:'morillo', strength:1.5, rel:'coalition', label:'co-sponsored' },
+  { source:'green', target:'peacock', strength:1.5, rel:'coalition', label:'member' },
+  { source:'green', target:'irp', strength:1.5, rel:'conflict', label:'anti-sweep' },
+  { source:'zimmerman', target:'pirtle', strength:.5, rel:'coalition', label:'council' },
+  { source:'peacock', target:'homelessness', strength:2, rel:'conflict', label:'anti-sweeps' },
+  { source:'peacock', target:'housing', strength:1.5, rel:'coalition', label:'priority' },
+  { source:'peacock', target:'budget', strength:1.5, rel:'conflict', label:'pushback' },
+  { source:'peacock', target:'ethics', strength:1.5, rel:'conflict', label:'investigated' },
+  { source:'peacock', target:'psr', strength:1.2, rel:'coalition', label:'defends PSR' },
+  { source:'peacock', target:'housing_bureau', strength:1.2, rel:'funding', label:'funding push' },
+
+  // Judicial
+  { source:'fed_court', target:'homelessness', strength:2, rel:'oversight', label:'houseless rights' },
+  { source:'fed_court', target:'police', strength:1.8, rel:'conflict', label:'civil rights suits' },
+  { source:'fed_court', target:'da', strength:1, rel:'oversight', label:'federal referrals' },
+  { source:'fed_court', target:'wilson', strength:.8, rel:'conflict', label:'injunction risk' },
+  { source:'ore_supreme', target:'homelessness', strength:1.5, rel:'oversight', label:'camping ban constitutionality' },
+  { source:'ore_supreme', target:'housing', strength:1.2, rel:'oversight', label:'property rights' },
+  { source:'ore_supreme', target:'ore_appeals', strength:1.5, rel:'oversight', label:'reviews' },
+  { source:'ore_appeals', target:'moco_circuit', strength:1.5, rel:'oversight', label:'appellate review' },
+  { source:'ore_appeals', target:'housing', strength:1.2, rel:'oversight', label:'eviction appeals' },
+  { source:'moco_circuit', target:'da', strength:2, rel:'oversight', label:'adjudicates cases' },
+  { source:'moco_circuit', target:'sheriff', strength:1.5, rel:'oversight', label:'warrants / jail' },
+  { source:'moco_circuit', target:'housing', strength:1.8, rel:'oversight', label:'eviction docket' },
+  { source:'moco_circuit', target:'police', strength:1.2, rel:'oversight', label:'PPB referrals' },
+  { source:'ore_tax_court', target:'business_tax', strength:1.5, rel:'oversight', label:'appeals venue' },
+  { source:'ore_tax_court', target:'prosper', strength:.8, rel:'conflict', label:'TIF disputes' },
+
+  // Law enforcement
+  { source:'da', target:'moco_circuit', strength:2, rel:'oversight', label:'prosecution' },
+  { source:'da', target:'police', strength:1.8, rel:'oversight', label:'charging decisions' },
+  { source:'da', target:'sheriff', strength:1.5, rel:'oversight', label:'jail pipeline' },
+  { source:'da', target:'homelessness', strength:1.5, rel:'oversight', label:'enforcement policy' },
+  { source:'da', target:'wilson', strength:1, rel:'coalition', label:'alignment pressure' },
+  { source:'sheriff', target:'county', strength:1.5, rel:'oversight', label:'reports to' },
+  { source:'sheriff', target:'vega', strength:1.2, rel:'oversight', label:'county exec' },
+  { source:'sheriff', target:'police', strength:1.2, rel:'coalition', label:'mutual aid' },
+  { source:'sheriff', target:'homelessness', strength:1, rel:'oversight', label:'encampment response' },
+  { source:'ppb_chief', target:'police', strength:2.5, rel:'oversight', label:'leads PPB' },
+  { source:'ppb_chief', target:'city_admin', strength:2, rel:'oversight', label:'reports to' },
+  { source:'ppb_chief', target:'da', strength:1.5, rel:'oversight', label:'case referrals' },
+  { source:'ppb_chief', target:'irp', strength:1.5, rel:'coalition', label:'sweep coordination' },
+  { source:'ppb_chief', target:'psr', strength:1.2, rel:'coalition', label:'alternative dispatch' },
+  { source:'ppb_chief', target:'fed_court', strength:.8, rel:'conflict', label:'civil rights exposure' },
+
+  // County / regional
+  { source:'vega', target:'county', strength:1.5, rel:'oversight', label:'chairs' },
+  { source:'vega', target:'homelessness', strength:2, rel:'oversight', label:'HRS lead' },
+  { source:'vega', target:'housing', strength:1.5, rel:'funding', label:'22% budget cut' },
+  { source:'vega', target:'kotek', strength:.8, rel:'coalition', label:'state partner' },
+  { source:'county', target:'homelessness', strength:1.5, rel:'oversight', label:'service lead' },
+  { source:'metro', target:'housing', strength:1, rel:'oversight', label:'land use' },
+  { source:'metro', target:'county', strength:.8, rel:'coalition', label:'regional planning' },
+  { source:'metro', target:'trimet', strength:1.2, rel:'oversight', label:'transit oversight' },
+
+  // State
+  { source:'kotek', target:'housing', strength:2, rel:'funding', label:'$800M proposal' },
+  { source:'kotek', target:'homelessness', strength:2, rel:'oversight', label:'emergency declared' },
+  { source:'kotek', target:'ore_leg', strength:1.5, rel:'coalition', label:'works with' },
+  { source:'ore_leg', target:'housing', strength:1.5, rel:'funding', label:'HB 5011' },
+  { source:'ore_leg', target:'homelessness', strength:1.2, rel:'oversight', label:'HB 3644' },
+
+  // Bureaus
+  { source:'psr', target:'police', strength:1.5, rel:'coalition', label:'alternative to PPB' },
+  { source:'psr', target:'homelessness', strength:1.5, rel:'oversight', label:'crisis response' },
+  { source:'fire_bds', target:'budget', strength:1.2, rel:'funding', label:'bureau realignment' },
+  { source:'fire_bds', target:'housing', strength:1, rel:'oversight', label:'permitting supply' },
+  { source:'pbot', target:'irp', strength:1.5, rel:'coalition', label:'ROW clearance' },
+  { source:'pbot', target:'homelessness', strength:1.2, rel:'oversight', label:'encampment ROW' },
+  { source:'pbot', target:'budget', strength:1, rel:'funding', label:'deferred maintenance' },
+  { source:'housing_bureau', target:'housing', strength:2, rel:'funding', label:'investment fund' },
+  { source:'housing_bureau', target:'homelessness', strength:1.5, rel:'oversight', label:'prevention' },
+  { source:'housing_bureau', target:'budget', strength:1.5, rel:'funding', label:'$100M+ allocation' },
+  { source:'prosper', target:'budget', strength:1, rel:'funding', label:'TIF revenue' },
+  { source:'prosper', target:'business_tax', strength:.8, rel:'coalition', label:'economic development' },
+  { source:'prosper', target:'housing', strength:1, rel:'funding', label:'URD housing' },
+  { source:'trimet', target:'homelessness', strength:1.5, rel:'oversight', label:'transit crisis' },
+  { source:'trimet', target:'police', strength:1, rel:'coalition', label:'safety coordination' },
+  { source:'trimet', target:'county', strength:.8, rel:'oversight', label:'service area' },
+  { source:'pps', target:'housing', strength:1.2, rel:'oversight', label:'student displacement' },
+  { source:'pps', target:'budget', strength:.8, rel:'funding', label:'city-school alignment' },
+  { source:'pps', target:'homelessness', strength:1, rel:'oversight', label:'student stability' },
+
+  // Issue ↔ issue
+  { source:'homelessness', target:'budget', strength:1.5, rel:'funding', label:'funding fight' },
+  { source:'homelessness', target:'police', strength:1.2, rel:'conflict', label:'sweeps' },
+  { source:'homelessness', target:'irp', strength:1.5, rel:'oversight', label:'operational arm' },
+  { source:'housing', target:'budget', strength:1, rel:'funding', label:'underfunded' },
+  { source:'charter', target:'rcv', strength:1.5, rel:'oversight', label:'reform package' },
+  { source:'charter', target:'wilson', strength:.8, rel:'oversight', label:'enabled new government' },
+  { source:'rcv', target:'peacock', strength:.8, rel:'oversight', label:'elected via STV' },
+  { source:'business_tax', target:'budget', strength:1, rel:'funding', label:'revenue impact' },
+  { source:'irp', target:'budget', strength:1.5, rel:'funding', label:'flashpoint line item' },
+  { source:'irp', target:'police', strength:1, rel:'coalition', label:'PPB coordination' },
+  { source:'ethics', target:'ore_appeals', strength:1, rel:'conflict', label:'potential appeal' },
+
+  // Business / civic
+  { source:'pba', target:'business_tax', strength:1.8, rel:'coalition', label:'lobbies for' },
+  { source:'pba', target:'wilson', strength:1.2, rel:'coalition', label:'aligns with mayor' },
+  { source:'pba', target:'homelessness', strength:1.2, rel:'coalition', label:'sweep advocacy' },
+  { source:'pba', target:'police', strength:1, rel:'coalition', label:'downtown safety' },
+  { source:'pba', target:'prosper', strength:1, rel:'coalition', label:'downtown revitalization' },
+  { source:'lwv', target:'charter', strength:1.5, rel:'oversight', label:'monitors transition' },
+  { source:'lwv', target:'rcv', strength:1.5, rel:'oversight', label:'tracks implementation' },
+  { source:'lwv', target:'ethics', strength:1.2, rel:'oversight', label:'watchdog' },
+];
+
+/* ── Taxonomies ───────────────────────────────────────────────────────────── */
+
+const CATS = [
+  { id:'people',        label:'People' },
+  { id:'issues',        label:'Issues' },
+  { id:'entities',      label:'Entities' },
+  { id:'jurisdictions', label:'Jurisdictions' },
+];
+
+const RELS = [
+  { id:'conflict',   label:'Conflict',   css:'--rel-conflict' },
+  { id:'funding',    label:'Funding',    css:'--rel-funding' },
+  { id:'oversight',  label:'Oversight',  css:'--rel-oversight' },
+  { id:'coalition',  label:'Coalition',  css:'--rel-coalition' },
+];
+
+const STATES = {
+  live:   { label:'Live',   css:'--live',   note:'< 6h' },
+  recent: { label:'Recent', css:'--recent', note:'< 24h' },
+  stale:  { label:'Stale',  css:'--stale',  note:'> 24h' },
+  none:   { label:'No signal', css:'--none', note:'no record' },
+};
+
+const SIG_FILTERS = ['all', 'live', 'recent', 'stale'];
+
+/* ── Mutable state (nothing persisted) ────────────────────────────────────── */
+
+const signals = new Map();          // id → { state, sig | null }
+let apiOnline = null;               // null = unknown, true/false once probed
+let activeCats = new Set(CATS.map(c => c.id));
+let sigFilter = 'all';
+let pinned = null;                  // node id of the pinned tooltip
+let tipNode = null;                 // node id the tooltip is currently showing
+let graphAPI = null;                // handle returned by buildGraph()
+let isMobile = window.matchMedia(MOBILE_Q).matches;
+
+const byId = new Map(NODES.map(n => [n.id, n]));
+
+/* Degree drives node size. Computed once from the static tie list. */
+const degree = new Map(NODES.map(n => [n.id, 0]));
+for (const l of LINKS) {
+  degree.set(l.source, (degree.get(l.source) || 0) + 1);
+  degree.set(l.target, (degree.get(l.target) || 0) + 1);
+}
+const maxDeg = Math.max(...degree.values());
+
+/* ── Small helpers ────────────────────────────────────────────────────────── */
+
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+const flatLabel = n => n.label.replace(/\n/g, ' ');
+
+/* Coverage links come off the wire. Only http(s) ever reaches an href. */
+function safeUrl(raw, fallback) {
+  try {
+    const u = new URL(raw, location.href);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
+  } catch (err) { /* fall through */ }
+  return fallback;
+}
+
+function radius(n) {
+  return 8 + 5.2 * Math.sqrt(degree.get(n.id) || 1);
+}
+
+function hoursSince(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return (Date.now() - t) / 3.6e6;
+}
+
+function stateFor(hours) {
+  if (hours == null) return 'none';
+  if (hours < FRESH_LIVE_H) return 'live';
+  if (hours < FRESH_RECENT_H) return 'recent';
+  return 'stale';
+}
+
+function ageLabel(hours) {
+  if (hours == null) return '—';
+  if (hours < 1) return Math.max(1, Math.round(hours * 60)) + 'm';
+  if (hours < 48) return Math.round(hours) + 'h';
+  return Math.round(hours / 24) + 'd';
+}
+
+/* The record we keep for a node: its state, and the signal payload if any. */
+const entryFor = id => signals.get(id) || { state: 'none', sig: null };
+
+/* Shapes are area-normalised so a hexagon and a circle of the same degree read
+   the same size. Shape encodes category — color is never the only cue. */
+function shapePath(cat, r) {
+  if (cat === 'people') {
+    return `M ${-r},0 a ${r},${r} 0 1,0 ${2 * r},0 a ${r},${r} 0 1,0 ${-2 * r},0 Z`;
+  }
+  if (cat === 'entities') {
+    const s = r * 0.8862;
+    return `M ${-s},${-s} H ${s} V ${s} H ${-s} Z`;
+  }
+  if (cat === 'jurisdictions') {
+    const d = r * 1.2533;
+    return `M 0,${-d} L ${d},0 L 0,${d} L ${-d},0 Z`;
+  }
+  // issues — regular hexagon
+  const R = r * 1.0996;
+  let p = '';
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 6 + i * Math.PI / 3;
+    p += (i ? 'L' : 'M') + (R * Math.cos(a)).toFixed(2) + ',' + (R * Math.sin(a)).toFixed(2);
+  }
+  return p + 'Z';
+}
+
+function passesFilter(n) {
+  if (!activeCats.has(n.cat)) return false;
+  if (sigFilter === 'all') return true;
+  return entryFor(n.id).state === sigFilter;
+}
+
+/* ═══ Signal fetching ═════════════════════════════════════════════════════ */
+
+async function fetchSignal(id) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
+  try {
+    const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}/signal`, { signal: ctrl.signal });
+    if (res.status === 404) return { ok: true, sig: null };       // API up, node has no signal
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const payload = await res.json();
+    return { ok: true, sig: payload && payload.signal ? payload.signal : null };
+  } catch (err) {
+    return { ok: false, sig: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function recordSignal(id, sig) {
+  const hours = sig ? hoursSince(sig.published_at) : null;
+  signals.set(id, { state: stateFor(hours), sig, hours });
+}
+
+async function pool(items, size, fn) {
+  let i = 0;
+  await Promise.all(Array.from({ length: size }, async () => {
+    while (i < items.length) await fn(items[i++]);
+  }));
+}
+
+async function loadSignals() {
+  // Probe one node first. A network-level failure means the API is down, and
+  // firing 47 more doomed requests at it helps nobody.
+  const probe = await fetchSignal(NODES[0].id);
+  if (!probe.ok) {
+    apiOnline = false;
+    paintBadge();
+    refresh();
+    return;
+  }
+  apiOnline = true;
+  recordSignal(NODES[0].id, probe.sig);
+
+  await pool(NODES.slice(1), FETCH_POOL, async n => {
+    const r = await fetchSignal(n.id);
+    if (r.ok) recordSignal(n.id, r.sig);
+    paintBadge();
+    if (graphAPI) graphAPI.paintNode(n.id);
+  });
+
+  paintBadge();
+  refresh();
+}
+
+/* ═══ Header badge ════════════════════════════════════════════════════════ */
+
+function paintBadge() {
+  const badge = document.getElementById('badge');
+  const text = document.getElementById('badge-text');
+
+  if (apiOnline === false) {
+    badge.dataset.state = 'offline';
+    text.textContent = 'API offline · static graph';
+    return;
+  }
+  if (apiOnline === null) {
+    badge.dataset.state = 'loading';
+    text.textContent = 'polling signal index…';
+    return;
+  }
+
+  const withSignal = [...signals.values()].filter(e => e.sig);
+  const freshest = withSignal.reduce((m, e) =>
+    (e.hours != null && (m == null || e.hours < m)) ? e.hours : m, null);
+
+  badge.dataset.state = 'online';
+  text.textContent = withSignal.length
+    ? `${withSignal.length} signals indexed · updated ${ageLabel(freshest)} ago`
+    : 'API live · no signals indexed';
+}
+
+/* ═══ Tooltip card ════════════════════════════════════════════════════════ */
+
+const tip = document.getElementById('tip');
+const tipIn = document.getElementById('tip-in');
+
+function gateRow(key, value) {
+  const v = Number(value);
+  const pct = Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0)) * 100;
+  const under = !(v >= GATE_THRESHOLD);
+  return `<div class="gate">
+    <span class="gate-k">${esc(key)}</span>
+    <span class="gate-track"><span class="gate-fill${under ? ' under' : ''}" style="width:${pct.toFixed(1)}%"></span></span>
+    <span class="gate-v">${Number.isFinite(v) ? v.toFixed(2) : '—'}</span>
+  </div>`;
+}
+
+function tipMarkup(node, phase) {
+  const entry = entryFor(node.id);
+  const st = STATES[entry.state];
+  const head = `<div class="tip-head">
+      <span class="tip-state" style="color:var(${st.css})"><span class="dot"></span>Signal · ${esc(st.label)}</span>
+      <button type="button" class="tip-close" id="tip-close" aria-label="Close">×</button>
+    </div>
+    <div class="tip-name">${esc(flatLabel(node))}</div>
+    <div class="tip-role">${esc(node.role)}</div>
+    <div class="tip-rule"></div>`;
+
+  if (phase === 'loading') {
+    return head + `<div class="tip-loading">· · · fetching signal</div>`;
+  }
+
+  const sig = entry.sig;
+  if (!sig) {
+    const why = apiOnline === false ? 'No signal · static record' : 'No signal indexed for this node';
+    return head +
+      `<div class="tip-meta" style="margin-bottom:9px">${esc(why)}</div>` +
+      `<div class="tip-body">${esc(node.desc)}</div>`;
+  }
+
+  const g = sig.gates || {};
+  const fallbackUrl = `${NOTITIA_BASE}/pdx/${encodeURIComponent(node.id)}`;
+  const url = sig.article_url ? safeUrl(sig.article_url, fallbackUrl) : fallbackUrl;
+  const when = sig.published_at ? String(sig.published_at).slice(0, 10) : '—';
+
+  return head +
+    `<div class="tip-body">${esc(sig.headline || sig.summary || '')}</div>` +
+    (sig.headline && sig.summary
+      ? `<div class="tip-body" style="margin-top:8px;color:var(--ink-3)">${esc(sig.summary)}</div>` : '') +
+    `<div class="tip-rule"></div>
+     <div class="gates-head"><span>Gates</span><span>${GATE_THRESHOLD.toFixed(2)} threshold</span></div>
+     ${gateRow('CRED', g.credibility)}${gateRow('VOL', g.volume)}${gateRow('VEL', g.velocity)}${gateRow('NOV', g.novelty)}
+     <div class="tip-rule"></div>
+     <div class="tip-meta">${esc(sig.source_domain || 'source unknown')} · ${esc(when)}${
+       sig.freshness_label ? ' · ' + esc(sig.freshness_label) : ''}</div>
+     <a class="tip-cta" href="${esc(url)}" rel="noopener">Read coverage →</a>`;
+}
+
+function showTip(node, evt, phase) {
+  tipNode = node.id;
+  tipIn.innerHTML = tipMarkup(node, phase);
+  tip.classList.add('show');
+  if (evt) placeTip(evt);
+  const close = document.getElementById('tip-close');
+  if (close) close.addEventListener('click', unpin);
+}
+
+function placeTip(evt) {
+  const pad = 14, w = 300;
+  const h = tip.offsetHeight || 260;
+  let x = evt.clientX + 18;
+  let y = evt.clientY - 12;
+  if (x + w + pad > window.innerWidth) x = evt.clientX - w - 18;
+  if (y + h + pad > window.innerHeight) y = window.innerHeight - h - pad;
+  tip.style.left = Math.max(pad, x) + 'px';
+  tip.style.top = Math.max(pad, y) + 'px';
+}
+
+function hideTip() {
+  if (pinned) return;
+  tip.classList.remove('show');
+  tipNode = null;
+}
+
+function unpin() {
+  pinned = null;
+  tipNode = null;
+  tip.classList.remove('show', 'pinned');
+  if (graphAPI) graphAPI.highlight(null);
+}
+
+/* A hover or a focus asks for the signal; the card renders immediately and
+   fills in when the request lands. It never blocks. */
+async function openNode(node, evt, pin) {
+  if (pin) { pinned = node.id; tip.classList.add('pinned'); }
+  const known = signals.has(node.id) || apiOnline === false;
+  showTip(node, evt, known ? 'ready' : 'loading');
+  if (evt) placeTip(evt);
+
+  if (!known) {
+    const r = await fetchSignal(node.id);
+    if (r.ok) { if (apiOnline === null) apiOnline = true; recordSignal(node.id, r.sig); }
+    else if (apiOnline === null) { apiOnline = false; }
+    paintBadge();
+    if (graphAPI) graphAPI.paintNode(node.id);
+    // Two hovers in quick succession race each other. Only the node the card is
+    // actually showing gets to repaint it.
+    if (tip.classList.contains('show') && tipNode === node.id) {
+      showTip(node, null, 'ready');
+    }
+  }
+}
+
+/* ═══ The graph ═══════════════════════════════════════════════════════════ */
+
+function buildGraph() {
+  const host = document.getElementById('graph');
+  const rect = host.parentElement.getBoundingClientRect();
+  const W = Math.max(320, rect.width), H = Math.max(360, rect.height);
+
+  const nodes = NODES.map(n => ({ ...n }));
+  const links = LINKS.map(l => ({ ...l }));
+
+  const svg = d3.select(host).attr('viewBox', `0 0 ${W} ${H}`);
+  svg.selectAll('*:not(title)').remove();
+
+  const root = svg.append('g');
+  const linkG = root.append('g').attr('class', 'links');
+  const nodeG = root.append('g').attr('class', 'nodes');
+
+  // forceCenter only recentres the mean — it does nothing to stop the graph
+  // spreading past the frame. forceX/forceY do that, and they are what keeps
+  // 48 nodes legible in a 740px-tall plate.
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id)
+      .distance(d => {
+        const a = d.source.cat || d.source, b = d.target.cat || d.target;
+        if (a === 'jurisdictions' || b === 'jurisdictions') return 138;
+        if (a === 'issues' || b === 'issues') return 126;
+        return Math.max(76, 150 / (d.strength || 1));
+      })
+      .strength(d => Math.min(0.5, (d.strength || 1) * 0.16)))
+    .force('charge', d3.forceManyBody().strength(d => -260 - (degree.get(d.id) || 0) * 38))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('x', d3.forceX(W / 2).strength(0.055))
+    .force('y', d3.forceY(H / 2).strength(0.10))
+    .force('collide', d3.forceCollide(d => radius(d) + 22))
+    .alphaDecay(0.012);
+
+  const linkSel = linkG.selectAll('line').data(links).join('line')
+    .attr('class', 'link')
+    .attr('stroke', d => cssVar('--rel-' + d.rel))
+    .attr('stroke-opacity', 0.42)
+    .attr('stroke-width', d => 0.6 + (d.strength || 1) * 0.7);
+
+  const nodeSel = nodeG.selectAll('g').data(nodes).join('g')
+    .attr('class', 'node')
+    .attr('tabindex', 0)
+    .attr('role', 'button')
+    .attr('aria-label', d => `${flatLabel(d)} — ${d.role}`)
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.18).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+  nodeSel.append('circle').attr('class', 'ring-focus');
+  nodeSel.append('path').attr('class', 'pulse-ring').attr('fill', 'none').attr('stroke-width', 1.4);
+  nodeSel.append('path').attr('class', 'body');
+  nodeSel.append('circle').attr('class', 'core').attr('r', 2.2);
+
+  // Labels sit below the mark so every shape gets the same treatment.
+  nodeSel.each(function (d) {
+    const g = d3.select(this), r = radius(d);
+    const lines = d.label.split('\n');
+    const fs = r > 22 ? 11 : r > 16 ? 10 : 9;
+    lines.forEach((line, i) => {
+      g.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('y', r + 15 + i * fs * 1.25)
+        .attr('font-size', fs)
+        .attr('letter-spacing', '.01em')
+        .attr('fill', cssVar('--plate-ink'))
+        .text(line);
+    });
+    g.append('title').text(`${flatLabel(d)} — ${d.role} · ${degree.get(d.id)} relationships`);
+  });
+
+  function paintNode(id) {
+    nodeSel.filter(d => !id || d.id === id).each(function (d) {
+      const g = d3.select(this), r = radius(d);
+      const st = entryFor(d.id).state;
+      const col = cssVar(STATES[st].css);
+      const dash = (st === 'stale' || st === 'none') ? '3 3' : null;
+
+      g.select('.ring-focus').attr('r', r + 7);
+      g.select('.body')
+        .attr('d', shapePath(d.cat, r))
+        .attr('fill', col).attr('stroke', col)
+        // A node with no record reads hollow — that is the difference between
+        // "the engine has nothing" and "the engine has something old".
+        .attr('fill-opacity', st === 'none' ? 0.05 : 0.18)
+        .attr('stroke-width', st === 'live' ? 1.8 : st === 'recent' ? 1.6 : st === 'stale' ? 1.4 : 1)
+        .attr('stroke-dasharray', dash);
+      g.select('.core')
+        .attr('fill', col)
+        .attr('opacity', st === 'none' ? 0 : 1);
+
+      const ring = g.select('.pulse-ring');
+      if (st === 'live') {
+        ring.attr('d', shapePath(d.cat, r + 3)).attr('stroke', col)
+          .attr('opacity', null).classed('pulse', true);
+      } else if (st === 'recent') {
+        ring.attr('d', shapePath(d.cat, r + 4)).attr('stroke', col)
+          .attr('opacity', 0.3).classed('pulse', false);
+      } else {
+        ring.attr('d', null).classed('pulse', false);
+      }
+    });
+  }
+
+  function highlight(id) {
+    if (!id) {
+      nodeSel.classed('dim', d => !passesFilter(d));
+      linkSel.classed('dim', d => !passesFilter(d.source) || !passesFilter(d.target))
+        .attr('stroke-opacity', 0.42)
+        .attr('stroke-width', d => 0.6 + (d.strength || 1) * 0.7);
+      return;
+    }
+    const near = new Set([id]);
+    for (const l of links) {
+      const s = l.source.id || l.source, t = l.target.id || l.target;
+      if (s === id) near.add(t);
+      if (t === id) near.add(s);
+    }
+    nodeSel.classed('dim', d => !near.has(d.id));
+    linkSel.each(function (l) {
+      const s = l.source.id || l.source, t = l.target.id || l.target;
+      const on = s === id || t === id;
+      d3.select(this).classed('dim', !on)
+        .attr('stroke-opacity', on ? 0.95 : 0.42)
+        .attr('stroke-width', on ? 1.2 + (l.strength || 1) * 0.9 : 0.6 + (l.strength || 1) * 0.7);
+    });
+  }
+
+  nodeSel
+    .on('mousemove', e => { if (!pinned) placeTip(e); })
+    .on('mouseenter', (e, d) => { if (!pinned) openNode(d, e, false); })
+    .on('mouseleave', () => hideTip())
+    .on('focus', function (e, d) {
+      if (pinned) return;
+      const box = this.getBoundingClientRect();
+      openNode(d, { clientX: box.left + box.width / 2, clientY: box.top }, false);
+    })
+    .on('blur', () => hideTip())
+    .on('keydown', (e, d) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (pinned === d.id) { unpin(); return; }
+        const box = e.currentTarget.getBoundingClientRect();
+        openNode(d, { clientX: box.left + box.width / 2, clientY: box.top }, true);
+        highlight(d.id);
+      } else if (e.key === 'Escape') {
+        unpin();
+      }
+    })
+    .on('click', (e, d) => {
+      e.stopPropagation();
+      if (pinned === d.id) { unpin(); return; }
+      openNode(d, e, true);
+      highlight(d.id);
+    });
+
+  svg.on('click', unpin);
+
+  // Wheel zoom is gated behind ⌘/Ctrl so the page keeps its own scroll.
+  const zoom = d3.zoom().scaleExtent([0.3, 3])
+    .filter(e => e.type === 'wheel' ? (e.ctrlKey || e.metaKey) : !e.button)
+    .on('zoom', e => root.attr('transform', e.transform));
+  svg.call(zoom);
+
+  document.getElementById('z-in').onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 1.3);
+  document.getElementById('z-out').onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 1 / 1.3);
+  document.getElementById('z-reset').onclick = () => fit(320);
+
+  function fit(duration) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      // Labels hang below the mark, so the bounds have to allow for them.
+      const r = radius(n) + 46;
+      minX = Math.min(minX, n.x - r); maxX = Math.max(maxX, n.x + r);
+      minY = Math.min(minY, n.y - r); maxY = Math.max(maxY, n.y + r);
+    }
+    const k = Math.max(0.25, Math.min(1.4, Math.min(W / (maxX - minX), H / (maxY - minY))));
+    const tx = (W - (maxX + minX) * k) / 2, ty = (H - (maxY + minY) * k) / 2;
+    const t = d3.zoomIdentity.translate(tx, ty).scale(k);
+    if (duration === 0) svg.call(zoom.transform, t);
+    else svg.transition().duration(duration || 320).call(zoom.transform, t);
+  }
+
+  function draw() {
+    linkSel
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+  }
+  sim.on('tick', draw);
+
+  // Settle the layout before the first paint rather than animating 48 nodes
+  // into place. The reader gets a composed map, not a scramble.
+  sim.stop();
+  for (let i = 0; i < 420; i++) sim.tick();
+  draw();
+
+  paintNode(null);
+  highlight(null);
+  fit(0);
+
+  return { paintNode, highlight, fit, destroy: () => { sim.stop(); svg.on('.zoom', null); } };
+}
+
+/* ═══ Signal list — mobile fallback, and the fallback when D3 is missing ══ */
+
+function pips(gates) {
+  if (!gates) return '';
+  const keys = ['credibility', 'volume', 'velocity', 'novelty'];
+  const on = keys.filter(k => Number(gates[k]) >= GATE_THRESHOLD).length;
+  return `<span class="pips" aria-label="${on} of 4 gates passed">` +
+    keys.map(k => `<span class="pip${Number(gates[k]) >= GATE_THRESHOLD ? ' on' : ''}"></span>`).join('') +
+    `<span style="margin-left:5px">${on}/4 gates</span></span>`;
+}
+
+function renderList() {
+  const host = document.getElementById('cards');
+  const visible = NODES.filter(passesFilter).sort((a, b) => {
+    const ha = entryFor(a.id).hours, hb = entryFor(b.id).hours;
+    if (ha == null && hb == null) return (degree.get(b.id) || 0) - (degree.get(a.id) || 0);
+    if (ha == null) return 1;
+    if (hb == null) return -1;
+    return ha - hb;
+  });
+
+  document.getElementById('list-note').textContent =
+    (typeof d3 === 'undefined' ? 'Map library unavailable · ' : '') +
+    (apiOnline === false
+      ? 'API offline · ranked by relationship degree'
+      : 'Ranked by signal freshness');
+
+  if (!visible.length) {
+    host.innerHTML = '<div class="list-empty">No nodes match these filters.</div>';
+    return;
+  }
+
+  host.innerHTML = visible.map(n => {
+    const e = entryFor(n.id), st = STATES[e.state], sig = e.sig;
+    const fallbackUrl = `${NOTITIA_BASE}/pdx/${encodeURIComponent(n.id)}`;
+    const url = sig ? (sig.article_url ? safeUrl(sig.article_url, fallbackUrl) : fallbackUrl) : null;
+    return `<article class="scard" data-state="${e.state}">
+      <div class="scard-top">
+        <span class="scard-state" style="color:var(${st.css})">
+          <span class="dot"></span>${esc(st.label)}${e.hours != null ? ' · ' + esc(ageLabel(e.hours)) : ''}
+        </span>
+        ${sig ? pips(sig.gates) : `<span class="pips">${degree.get(n.id)} ties</span>`}
+      </div>
+      <h3>${esc(flatLabel(n))}</h3>
+      <div class="role">${esc(n.role)}</div>
+      <p>${esc(sig ? (sig.headline || sig.summary || n.desc) : n.desc)}</p>
+      ${sig ? `<div class="meta">${esc(sig.source_domain || 'source unknown')} · ${esc(String(sig.published_at || '').slice(0, 10))}</div>
+        <a class="tip-cta" href="${esc(url)}" rel="noopener">Read coverage →</a>` : ''}
+    </article>`;
+  }).join('');
+}
+
+/* ═══ Controls, legend, chrome ════════════════════════════════════════════ */
+
+function buildControls() {
+  const catHost = document.getElementById('cat-chips');
+  catHost.innerHTML = CATS.map(c =>
+    `<button type="button" class="chip" data-cat="${c.id}" aria-pressed="true">${esc(c.label)}</button>`).join('');
+  catHost.addEventListener('click', e => {
+    const b = e.target.closest('[data-cat]');
+    if (!b) return;
+    const id = b.dataset.cat;
+    if (activeCats.has(id)) {
+      if (activeCats.size === 1) return;   // never leave the map empty
+      activeCats.delete(id);
+    } else activeCats.add(id);
+    b.setAttribute('aria-pressed', String(activeCats.has(id)));
+    unpin();
+    refresh();
+  });
+
+  const sigHost = document.getElementById('sig-chips');
+  sigHost.innerHTML = SIG_FILTERS.map(s =>
+    `<button type="button" class="chip" role="radio" data-sig="${s}" aria-checked="${s === 'all'}">${esc(s.toUpperCase())}</button>`).join('');
+  sigHost.addEventListener('click', e => {
+    const b = e.target.closest('[data-sig]');
+    if (!b) return;
+    sigFilter = b.dataset.sig;
+    sigHost.querySelectorAll('[data-sig]').forEach(x =>
+      x.setAttribute('aria-checked', String(x.dataset.sig === sigFilter)));
+    unpin();
+    refresh();
+  });
+}
+
+function buildLegend() {
+  document.getElementById('key-rel').innerHTML = RELS.map(r =>
+    `<span class="key-item"><span class="key-bar" style="background:var(${r.css})"></span>${esc(r.label)}</span>`).join('');
+
+  document.getElementById('key-state').innerHTML = Object.entries(STATES).map(([k, s]) =>
+    `<span class="key-item"><svg width="13" height="13" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5"
+       fill="var(${s.css})" fill-opacity="${k === 'none' ? '.05' : '.18'}" stroke="var(${s.css})" stroke-width="${k === 'live' ? 1.8 : k === 'recent' ? 1.6 : 1.2}"
+       ${k === 'stale' || k === 'none' ? 'stroke-dasharray="3 3"' : ''}/></svg>${esc(s.label)} <span style="color:var(--ink-3)">${esc(s.note)}</span></span>`).join('');
+
+  const shapeSvg = cat => {
+    const p = shapePath(cat, 5);
+    return `<svg width="13" height="13" viewBox="-6.5 -6.5 13 13" aria-hidden="true"><path d="${p}"
+      fill="var(--ink-3)" fill-opacity=".2" stroke="var(--ink-2)" stroke-width="1.2"/></svg>`;
+  };
+  document.getElementById('key-cat').innerHTML = CATS.map(c =>
+    `<span class="key-item">${shapeSvg(c.id)}${esc(c.label)}</span>`).join('');
+}
+
+/* ═══ Refresh + layout switching ══════════════════════════════════════════ */
+
+function refresh() {
+  const shown = NODES.filter(passesFilter).length;
+  document.getElementById('ctl-count').textContent =
+    `${shown} / ${NODES.length} nodes shown`;
+  if (graphAPI) { graphAPI.paintNode(null); graphAPI.highlight(pinned); }
+  if (isMobile || !graphAPI) renderList();
+}
+
+function mount() {
+  const hasD3 = typeof d3 !== 'undefined';
+  const listWrap = document.getElementById('list-wrap');
+  const stage = document.getElementById('stage');
+
+  if (isMobile) {
+    if (graphAPI) { graphAPI.destroy(); graphAPI = null; }
+    listWrap.classList.add('show');
+    unpin();
+    renderList();
+    return;
+  }
+
+  if (!hasD3) {
+    // D3 never arrived. Show the ranked list on desktop too rather than an
+    // empty plate — the data is all local, only the drawing needed the CDN.
+    stage.style.display = 'none';
+    document.querySelector('.key').style.display = 'none';
+    listWrap.classList.add('show');
+    listWrap.style.display = 'block';
+    renderList();
+    return;
+  }
+
+  listWrap.classList.remove('show');
+  if (!graphAPI) graphAPI = buildGraph();
+  refresh();
+}
+
+/* ═══ Boot ════════════════════════════════════════════════════════════════ */
+
+document.getElementById('n-nodes').textContent = NODES.length;
+document.getElementById('n-links').textContent = LINKS.length;
+document.getElementById('ctl-count').textContent = `${NODES.length} / ${NODES.length} nodes shown`;
+document.documentElement.style.setProperty('--gate-threshold', (GATE_THRESHOLD * 100) + '%');
+
+buildControls();
+buildLegend();
+mount();
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') unpin(); });
+
+window.matchMedia(MOBILE_Q).addEventListener('change', e => {
+  isMobile = e.matches;
+  mount();
+});
+
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  if (isMobile || !graphAPI) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    graphAPI.destroy();
+    graphAPI = buildGraph();
+    refresh();
+  }, 220);
+});
+
+loadSignals();
+</script>
+</body>
+</html>
