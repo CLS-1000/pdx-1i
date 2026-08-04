@@ -49,6 +49,9 @@ class IssueBuilder:
 
     run_id: str
     rejected: list[RejectedSection] = field(default_factory=list)
+    #: When False the tone-vocabulary gate is skipped; source language is
+    #: published as-is. Attribution (citation) discipline is always enforced.
+    tone_gate: bool = True
 
     def build(
         self,
@@ -106,7 +109,7 @@ class IssueBuilder:
         cited = [r.record_id for r in records]
 
         tone = check_tone(body)
-        if not tone:
+        if self.tone_gate and not tone:
             self.rejected.append(RejectedSection(title, tone.reason()))
             logger.info("run %s: section %r rejected -- %s", self.run_id, title, tone.reason())
             return None
