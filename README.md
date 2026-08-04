@@ -226,7 +226,8 @@ pdx-1i/
 │   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
 │   ├── api/                   FastAPI app, routes (incl. /graph), API-key auth
 │   └── demos/                 runnable walkthrough
-├── ui/                        index.html (brief viewer) · webmap.html (political web)
+├── ui/                        index.html (brief) · webmap.html (political web)
+│                              citizen-cognisance.html (public landing) · DESIGN.md
 ├── tests/                     19 test files, 338 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
@@ -341,6 +342,37 @@ explanations and is not consumed by scoring.
 current brief. It is a brief viewer, not the SPEC-1 console — it does not implement the
 five political-intelligence panels (Overview, District Map, Web Map, Signal Feed,
 Statistics), and its palette does not follow the SPEC-1 monochrome design system.
+
+### The public landing page
+
+`ui/citizen-cognisance.html` is the CITIZEN COGNISANCE landing page — the public face of
+pdx-1i, wrapping the political web in an MCM Editorial shell: warm neutrals, one accent
+(deep teal), typographic hierarchy over decoration. It is deliberately *not* the phosphor
+palette of `ui/webmap.html`, which is an internal ops surface. The design system —
+palette, type scale, component specs — is written up in [`ui/DESIGN.md`](ui/DESIGN.md).
+
+```bash
+python -m http.server 8300 --directory ui
+# open http://localhost:8300/citizen-cognisance.html
+```
+
+Node colour is signal freshness (LIVE < 6h, RECENT < 24h, STALE beyond), node shape is
+category, node size is relationship degree, and edge colour is relationship type. Below
+768px the force graph is replaced by the same nodes as a list ranked by freshness, since
+a force layout is unreadable on a phone.
+
+Two things separate it from `ui/webmap.html`, and both are deliberate:
+
+- **It carries a static fallback dataset** (48 nodes, 131 ties) so the map still draws
+  with the API down, where `webmap.html` draws nothing by design. The trade-off is real:
+  a baked-in dataset can drift from what the engine holds. It is confined to structure —
+  freshness, gate scores, summaries and coverage links come from
+  `GET /api/v1/nodes/{id}/signal` and are never synthesised locally. A node the engine
+  has nothing on renders hollow and says so.
+- **That dataset names individual officeholders**, where the engine's own registry
+  (`src/pdx1/graph.py`) is role-based by design — seats, never people. The two are not
+  interchangeable, and the role-based registry remains the authority for anything the
+  engine publishes.
 
 ## Not built yet
 
