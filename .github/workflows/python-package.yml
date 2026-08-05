@@ -3,8 +3,10 @@ name: Python package
 on:
   push:
     branches: [ "main", "claude/**" ]
+  # No base-branch filter: a PR merging into any branch must be tested, not
+  # just one targeting main. PR #15 targeted a copilot/** branch and merged
+  # without this workflow ever running.
   pull_request:
-    branches: [ "main" ]
 
 jobs:
   build:
