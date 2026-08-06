@@ -73,7 +73,7 @@ src/pdx1/            43 modules
   api/               FastAPI app, routes (incl. /graph), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               26 files, 463 tests
+tests/               27 files, 484 tests
   fixtures/          source payloads replayed by the adapters
 ```
 
@@ -103,6 +103,14 @@ Two feeds are special cases worth knowing before you touch them:
 - **Portland Press needs no mapping.** RSS is standard and `feedparser` handles a real
   feed already. It polls all five tracked feeds; one dead outlet is logged and skipped,
   and only a total failure falls through to the cache.
+
+**Endpoints rot, and they fail quietly.** A dead feed is recorded as an adapter error
+and the cycle carries on, which is right for a cron job and unhelpful when you are
+working out what still answers. `pdx1 --check-endpoints` probes every registered URL
+and exits non-zero if any fails; every endpoint is overridable via `PDX1_*_URL` so a
+correction is an `.env` line, not a release. Do not guess at a replacement URL you
+cannot reach — a documented 404 is more useful than a plausible-looking guess, because
+the guess reads as verified.
 
 Alias resolution reads `union_keys(rows)`, not `rows[0].keys()`. Exports omit empty
 optional columns per row, so reading the first row alone drops that field for *every*

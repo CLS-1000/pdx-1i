@@ -63,6 +63,24 @@ class GateConfig:
 
 
 @dataclass(frozen=True)
+class SourceUrls:
+    """
+    Per-source endpoint overrides.
+
+    Empty means "use the adapter's registered default". These exist because feed URLs
+    rot: a live run on 2026-08-06 found most of the defaults returning 404, and a
+    publisher moving an endpoint should cost an .env line rather than a release. Run
+    `pdx1 --check-endpoints` to see which are answering before changing one.
+    """
+
+    orestar: str = ""
+    olis: str = ""
+    sei: str = ""
+    wa_pdc: str = ""
+    portland_press: str = ""
+
+
+@dataclass(frozen=True)
 class SourceTimeouts:
     """Per-adapter HTTP timeouts, in seconds."""
 
@@ -89,6 +107,7 @@ class Settings:
 
     gates: GateConfig = field(default_factory=GateConfig)
     timeouts: SourceTimeouts = field(default_factory=SourceTimeouts)
+    urls: SourceUrls = field(default_factory=SourceUrls)
 
     baseline_window_days: int = 90
     publish_on_change: bool = False
@@ -130,6 +149,13 @@ class Settings:
                 min_credibility=_env_float("PDX1_GATE_MIN_CREDIBILITY", 0.5),
                 min_words=_env_int("PDX1_GATE_MIN_WORDS", 50),
                 max_age_hours=_env_int("PDX1_GATE_MAX_AGE_HOURS", 48),
+            ),
+            urls=SourceUrls(
+                orestar=_env("PDX1_ORESTAR_URL", ""),
+                olis=_env("PDX1_OLIS_URL", ""),
+                sei=_env("PDX1_SEI_URL", ""),
+                wa_pdc=_env("PDX1_WA_PDC_URL", ""),
+                portland_press=_env("PDX1_PORTLAND_PRESS_URL", ""),
             ),
             timeouts=SourceTimeouts(
                 orestar=_env_int("ORESTAR_TIMEOUT", 30),

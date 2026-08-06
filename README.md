@@ -202,6 +202,26 @@ re-derives it:
 | OHSU · PPB · NW Natural · Water Bureau | 404 |
 | PGE watch | DNS failure |
 
+Two things follow from that run, both aimed at making the next correction cheap:
+
+```bash
+pdx1 --check-endpoints    # probe every registered URL, print its status, exit non-zero on failure
+```
+
+It harvests nothing and writes nothing — it exists because a dead endpoint is
+otherwise quiet by design, recorded as an adapter error while the cycle carries on.
+
+Every endpoint is then overridable from `.env`, so a publisher moving one costs a line
+rather than a release:
+
+| Setting | Overrides |
+|---|---|
+| `PDX1_ORESTAR_URL` | the bulk export (may contain `{year}`) |
+| `PDX1_OLIS_URL` | the OData service |
+| `PDX1_SEI_URL` | the OGEC landing page |
+| `PDX1_WA_PDC_URL` | the Socrata dataset |
+| `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
+
 **Field names remain unconfirmed for all four record feeds.** No row from a live
 response has been parsed yet — OLIS reached 200 but no measure was read on that run,
 and the other three never returned data — so the spellings still come from two prior
@@ -336,7 +356,7 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     26 test files, 463 tests
+├── tests/                     27 test files, 484 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -432,7 +452,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-463 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+484 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
