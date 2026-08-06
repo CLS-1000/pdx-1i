@@ -23,7 +23,7 @@ from ..models import (
     Outcome,
     utcnow,
 )
-from ..neutrality import check_attribution, check_tone
+from ..neutrality import check_attribution, check_hedging, check_tone
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,9 @@ class IssueBuilder:
 
     run_id: str
     rejected: list[RejectedSection] = field(default_factory=list)
-    #: When False the tone-vocabulary gate is skipped; source language is
-    #: published as-is. Attribution (citation) discipline is always enforced.
+    #: When False the vocabulary gates -- tone and hedging -- are skipped; source
+    #: language is published as-is. Attribution (citation) discipline is always
+    #: enforced, because a bypass there would break traceability rather than tone.
     tone_gate: bool = True
 
     def build(
@@ -108,11 +109,17 @@ class IssueBuilder:
         body = "\n".join(lines)
         cited = [r.record_id for r in records]
 
-        tone = check_tone(body)
-        if self.tone_gate and not tone:
-            self.rejected.append(RejectedSection(title, tone.reason()))
-            logger.info("run %s: section %r rejected -- %s", self.run_id, title, tone.reason())
-            return None
+        if self.tone_gate:
+            for result in (check_tone(body), check_hedging(body)):
+                if not result:
+                    self.rejected.append(RejectedSection(title, result.reason()))
+                    logger.info(
+                        "run %s: section %r rejected -- %s",
+                        self.run_id,
+                        title,
+                        result.reason(),
+                    )
+                    return None
 
         attribution = check_attribution(body, cited, known_ids)
         if not attribution:

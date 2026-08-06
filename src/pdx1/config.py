@@ -101,8 +101,9 @@ class Settings:
     cron_minute: int = 0
 
     live_fetch: bool = False
-    #: When False the tone-vocabulary gate is bypassed; source language is
-    #: published as-is while citation discipline (attribution gate) remains enforced.
+    #: When False the vocabulary gates -- tone and hedging -- are bypassed; source
+    #: language is published as-is while citation discipline (attribution gate)
+    #: remains enforced.
     tone_gate: bool = True
 
     @classmethod
