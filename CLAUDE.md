@@ -63,7 +63,7 @@ src/pdx1/            42 modules
   api/               FastAPI app, routes (incl. /graph), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               22 files, 413 tests
+tests/               23 files, 440 tests
   fixtures/          source payloads replayed by the adapters
 ```
 
@@ -77,13 +77,26 @@ a last-good cache), then **that cache** when the fetch fails. The third tier is 
 outage costs freshness rather than the whole source. It does not weaken the velocity
 gate — a cached payload carries its original timestamps, so stale records still drop.
 
-**Field mappings are only partly verified.** ORESTAR and OLIS map real payload shapes
-through alias tables (`_COLUMN_ALIASES`, `_FIELD_ALIASES`), and both tables carry a
-comment saying how far they have been confirmed. The endpoints are unreachable from the
-sandboxes this was developed in, so the *mapping logic* is tested and the *field names*
-are not. If you can reach the real endpoints, verify the names and update the comment
-to say so. SEI, WA PDC and Portland Press have not been mapped at all and still expect
-the fixture schema.
+**Field mappings are only partly verified.** The four record feeds map real payload
+shapes through alias tables (`_COLUMN_ALIASES` in `orestar.py`, `_FIELD_ALIASES`
+elsewhere), and each table carries a comment saying how far it has been confirmed. The
+endpoints are unreachable from the sandboxes this was developed in, so the *mapping
+logic* is tested and the *field names* are not. If you can reach the real endpoints,
+verify the names and update the comment to say so.
+
+Two feeds are special cases worth knowing before you touch them:
+
+- **SEI has no API.** OGEC publishes downloads from a landing page, so `feed_url` is
+  that page and a live fetch of it returns HTML. `parse` raises on non-JSON rather than
+  returning `[]` — an empty list would read as "no official filed anything", which is a
+  false statement about public records. Live SEI means `fixture_path` on a download.
+- **Portland Press needs no mapping.** RSS is standard and `feedparser` handles a real
+  feed already. It polls all five tracked feeds; one dead outlet is logged and skipped,
+  and only a total failure falls through to the cache.
+
+Alias resolution reads `union_keys(rows)`, not `rows[0].keys()`. Exports omit empty
+optional columns per row, so reading the first row alone drops that field for *every*
+record — a whole feed silently emptied by whichever row sorted first.
 
 Because fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the newest
 harvested signal rather than wall-clock time. Override with `--as-of`. Live runs should
