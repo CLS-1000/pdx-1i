@@ -144,26 +144,29 @@ stale records are dropped downstream exactly as they would be if the feed had se
 them. The cache makes an outage non-fatal; it does not make old records publishable.
 Set the location with `PDX1_CACHE_DIR`.
 
-Two adapters read a real payload shape rather than the fixtures':
+Every adapter now reads its real payload shape, and each feed needed something
+different:
 
 | Adapter | Live shape |
 |---|---|
 | **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
-| **OLIS** | the OData service — rows under `value`, paged via `@odata.nextLink`, which `_fetch_live` walks before handing `parse` one combined array. |
+| **OLIS** | the OData service — rows under `value`, paged via `@odata.nextLink`. |
+| **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
+| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object, and rejects HTML loudly rather than returning nothing. |
+| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled only OregonLive. |
 
-Both map real field names through an alias table — `_COLUMN_ALIASES` in `orestar.py`,
-`_FIELD_ALIASES` in `olis.py` — so correcting a name is a one-line change in one place,
-and a header matching nothing leaves its field empty and logs rather than raising.
+The four record feeds map field names through an alias table, so correcting a name is a
+one-line change in one place, and a name matching nothing leaves its field empty and
+logs rather than raising. Alias resolution reads the union of every row's keys, because
+exports omit empty optional columns per row and reading only the first row would drop a
+field for every record on the strength of whichever sorted first.
 
-> **The field names are not confirmed.** Both alias tables are marked in the source with
-> how far they have been verified. The endpoints are unreachable from the environments
-> this was developed in, so the mapping *logic* is tested — 44 offline tests covering
-> the ZIP unwrap, OData paging, alias resolution and the cache fallback — while the
+> **The field names are not confirmed.** Each alias table is marked in the source with
+> how far it has been verified. The endpoints are unreachable from the environments this
+> was developed in, so the mapping *logic* is tested — 71 offline tests — while the
 > *spellings* come from two prior PDX-1i implementations rather than a downloaded file.
-> Verify against a real response before treating live output as authoritative.
->
-> **SEI, WA PDC and Portland Press are not mapped.** They still expect the fixture
-> schema and will fail on a real export, exactly as all five did before.
+> Verify against a real response before treating live output as authoritative. Portland
+> Press is the exception: RSS is a standard format, so there is nothing there to verify.
 
 Records that cannot be dated are dropped rather than dated to now. Defaulting to the
 current time would make an undated record look fresh and slip it past the velocity
@@ -258,7 +261,7 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     22 test files, 413 tests
+├── tests/                     23 test files, 440 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -354,7 +357,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-413 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+440 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -409,11 +412,12 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Live fetch, finished.** ORESTAR and OLIS now read their real payload shapes and
-  every adapter falls back to a last-good cache. Three things remain: the ORESTAR and
-  OLIS field spellings are unverified against a live response; SEI, WA PDC and Portland
-  Press have no mapping at all and still expect the fixture schema; and no `feed_url`
-  has been confirmed by an actual successful fetch. See *Fixture replay vs live fetch*.
+- **Verified live fetch.** Every adapter now reads its real payload shape and falls
+  back to a last-good cache, but no `feed_url` has been confirmed by an actual
+  successful fetch, and the field spellings for ORESTAR, OLIS, WA PDC and SEI are
+  unverified against a live response. What remains is one run from a network that can
+  reach these endpoints, correcting whatever the alias tables got wrong. See *Fixture
+  replay vs live fetch*.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed

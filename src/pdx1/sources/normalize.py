@@ -12,11 +12,15 @@ would make it look fresh and publish something the gate exists to drop.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 _PUNCT = re.compile(r"[^a-z0-9]+")
+
+# Keys a government export may nest its rows under when it wraps them in an object.
+_ROW_KEYS = ("records", "results", "data", "value", "items", "filings", "contributions")
 
 # Date spellings seen across the government exports this engine reads, tried in order.
 # ISO first because the fixtures use it and a real export may too.
@@ -114,3 +118,73 @@ def first_present(record: Mapping[str, Any], *keys: str) -> Any:
         if value not in (None, "", [], {}):
             return value
     return None
+
+
+def union_keys(rows: Iterable[Mapping[str, Any]]) -> list[str]:
+    """
+    Every key appearing anywhere in `rows`, in first-seen order.
+
+    Alias resolution must see the union rather than the first row's keys. Government
+    exports omit empty optional columns per row, so building the map from `rows[0]`
+    alone drops any field that first row happened to lack -- for every row, including
+    the ones that carry it.
+    """
+    seen: dict[str, None] = {}
+    for row in rows:
+        for key in row:
+            seen.setdefault(key, None)
+    return list(seen)
+
+
+def load_records(raw: str) -> list[dict[str, Any]]:
+    """
+    Read a payload into a list of row dicts, whichever shape it arrived in.
+
+    Three shapes turn up across these feeds and all three are accepted:
+
+    - a JSON array, which is what the fixtures use
+    - a JSON object wrapping the rows under a key (`records`, `value`, ...)
+    - JSONL, one JSON object per line, which is how bulk exports are usually shipped
+
+    A blank line or an unparseable JSONL line is skipped rather than fatal, matching
+    the pipeline's failure-first stance: one bad row must not cost the whole feed.
+    """
+    text = raw.strip()
+    if not text:
+        return []
+
+    if text.startswith("["):
+        loaded = json.loads(text)
+        return [row for row in loaded if isinstance(row, dict)]
+
+    if text.startswith("{"):
+        # Either one object wrapping rows, or the first line of a JSONL stream.
+        try:
+            loaded = json.loads(text)
+        except json.JSONDecodeError:
+            return _load_jsonl(text)
+        if isinstance(loaded, dict):
+            for key in _ROW_KEYS:
+                rows = loaded.get(key)
+                if isinstance(rows, list):
+                    return [row for row in rows if isinstance(row, dict)]
+            # A bare object with no recognised wrapper key is a single row.
+            return [loaded]
+        return [row for row in loaded if isinstance(row, dict)]
+
+    return _load_jsonl(text)
+
+
+def _load_jsonl(text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
