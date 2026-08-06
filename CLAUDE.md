@@ -64,7 +64,7 @@ src/pdx1/            43 modules
   api/               FastAPI app, routes (incl. /graph), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               24 files, 447 tests
+tests/               24 files, 449 tests
   fixtures/          source payloads replayed by the adapters
 ```
 

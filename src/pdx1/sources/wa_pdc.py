@@ -69,6 +69,11 @@ class WaPdcAdapter(LiveSourceAdapter):
     credibility = 0.85
     # Washington PDC contributions, served as a Socrata dataset on the state open-data
     # portal. Washington's disclosure regime exposes a real API where Oregon's does not.
+    #
+    # VERIFIED WRONG: HTTP 404 on a live run, 2026-08-06. `data.wa.gov` is the right
+    # host and Socrata is the right shape, but this dataset identifier is not. Find the
+    # current one in the portal's dataset catalogue; the paging and mapping below are
+    # independent of it.
     feed_url = "https://data.wa.gov/resource/tijg-9uu3.json"
 
     # ── Live fetch ───────────────────────────────────────────────────────────

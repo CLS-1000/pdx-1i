@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import urljoin
 
 from ..models import Signal, SourceType
 from .base import LiveSourceAdapter
@@ -35,12 +36,12 @@ MAX_PAGES = 50
 
 # OData field spellings for each canonical field, in preference order.
 #
-# PARTIALLY VERIFIED. The service could not be reached from the development
-# environment used to write this mapping -- the sandbox blocks the host -- so these
-# names come from the two prior PDX-1i implementations, which agree on them. The
-# envelope shape (`value` plus `@odata.nextLink`) is standard OData and is the part
-# most safely relied on. Verify the field names against a real response before
-# treating live OLIS output as authoritative.
+# ENDPOINT VERIFIED, FIELD NAMES NOT. A live run on 2026-08-06 got HTTP 200 from
+# `feed_url` and a response carrying a nextLink, so the URL and the OData envelope are
+# confirmed. No row was ever parsed on that run -- the walk aborted on page 2 (see
+# `_fetch_live`) -- so these spellings still come from the two prior PDX-1i
+# implementations rather than an observed response. They are the last unconfirmed
+# piece of this adapter; check them against a real payload.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "title": ("CatchLine", "RelatingTo", "MeasureTitle", "title"),
     "session": ("SessionKey", "Session", "session"),
@@ -73,6 +74,7 @@ class OlisAdapter(LiveSourceAdapter):
     credibility = 0.9
     # Oregon Legislative Information System OData service. `$format=json` is required;
     # without it the service answers in Atom XML.
+    # VERIFIED REACHABLE: HTTP 200 on a live run, 2026-08-06.
     feed_url = "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$format=json"
 
     # ── Live fetch ───────────────────────────────────────────────────────────
@@ -107,9 +109,14 @@ class OlisAdapter(LiveSourceAdapter):
                 break
 
             rows.extend(payload.get("value") or [])
-            url = payload.get("@odata.nextLink") or payload.get("odata.nextLink")
-            if not url:
+            next_link = payload.get("@odata.nextLink") or payload.get("odata.nextLink")
+            if not next_link:
                 break
+            # OData permits a relative nextLink, and OLIS serves one. Handing it to
+            # httpx unresolved raises UnsupportedProtocol -- which is what happened on
+            # the first real run against the live service: page 1 returned 200 and the
+            # walk then died on page 2.
+            url = urljoin(str(response.url), str(next_link))
             if page == MAX_PAGES - 1:
                 logger.warning(
                     "%s: stopped at the %d-page ceiling with a nextLink still set",

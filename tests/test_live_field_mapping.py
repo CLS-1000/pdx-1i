@@ -32,12 +32,24 @@ from pdx1.sources.normalize import (
 )
 
 
-def _response(*, text: str = "", content: bytes | None = None, payload=None) -> MagicMock:
-    """A stand-in for an httpx response carrying exactly what a test needs."""
+def _response(
+    *,
+    text: str = "",
+    content: bytes | None = None,
+    payload=None,
+    url: str = "https://example.invalid/feed",
+) -> MagicMock:
+    """
+    A stand-in for an httpx response carrying exactly what a test needs.
+
+    `url` is set because relative-link resolution reads `response.url`; leaving it a
+    bare MagicMock would let a test pass against a nonsense base.
+    """
     resp = MagicMock()
     resp.text = text
     resp.content = content if content is not None else text.encode("utf-8")
     resp.raise_for_status = MagicMock()
+    resp.url = url
     if payload is not None:
         resp.json = MagicMock(return_value=payload)
     return resp
@@ -337,6 +349,46 @@ def test_olis_follows_the_next_link(tmp_path):
 
     assert mock_get.call_count == 2
     assert len(result) == 2
+
+
+def test_olis_follows_a_relative_next_link(tmp_path):
+    """
+    OData permits a relative nextLink and OLIS serves one.
+
+    Regression test for the first real run against the live service: page 1 returned
+    200, then the walk died with `UnsupportedProtocol: Request URL is missing an
+    'http://' or 'https://' protocol` because the relative link went to httpx as-is.
+    """
+    page_one = _response(
+        payload={"value": [_measure(1)], "@odata.nextLink": "Measures?$skiptoken=100"}
+    )
+    page_one.url = "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$format=json"
+    page_two = _response(payload={"value": [_measure(2)]})
+
+    with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
+        result = OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.ok, result.errors
+    assert len(result) == 2
+
+    second_url = mock_get.call_args_list[1].args[0]
+    assert second_url.startswith("https://"), f"relative link was not resolved: {second_url}"
+    assert second_url == (
+        "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$skiptoken=100"
+    )
+
+
+def test_olis_absolute_next_link_is_left_alone(tmp_path):
+    """Resolving a relative link must not mangle an absolute one."""
+    absolute = "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$skip=100"
+    page_one = _response(payload={"value": [_measure(1)], "@odata.nextLink": absolute})
+    page_one.url = "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures"
+    page_two = _response(payload={"value": [_measure(2)]})
+
+    with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
+        OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert mock_get.call_args_list[1].args[0] == absolute
 
 
 def test_olis_paging_stops_at_the_ceiling(tmp_path):

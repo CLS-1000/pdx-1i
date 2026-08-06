@@ -70,6 +70,12 @@ class OrestarAdapter(LiveSourceAdapter):
     credibility = 0.9
     # Oregon Secretary of State bulk transaction export -- a ZIP containing one CSV.
     # `{year}` is filled in at fetch time from the current calendar year.
+    #
+    # VERIFIED WRONG: HTTP 404 on a live run, 2026-08-06, for the 2026 file. Either the
+    # path or the filename convention differs from what the prior implementation
+    # recorded, or the annual file is not published under this name mid-year. The ZIP
+    # and CSV handling below is independent of the URL and stays valid once it is
+    # corrected; pass `year=` to try another year without a code change.
     feed_url = "https://sos.oregon.gov/elections/Documents/orestar/{year}_report_transactions.zip"
 
     def __init__(self, *args, year: int | None = None, **kwargs) -> None:
