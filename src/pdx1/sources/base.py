@@ -137,10 +137,15 @@ class LiveSourceAdapter(SourceAdapter):
         timeout: int = 30,
         live: bool = False,
         cache_dir: Path | str | None = None,
+        feed_url: str | None = None,
     ) -> None:
         super().__init__(fixture_path=fixture_path, timeout=timeout)
         self._live = live
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
+        # A publisher moving an endpoint should not need a code change. The class
+        # attribute is the default; config supplies an override from PDX1_*_URL.
+        if feed_url:
+            self.feed_url = feed_url
 
     # ── Last-good cache ──────────────────────────────────────────────────────
 

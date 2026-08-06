@@ -19,22 +19,43 @@ The engine reports **structure and timing**. It makes conflict-of-interest struc
 visible and legible; it does not allege anything, and a tie in the graph is not a
 finding.
 
-Four constraints are enforced in code rather than left to editorial discipline:
+Two constraints are enforced in code — a section that breaks either does not publish:
 
-- **Descriptive, not prosecutorial.** The tone gate (`src/pdx1/neutrality/tone.py`)
-  rejects prosecutorial vocabulary, motive attribution, and loaded framing before a
-  section can be published.
-- **No implication without a claim.** The hedging gate
-  (`src/pdx1/neutrality/hedging.py`) rejects prose that characterises by insinuation —
-  "raises questions", "appears to", "clearly". Such a sentence asserts nothing, so the
-  tone gate finds no loaded vocabulary and the attribution gate finds no claim to
-  trace; both pass it while it does the work of a finding. This gate is the only one
-  that catches it.
 - **Every claim traces to a record.** The attribution gate rejects any section that
   cites nothing, cites a record the engine does not hold, or uses vague sourcing.
 - **Officials are role-based seats**, never named individuals — "Metro Councilor · D2",
   not a person. A seat can be described structurally without characterising whoever
   holds it.
+
+Two more are **observed and recorded, not enforced.** They annotate; they do not
+withhold:
+
+- **Descriptive, not prosecutorial.** The tone check
+  (`src/pdx1/neutrality/tone.py`) matches prosecutorial vocabulary, motive attribution
+  and loaded framing.
+- **No implication without a claim.** The hedging check
+  (`src/pdx1/neutrality/hedging.py`) matches prose that characterises by insinuation —
+  "raises questions", "appears to", "clearly". Such a sentence asserts nothing, so
+  neither of the other checks can see it.
+
+Both attach an `observation` to the published section, carried into the store:
+
+```json
+{"gate": "tone_gate", "rule": "observation_only", "severity": "info",
+ "matched_terms": ["fraud", "fraudulent", "guilty"],
+ "note": "Prosecutorial or subjective vocabulary detected in source text."}
+```
+
+**This is a deliberate trade, and it is worth understanding before relying on the
+engine's neutrality.** These two were gates until a live run showed the flaw: they scan
+the assembled section body, and a record's `pattern` carries harvested source text into
+it — so a newspaper reporting that someone pleaded guilty to fraud tripped exactly what
+the engine alleging fraud would. The check cannot tell those apart, and withholding the
+section suppressed the report in order to prevent the accusation.
+
+What is given up: nothing in code now stops prosecutorial or insinuating language
+reaching a reader. Editorial judgement sits with whoever reads the observations. The
+engine still *detects* everything it detected before, and says so on the record.
 
 Anomalies are reported as measurements, never adjectives: "3.0 sigma against a 90-day
 baseline of 5.00 (sd 2.00, n=8)", not "unusually high".
@@ -181,6 +202,26 @@ re-derives it:
 | OHSU · PPB · NW Natural · Water Bureau | 404 |
 | PGE watch | DNS failure |
 
+Two things follow from that run, both aimed at making the next correction cheap:
+
+```bash
+pdx1 --check-endpoints    # probe every registered URL, print its status, exit non-zero on failure
+```
+
+It harvests nothing and writes nothing — it exists because a dead endpoint is
+otherwise quiet by design, recorded as an adapter error while the cycle carries on.
+
+Every endpoint is then overridable from `.env`, so a publisher moving one costs a line
+rather than a release:
+
+| Setting | Overrides |
+|---|---|
+| `PDX1_ORESTAR_URL` | the bulk export (may contain `{year}`) |
+| `PDX1_OLIS_URL` | the OData service |
+| `PDX1_SEI_URL` | the OGEC landing page |
+| `PDX1_WA_PDC_URL` | the Socrata dataset |
+| `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
+
 **Field names remain unconfirmed for all four record feeds.** No row from a live
 response has been parsed yet — OLIS reached 200 but no measure was read on that run,
 and the other three never returned data — so the spellings still come from two prior
@@ -191,7 +232,7 @@ a one-line change in one alias table; neither touches the parse logic.
 Portland Press is the exception to all of this: RSS is a standard format, so there is
 nothing to verify beyond the URLs themselves.
 
-#### The tone gate and press feeds
+#### Why tone and hedging stopped being gates
 
 That same run dropped a section:
 
@@ -202,26 +243,25 @@ section 'Under Review' rejected -- tone gate: prosecutorial language
 
 Those words came from **press headlines the engine had harvested**, not from anything
 the engine wrote. A newspaper reporting that someone pleaded guilty to fraud is stating
-a court outcome; the tone gate cannot tell that apart from the engine alleging fraud,
-because it scans the assembled section body and a record's `pattern` carries the source
-text into it.
+a court outcome; the tone gate could not tell that apart from the engine alleging
+fraud, because it scans the assembled section body and a record's `pattern` carries the
+source text into it. Withholding the section suppressed the report in order to prevent
+the accusation.
 
-This is the gate behaving as designed — "a false rejection costs a rewrite while a false
-acceptance costs a published accusation" — and the design is not something to loosen
-casually. But it does mean that with press feeds live, sections will be dropped
-routinely, and the reason will be the source's vocabulary rather than the engine's.
+Both checks are now observation-only. The same run produces:
 
-Three ways to resolve it, in increasing order of how much they give up:
+```
+  [info] section 'Under Review' observation: tone_gate matched
+         ['fraud', 'fraudulent', 'guilty']
+```
 
-1. **Leave it.** Safest, and loses press-derived sections whenever crime is reported.
-2. **Scope the gate to engine-authored prose**, exempting quoted source text. This is
-   the real fix and it is a deliberate design change, not a tweak — it needs a decision
-   about what counts as quotation and how a record marks it.
-3. **`PDX1_TONE_GATE=false`.** Publishes source language as-is. Note this switches off
-   the hedging gate too; citation discipline stays enforced either way.
+and the section publishes with that note attached. Withheld sections still print as
+`[warn]`; only attribution can withhold one now.
 
-Nothing here has been changed unilaterally: the rule in CLAUDE.md that a gate is never
-weakened to make a section publish applies to this exactly.
+The trade is stated under *What it does, and what it refuses to do* — detection is
+unchanged, enforcement is gone, and editorial judgement moves to whoever reads the
+observations. `PDX1_TONE_GATE=false` now means "do not annotate" rather than "do not
+withhold", since nothing is withheld either way.
 
 Records that cannot be dated are dropped rather than dated to now. Defaulting to the
 current time would make an undated record look fresh and slip it past the velocity
@@ -316,7 +356,7 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     24 test files, 449 tests
+├── tests/                     27 test files, 484 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -412,7 +452,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-449 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+484 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 

@@ -81,9 +81,12 @@ class OrestarAdapter(LiveSourceAdapter):
     def __init__(self, *args, year: int | None = None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._year = year or datetime.now(timezone.utc).year
-        # Bind the year into the instance URL so the base class fetches a real path.
-        if "{year}" in type(self).feed_url:
-            self.feed_url = type(self).feed_url.format(year=self._year)
+        # Bind the year into whichever URL is in effect -- the class default, or an
+        # override the base class has already applied. Reading `type(self).feed_url`
+        # here instead would discard the override, and a corrected URL is still
+        # allowed to be year-templated.
+        if "{year}" in self.feed_url:
+            self.feed_url = self.feed_url.format(year=self._year)
 
     def _decode(self, response) -> str:
         """

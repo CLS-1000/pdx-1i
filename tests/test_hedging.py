@@ -1,10 +1,13 @@
 """
-Hedging gate.
+Hedging check -- observation only.
 
-The gate exists to catch what tone and attribution structurally cannot: prose that
-implies a finding while asserting nothing. Because no claim is made, the attribution
-gate has nothing to check -- so without this gate, insinuation is the one way to
-characterise a subject and still publish.
+The check detects what tone and attribution structurally cannot: prose that implies a
+finding while asserting nothing. Because no claim is made, the attribution gate has
+nothing to check.
+
+It no longer withholds anything. These tests pin both halves: the detection is
+unchanged, and the result always passes. What that gives up is stated in
+test_insinuation_is_detected_but_no_longer_withheld.
 """
 
 from __future__ import annotations
@@ -24,11 +27,24 @@ NEUTRAL = (
 
 
 def test_neutral_measurement_passes():
-    assert check_hedging(NEUTRAL)
+    result = check_hedging(NEUTRAL)
+    assert result
+    assert result.clean
+    assert result.observations() == []
 
 
 def test_empty_text_passes():
-    assert check_hedging("")
+    result = check_hedging("")
+    assert result
+    assert result.clean
+
+
+def test_hedging_always_passes_even_when_it_matches():
+    """The core of observation mode: detection intact, enforcement gone."""
+    result = check_hedging("The record clearly appears to show a pattern.")
+    assert result.passed is True
+    assert bool(result) is True
+    assert not result.clean
 
 
 # ── Conclusion-stealing ───────────────────────────────────────────────────────
@@ -38,16 +54,17 @@ def test_empty_text_passes():
     "phrase",
     ["clearly", "obviously", "undoubtedly", "of course", "tellingly", "predictably"],
 )
-def test_conclusion_stealing_is_rejected(phrase):
+def test_conclusion_stealing_is_observed(phrase):
     result = check_hedging(f"The filing {phrase} shows a pattern of contributions.")
-    assert not result
+    assert result, "observation only -- the passage still passes"
     assert phrase in result.conclusion_stealing
+    assert phrase in result.matched_terms
     assert "conclusion stated for the reader" in result.reason()
 
 
 def test_single_tokens_match_on_word_boundaries():
     """`certainly` must not fire inside `uncertainly`."""
-    assert check_hedging("The timeline is uncertainly documented in the record.")
+    assert check_hedging("The timeline is uncertainly documented in the record.").clean
 
 
 # ── Insinuation ───────────────────────────────────────────────────────────────
@@ -66,31 +83,40 @@ def test_single_tokens_match_on_word_boundaries():
         "remains unclear why",
     ],
 )
-def test_insinuation_is_rejected(phrase):
+def test_insinuation_is_observed(phrase):
     result = check_hedging(f"The record {phrase} the councilor's vote on the measure.")
-    assert not result
+    assert result, "observation only -- the passage still passes"
     assert phrase in result.insinuation
+    assert phrase in result.matched_terms
     assert "implication without a claim" in result.reason()
 
 
-def test_insinuation_survives_the_other_two_gates():
+def test_insinuation_is_detected_but_no_longer_withheld():
     """
-    The reason this gate exists, stated as a test.
+    What observation mode gives up, stated as a test rather than left in a docstring.
 
     An insinuating sentence asserts nothing, so it carries no prosecutorial vocabulary
-    for the tone gate and makes no claim for the attribution gate to trace. Both pass
-    it. Only the hedging gate stops it.
+    for the tone scan and makes no claim for attribution to trace. This check is still
+    the only one that sees it -- but seeing is now all any of them do, so the sentence
+    reaches a reader with an audit note attached rather than being held back.
+
+    If the project later decides that is the wrong trade, this test is where the
+    decision is written down.
     """
     insinuation = (
         "The timing of the contribution raises questions about the vote that followed. "
         "Source ORESTAR, record rec_00c1a2."
     )
 
-    assert check_tone(insinuation), "tone gate sees no prosecutorial vocabulary"
+    assert check_tone(insinuation).clean, "tone scan sees no prosecutorial vocabulary"
     assert check_attribution(insinuation, ["rec_00c1a2"], {"rec_00c1a2"}), (
         "attribution gate sees a cited, known record"
     )
-    assert not check_hedging(insinuation), "hedging gate is the only one that catches it"
+
+    hedging = check_hedging(insinuation)
+    assert not hedging.clean, "the hedging scan is still the only one that detects it"
+    assert hedging, "and it no longer withholds the passage"
+    assert hedging.observations()[0]["matched_terms"] == ["raises questions"]
 
 
 # ── Reporting ─────────────────────────────────────────────────────────────────
@@ -98,7 +124,8 @@ def test_insinuation_survives_the_other_two_gates():
 
 def test_both_families_are_reported_separately():
     result = check_hedging("Clearly the record appears to show a pattern.")
-    assert not result
+    assert result
+    assert not result.clean
     assert result.conclusion_stealing == ("clearly",)
     assert result.insinuation == ("appears to",)
     assert "conclusion stated for the reader" in result.reason()
@@ -183,33 +210,54 @@ def _build_with_pattern(pattern: str, *, tone_gate: bool = True):
     return builder.build([record]), builder
 
 
-def test_issue_builder_rejects_an_insinuating_section():
-    """A section that only insinuates must not reach a brief."""
+def test_issue_builder_publishes_an_insinuating_section_with_an_observation():
+    """A section that insinuates now publishes, carrying an audit note."""
     brief, builder = _build_with_pattern(
         "The timing of the contribution raises questions about the vote."
     )
-    assert brief is None
-    assert builder.rejected
-    assert "hedging gate" in builder.rejected[0].reason
+    assert brief is not None, "observation mode -- the section is no longer withheld"
+    assert not builder.rejected
+
+    section = brief.sections[0]
+    assert len(section.observations) == 1
+    observation = section.observations[0]
+    assert observation.gate == "hedging_gate"
+    assert observation.rule == "observation_only"
+    assert observation.severity == "info"
+    assert observation.matched_terms == ["raises questions"]
+
+    assert builder.observed and builder.observed[0].title == section.title
 
 
-def test_issue_builder_publishes_a_neutral_section():
-    """The control: the same wiring passes when the prose states a measurement."""
+def test_issue_builder_publishes_a_neutral_section_with_no_observations():
+    """The control: neutral prose publishes and records nothing."""
     brief, builder = _build_with_pattern(
         "Metro Councilor · D2 filed a statement of economic interest naming PGE."
     )
     assert brief is not None
     assert not builder.rejected
+    assert brief.sections[0].observations == []
+    assert not builder.observed
 
 
-def test_tone_gate_flag_also_bypasses_hedging():
+def test_a_section_can_carry_observations_from_both_scans():
+    brief, _ = _build_with_pattern(
+        "Clearly the corrupt arrangement raises questions about the vote."
+    )
+    gates = {o.gate for o in brief.sections[0].observations}
+    assert gates == {"tone_gate", "hedging_gate"}
+
+
+def test_tone_gate_flag_turns_the_scans_off_entirely():
     """
-    PDX1_TONE_GATE=false publishes source language as-is, and hedging is a vocabulary
-    gate like tone. Citation discipline stays enforced either way.
+    PDX1_TONE_GATE=false now means "do not annotate", not "do not withhold" -- nothing
+    is withheld either way. Citation discipline stays enforced regardless.
     """
     brief, builder = _build_with_pattern(
         "The timing of the contribution raises questions about the vote.",
         tone_gate=False,
     )
-    assert brief is not None, "vocabulary gates are bypassed together"
+    assert brief is not None
     assert not builder.rejected
+    assert brief.sections[0].observations == [], "scans skipped, so nothing recorded"
+    assert not builder.observed

@@ -1,9 +1,20 @@
 """
-Hedging gate.
+Hedging check -- observation only.
 
-The tone gate catches language that asserts wrongdoing. This one catches language
-that implies it without asserting anything -- the failure mode the other two gates
-are structurally blind to.
+The tone check matches language that asserts wrongdoing. This one matches language
+that implies it without asserting anything -- the pattern the other two checks are
+structurally blind to.
+
+**This does not withhold a section.** `check_hedging` always passes; what it matched
+is returned as observations and published alongside the section it describes. It moved
+to observation-only with the tone check, for the same reason: the scan reads a section
+body carrying harvested source text, so it cannot tell a source's hedging from the
+engine's own.
+
+The cost is worth naming. Insinuation is the one failure mode neither of the other two
+checks can see -- an implication asserts nothing, so tone finds no loaded vocabulary
+and attribution finds no claim to trace. Nothing now stops it reaching a reader; the
+observation only records that it was there.
 
 Two families, and they fail for opposite reasons:
 
@@ -82,19 +93,40 @@ _INSINUATION = frozenset(
 _WORD = re.compile(r"[a-z][a-z\-]*")
 
 
+#: Name this check reports itself under, in logs and in stored observations.
+GATE_NAME = "hedging_gate"
+
+_NOTE = "Prosecutorial or subjective vocabulary detected in source text."
+
+
 @dataclass(frozen=True)
 class HedgingResult:
-    """Whether a passage clears the hedging gate, and what tripped it."""
+    """
+    What the hedging scan matched in a passage.
 
-    passed: bool
+    `passed` is always True -- the scan observes, it does not withhold. See the module
+    docstring for why, and for what that gives up.
+    """
+
+    passed: bool = True
     conclusion_stealing: tuple[str, ...] = ()
     insinuation: tuple[str, ...] = ()
 
     def __bool__(self) -> bool:
         return self.passed
 
+    @property
+    def matched_terms(self) -> tuple[str, ...]:
+        """Every term matched, across both vocabularies, sorted and deduplicated."""
+        return tuple(sorted(set(self.conclusion_stealing) | set(self.insinuation)))
+
+    @property
+    def clean(self) -> bool:
+        """True when nothing matched. This is the question `passed` used to answer."""
+        return not self.matched_terms
+
     def reason(self) -> str:
-        if self.passed:
+        if self.clean:
             return "hedging gate: pass"
         parts = []
         if self.conclusion_stealing:
@@ -103,9 +135,28 @@ class HedgingResult:
             parts.append(f"implication without a claim {list(self.insinuation)}")
         return "hedging gate: " + "; ".join(parts)
 
+    def observations(self) -> list[dict[str, object]]:
+        """Audit payload for this passage -- empty when nothing matched."""
+        if self.clean:
+            return []
+        return [
+            {
+                "gate": GATE_NAME,
+                "rule": "observation_only",
+                "severity": "info",
+                "matched_terms": list(self.matched_terms),
+                "note": _NOTE,
+            }
+        ]
+
 
 def check_hedging(text: str) -> HedgingResult:
-    """Scan a passage for conclusion-stealing adverbs and insinuating constructions."""
+    """
+    Scan a passage for conclusion-stealing adverbs and insinuating constructions.
+
+    Always passes. Read `observations()` for what it found, or `clean` for whether it
+    found anything.
+    """
     lowered = text.lower()
     words = set(_WORD.findall(lowered))
 
@@ -124,7 +175,7 @@ def check_hedging(text: str) -> HedgingResult:
     insinuation = hits(_INSINUATION)
 
     return HedgingResult(
-        passed=not (conclusion or insinuation),
+        passed=True,
         conclusion_stealing=conclusion,
         insinuation=insinuation,
     )

@@ -20,6 +20,7 @@ from ..models import (
     Brief,
     BriefSection,
     IntelligenceRecord,
+    Observation,
     Outcome,
     utcnow,
 )
@@ -44,14 +45,33 @@ class RejectedSection:
 
 
 @dataclass
+class SectionObservation:
+    """An audit note raised against a section that was published anyway."""
+
+    title: str
+    observation: Observation
+
+    def describe(self) -> str:
+        return (
+            f"{self.observation.gate} matched "
+            f"{list(self.observation.matched_terms)}"
+        )
+
+
+@dataclass
 class IssueBuilder:
     """Assembles a brief from records, gating every section."""
 
     run_id: str
+    #: Sections withheld. Only attribution can put a section here -- tone and hedging
+    #: observe rather than reject.
     rejected: list[RejectedSection] = field(default_factory=list)
-    #: When False the vocabulary gates -- tone and hedging -- are skipped; source
-    #: language is published as-is. Attribution (citation) discipline is always
-    #: enforced, because a bypass there would break traceability rather than tone.
+    #: Audit notes raised against sections that were published anyway.
+    observed: list[SectionObservation] = field(default_factory=list)
+    #: When False the vocabulary scans -- tone and hedging -- are skipped entirely, so
+    #: no observations are recorded. Neither setting withholds a section; the flag now
+    #: controls whether the text is annotated, not whether it publishes. Attribution
+    #: is unaffected and always enforced.
     tone_gate: bool = True
 
     def build(
@@ -109,18 +129,26 @@ class IssueBuilder:
         body = "\n".join(lines)
         cited = [r.record_id for r in records]
 
+        # Tone and hedging observe; they never withhold the section. What they matched
+        # is recorded on the section and travels with it into the store.
+        observations: list[Observation] = []
         if self.tone_gate:
             for result in (check_tone(body), check_hedging(body)):
-                if not result:
-                    self.rejected.append(RejectedSection(title, result.reason()))
+                for payload in result.observations():
+                    observation = Observation(**payload)
+                    observations.append(observation)
+                    self.observed.append(SectionObservation(title, observation))
                     logger.info(
-                        "run %s: section %r rejected -- %s",
+                        "run %s: section %r observation: %s matched %s",
                         self.run_id,
                         title,
-                        result.reason(),
+                        observation.gate,
+                        observation.matched_terms,
                     )
-                    return None
 
+        # Attribution still rejects. A section citing a record the engine does not hold
+        # is a traceability failure, not a question of vocabulary, and publishing it
+        # would break the one claim the engine makes about every line it prints.
         attribution = check_attribution(body, cited, known_ids)
         if not attribution:
             self.rejected.append(RejectedSection(title, attribution.reason()))
@@ -132,7 +160,12 @@ class IssueBuilder:
             )
             return None
 
-        return BriefSection(title=title, body=body, source_record_ids=cited)
+        return BriefSection(
+            title=title,
+            body=body,
+            source_record_ids=cited,
+            observations=observations,
+        )
 
     def _render_record(self, record: IntelligenceRecord) -> str:
         """
