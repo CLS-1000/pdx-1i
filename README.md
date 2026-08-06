@@ -161,12 +161,67 @@ logs rather than raising. Alias resolution reads the union of every row's keys, 
 exports omit empty optional columns per row and reading only the first row would drop a
 field for every record on the strength of whichever sorted first.
 
-> **The field names are not confirmed.** Each alias table is marked in the source with
-> how far it has been verified. The endpoints are unreachable from the environments this
-> was developed in, so the mapping *logic* is tested — 71 offline tests — while the
-> *spellings* come from two prior PDX-1i implementations rather than a downloaded file.
-> Verify against a real response before treating live output as authoritative. Portland
-> Press is the exception: RSS is a standard format, so there is nothing there to verify.
+#### What a live run actually reached
+
+`PDX1_LIVE=true` was run against the real endpoints on **2026-08-06**. The cycle
+completed and published a brief, which is the fault-tolerance design working as
+intended — but most endpoints answered 404. Recorded here and in the source so nobody
+re-derives it:
+
+| Endpoint | Result |
+|---|---|
+| OLIS | **200** — URL and OData envelope confirmed |
+| SEI landing page | **200 HTML**, rejected by `parse` as designed |
+| OregonLive · KOIN | **200** |
+| TriMet watch | **200** |
+| ORESTAR bulk export | 404 — path or filename convention is wrong |
+| WA PDC dataset | 404 — right host and shape, wrong dataset id |
+| Willamette Week · NW Politics | 404 |
+| Pamplin Media | SSL handshake failure |
+| OHSU · PPB · NW Natural · Water Bureau | 404 |
+| PGE watch | DNS failure |
+
+**Field names remain unconfirmed for all four record feeds.** No row from a live
+response has been parsed yet — OLIS reached 200 but no measure was read on that run,
+and the other three never returned data — so the spellings still come from two prior
+PDX-1i implementations. The mapping *logic* is tested across 73 offline tests; the
+*names* are not. Correcting a wrong URL is data entry, and correcting a wrong column is
+a one-line change in one alias table; neither touches the parse logic.
+
+Portland Press is the exception to all of this: RSS is a standard format, so there is
+nothing to verify beyond the URLs themselves.
+
+#### The tone gate and press feeds
+
+That same run dropped a section:
+
+```
+section 'Under Review' rejected -- tone gate: prosecutorial language
+  ['fraud', 'fraudulent', 'guilty']
+```
+
+Those words came from **press headlines the engine had harvested**, not from anything
+the engine wrote. A newspaper reporting that someone pleaded guilty to fraud is stating
+a court outcome; the tone gate cannot tell that apart from the engine alleging fraud,
+because it scans the assembled section body and a record's `pattern` carries the source
+text into it.
+
+This is the gate behaving as designed — "a false rejection costs a rewrite while a false
+acceptance costs a published accusation" — and the design is not something to loosen
+casually. But it does mean that with press feeds live, sections will be dropped
+routinely, and the reason will be the source's vocabulary rather than the engine's.
+
+Three ways to resolve it, in increasing order of how much they give up:
+
+1. **Leave it.** Safest, and loses press-derived sections whenever crime is reported.
+2. **Scope the gate to engine-authored prose**, exempting quoted source text. This is
+   the real fix and it is a deliberate design change, not a tweak — it needs a decision
+   about what counts as quotation and how a record marks it.
+3. **`PDX1_TONE_GATE=false`.** Publishes source language as-is. Note this switches off
+   the hedging gate too; citation discipline stays enforced either way.
+
+Nothing here has been changed unilaterally: the rule in CLAUDE.md that a gate is never
+weakened to make a section publish applies to this exactly.
 
 Records that cannot be dated are dropped rather than dated to now. Defaulting to the
 current time would make an undated record look fresh and slip it past the velocity
@@ -261,7 +316,7 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     24 test files, 447 tests
+├── tests/                     24 test files, 449 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -357,7 +412,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-447 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+449 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -412,12 +467,13 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Verified live fetch.** Every adapter now reads its real payload shape and falls
-  back to a last-good cache, but no `feed_url` has been confirmed by an actual
-  successful fetch, and the field spellings for ORESTAR, OLIS, WA PDC and SEI are
-  unverified against a live response. What remains is one run from a network that can
-  reach these endpoints, correcting whatever the alias tables got wrong. See *Fixture
-  replay vs live fetch*.
+- **Working endpoints for most feeds.** The transport, mapping and fault tolerance are
+  done and exercised against the real internet — a live run completes and publishes.
+  What is missing is correct URLs: as of 2026-08-06 only OLIS, two press feeds and one
+  watch target answer, and no record feed has yet returned a row, so no field mapping
+  has been confirmed against real data. Every failure is recorded per-endpoint in
+  *Fixture replay vs live fetch* and beside the URL in the source. This is data entry
+  plus one alias-table pass, not new machinery.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed

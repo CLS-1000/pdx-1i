@@ -28,6 +28,14 @@ from .base import LiveSourceAdapter
 logger = logging.getLogger(__name__)
 
 #: Tracked feeds. Live mode polls every one of them.
+#
+#: Status from a live run on 2026-08-06 -- two of five answered, and the adapter
+#: harvested from those two rather than failing:
+#:   OregonLive       200
+#:   KOIN             200
+#:   Willamette Week  404  -- URL needs correcting
+#:   Pamplin Media    SSL handshake failure -- host may not serve modern TLS
+#:   NW Politics      404  -- URL needs correcting
 FEEDS: dict[str, str] = {
     "OregonLive": "https://www.oregonlive.com/arc/outboundfeeds/rss/",
     "Willamette Week": "https://www.wweek.com/feed/",
