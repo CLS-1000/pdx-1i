@@ -32,8 +32,17 @@ class WatchAdapter(LiveSourceAdapter):
     # Infrastructure body communications are secondary; same band as press.
     credibility = 0.6
 
-    def __init__(self, target: WatchTarget, fixture_path=None, timeout: int = 60, live: bool = False) -> None:
-        super().__init__(fixture_path=fixture_path, timeout=timeout, live=live)
+    def __init__(
+        self,
+        target: WatchTarget,
+        fixture_path=None,
+        timeout: int = 60,
+        live: bool = False,
+        cache_dir=None,
+    ) -> None:
+        super().__init__(
+            fixture_path=fixture_path, timeout=timeout, live=live, cache_dir=cache_dir
+        )
         self._target = target
         self.name = f"WATCH/{target.name}"
         self.feed_url = target.endpoint

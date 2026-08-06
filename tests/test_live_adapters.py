@@ -66,11 +66,14 @@ def test_live_adapter_calls_httpx_when_live_true(fixture_dir):
         adapter = OrestarAdapter(live=True)
         result = adapter.safe_fetch()
 
+    # The instance URL, not the class attribute: ORESTAR's bulk export is published
+    # per calendar year, so the adapter resolves `{year}` at construction.
     mock_get.assert_called_once_with(
-        OrestarAdapter.feed_url,
+        adapter.feed_url,
         timeout=adapter.timeout,
         follow_redirects=True,
     )
+    assert "{year}" not in adapter.feed_url
     assert result.ok
     assert len(result) == 3
 

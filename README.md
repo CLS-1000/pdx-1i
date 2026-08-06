@@ -19,11 +19,17 @@ The engine reports **structure and timing**. It makes conflict-of-interest struc
 visible and legible; it does not allege anything, and a tie in the graph is not a
 finding.
 
-Three constraints are enforced in code rather than left to editorial discipline:
+Four constraints are enforced in code rather than left to editorial discipline:
 
 - **Descriptive, not prosecutorial.** The tone gate (`src/pdx1/neutrality/tone.py`)
   rejects prosecutorial vocabulary, motive attribution, and loaded framing before a
   section can be published.
+- **No implication without a claim.** The hedging gate
+  (`src/pdx1/neutrality/hedging.py`) rejects prose that characterises by insinuation —
+  "raises questions", "appears to", "clearly". Such a sentence asserts nothing, so the
+  tone gate finds no loaded vocabulary and the attribution gate finds no claim to
+  trace; both pass it while it does the work of a finding. This gate is the only one
+  that catches it.
 - **Every claim traces to a record.** The attribution gate rejects any section that
   cites nothing, cites a record the engine does not hold, or uses vague sourcing.
 - **Officials are role-based seats**, never named individuals — "Metro Councilor · D2",
@@ -122,23 +128,47 @@ print(len(result), "signals", "ok" if result.ok else result.errors)
 
 Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
 needs no connectivity. Set `PDX1_LIVE=true` (and install the `live` extra) to fetch over
-HTTP instead: `LiveSourceAdapter` overrides only `_read_raw`, so the parse logic is the
-same either way.
+HTTP instead.
 
-> **Live mode is a transport, not a working integration.** The HTTP plumbing is real and
-> tested, but two things stand between it and live data, and neither is done:
+A live read resolves in three tiers, in order:
+
+| Tier | Source | When |
+|---|---|---|
+| 1 | `fixture_path` | an explicit local payload; wins over everything |
+| 2 | live HTTP | the registered `feed_url`; writes a last-good cache on success |
+| 3 | last-good cache | the previous successful body, when the live fetch fails |
+
+Tier 3 is why a cycle survives a feed outage with real data rather than none. It does
+not weaken the velocity gate: a cached payload carries its original timestamps, so
+stale records are dropped downstream exactly as they would be if the feed had served
+them. The cache makes an outage non-fatal; it does not make old records publishable.
+Set the location with `PDX1_CACHE_DIR`.
+
+Two adapters read a real payload shape rather than the fixtures':
+
+| Adapter | Live shape |
+|---|---|
+| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
+| **OLIS** | the OData service — rows under `value`, paged via `@odata.nextLink`, which `_fetch_live` walks before handing `parse` one combined array. |
+
+Both map real field names through an alias table — `_COLUMN_ALIASES` in `orestar.py`,
+`_FIELD_ALIASES` in `olis.py` — so correcting a name is a one-line change in one place,
+and a header matching nothing leaves its field empty and logs rather than raising.
+
+> **The field names are not confirmed.** Both alias tables are marked in the source with
+> how far they have been verified. The endpoints are unreachable from the environments
+> this was developed in, so the mapping *logic* is tested — 44 offline tests covering
+> the ZIP unwrap, OData paging, alias resolution and the cache fallback — while the
+> *spellings* come from two prior PDX-1i implementations rather than a downloaded file.
+> Verify against a real response before treating live output as authoritative.
 >
-> 1. **The parsers expect the fixtures' schema.** Every `parse` requires the exact keys
->    the fixtures use — `tran_id`, `filed_at`, `contributor_city`. A real government
->    export uses different field names and raises `KeyError` on the first record. Each
->    adapter needs a field mapping written against its actual feed.
-> 2. **The `feed_url` values are unverified.** They are plausible-looking guesses, and
->    the only test covering them asserts that the string is non-empty and starts with
->    `https://` — which cannot fail for a wrong URL.
->
-> The live tests mock `httpx.get` and hand back fixture content, so they prove the
-> request is made with the right URL and timeout. They do not prove that anything on the
-> other end parses. Treat `PDX1_LIVE=true` as unimplemented until the mappings land.
+> **SEI, WA PDC and Portland Press are not mapped.** They still expect the fixture
+> schema and will fail on a real export, exactly as all five did before.
+
+Records that cannot be dated are dropped rather than dated to now. Defaulting to the
+current time would make an undated record look fresh and slip it past the velocity
+gate, which is the record the gate exists to drop. OLIS logs a warning when every
+fetched row is undated, so a broken date mapping cannot read as a quiet session.
 
 Because the fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the
 **newest harvested signal** rather than wall-clock time — otherwise a replay would drop
@@ -209,7 +239,7 @@ input yields no records and therefore no brief.
 
 ```
 pdx-1i/
-├── src/pdx1/                  40 modules
+├── src/pdx1/                  42 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -222,13 +252,13 @@ pdx-1i/
 │   ├── scheduler.py           APScheduler cron — daily cycle, default 06:00 PT
 │   ├── sources/               ORESTAR · OLIS · SEI · WA PDC · Portland Press
 │   ├── watch/                 6 infrastructure monitors
-│   ├── neutrality/            tone gate · attribution gate
+│   ├── neutrality/            tone · hedging · attribution gates
 │   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
 │   ├── api/                   FastAPI app, routes (incl. /graph), API-key auth
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     19 test files, 338 tests
+├── tests/                     22 test files, 413 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -324,7 +354,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-338 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+413 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -379,9 +409,11 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
-  adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
-  needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
+- **Live fetch, finished.** ORESTAR and OLIS now read their real payload shapes and
+  every adapter falls back to a last-good cache. Three things remain: the ORESTAR and
+  OLIS field spellings are unverified against a live response; SEI, WA PDC and Portland
+  Press have no mapping at all and still expect the fixture schema; and no `feed_url`
+  has been confirmed by an actual successful fetch. See *Fixture replay vs live fetch*.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed

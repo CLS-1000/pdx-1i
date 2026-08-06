@@ -81,6 +81,9 @@ class Settings:
     db_path: Path = Path("pdx1.db")
     #: Ground truth for assembled briefs. None derives it from `store_path`.
     briefs_path: Path | None = None
+    #: Last-good payload cache for live adapters. A feed outage falls back to the
+    #: newest body here rather than dropping the source from the cycle.
+    cache_dir: Path = Path("cache/pdx1")
     environment: str = "development"
     log_level: str = "INFO"
 
@@ -98,8 +101,9 @@ class Settings:
     cron_minute: int = 0
 
     live_fetch: bool = False
-    #: When False the tone-vocabulary gate is bypassed; source language is
-    #: published as-is while citation discipline (attribution gate) remains enforced.
+    #: When False the vocabulary gates -- tone and hedging -- are bypassed; source
+    #: language is published as-is while citation discipline (attribution gate)
+    #: remains enforced.
     tone_gate: bool = True
 
     @classmethod
@@ -119,6 +123,7 @@ class Settings:
                 if os.environ.get("PDX1_BRIEFS_PATH", "").strip()
                 else None
             ),
+            cache_dir=Path(_env("PDX1_CACHE_DIR", "cache/pdx1")),
             environment=_env("PDX1_ENVIRONMENT", "development"),
             log_level=_env("PDX1_LOG_LEVEL", "INFO").upper(),
             gates=GateConfig(

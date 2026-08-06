@@ -114,16 +114,18 @@ def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> lis
     t = settings.timeouts
 
     if settings.live_fetch:
-        # No fixture paths — adapters fetch from their registered feed_url.
+        # No fixture paths — adapters fetch from their registered feed_url, writing a
+        # last-good cache so the next outage degrades to stale data rather than none.
+        cache = settings.cache_dir
         adapters: list[SourceAdapter] = [
-            OrestarAdapter(timeout=t.orestar, live=True),
-            OlisAdapter(timeout=t.olis, live=True),
-            SeiAdapter(timeout=t.sei, live=True),
-            WaPdcAdapter(timeout=t.wa_pdc, live=True),
-            PortlandPressAdapter(timeout=30, live=True),
+            OrestarAdapter(timeout=t.orestar, live=True, cache_dir=cache),
+            OlisAdapter(timeout=t.olis, live=True, cache_dir=cache),
+            SeiAdapter(timeout=t.sei, live=True, cache_dir=cache),
+            WaPdcAdapter(timeout=t.wa_pdc, live=True, cache_dir=cache),
+            PortlandPressAdapter(timeout=30, live=True, cache_dir=cache),
         ]
         for target in WATCH_TARGETS:
-            adapters.append(WatchAdapter(target, timeout=60, live=True))
+            adapters.append(WatchAdapter(target, timeout=60, live=True, cache_dir=cache))
         return adapters
 
     return [
