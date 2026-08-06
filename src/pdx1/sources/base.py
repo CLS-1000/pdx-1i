@@ -18,11 +18,24 @@ Two adapter shapes exist:
 Gating: the pipeline passes `fixture_path=` in fixture mode and omits it in live mode.
 Individual adapters declare their `feed_url` as a class attribute; `_read_raw` uses it
 when no fixture is present.
+
+Live reads resolve in three tiers, in order:
+
+    1. fixture_path      an explicit local payload; wins over everything
+    2. live HTTP         the registered feed_url; writes a last-good cache on success
+    3. last-good cache   the previous successful body, when the live fetch fails
+
+The third tier is why a cycle survives a feed outage with real data rather than no
+data. It is deliberately not a substitute for the velocity gate: a cached payload
+carries its original timestamps, so stale records are dropped downstream exactly as
+they would be if the feed had served them. The cache makes an outage non-fatal; it
+does not make old records publishable.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +43,12 @@ from pathlib import Path
 from ..models import Signal, SourceType
 
 logger = logging.getLogger(__name__)
+
+#: Where last-good payloads are written when no cache_dir is passed. Overridden by
+#: PDX1_CACHE_DIR via Settings, which the pipeline forwards to each adapter.
+DEFAULT_CACHE_DIR = Path("cache/pdx1")
+
+_UNSAFE = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass
@@ -117,24 +136,98 @@ class LiveSourceAdapter(SourceAdapter):
         fixture_path=None,
         timeout: int = 30,
         live: bool = False,
+        cache_dir: Path | str | None = None,
     ) -> None:
         super().__init__(fixture_path=fixture_path, timeout=timeout)
         self._live = live
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else None
+
+    # ── Last-good cache ──────────────────────────────────────────────────────
+
+    def cache_path(self) -> Path | None:
+        """
+        Where this adapter's last-good payload lives, or None when caching is off.
+
+        Caching is opt-in: constructing an adapter directly never touches the disk.
+        The pipeline turns it on by passing `settings.cache_dir`, which defaults to
+        DEFAULT_CACHE_DIR and is overridden by PDX1_CACHE_DIR.
+        """
+        if self._cache_dir is None:
+            return None
+        slug = _UNSAFE.sub("_", self.name.lower()).strip("_") or "adapter"
+        return self._cache_dir / f"{slug}.raw"
+
+    def _write_cache(self, text: str) -> None:
+        """
+        Record a successful fetch. Never raises -- a cache we cannot write is a
+        degraded next outage, not a failed cycle.
+        """
+        path = self.cache_path()
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            logger.warning("%s: cache write failed (%s): %s", self.name, path, exc)
+
+    def _read_cache(self) -> str | None:
+        """Return the last-good payload, or None if there is not one to read."""
+        path = self.cache_path()
+        if path is None:
+            return None
+        try:
+            if path.is_file():
+                return path.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.warning("%s: cache read failed (%s): %s", self.name, path, exc)
+        return None
+
+    # ── Live fetch ───────────────────────────────────────────────────────────
+
+    def _decode(self, response) -> str:
+        """
+        Turn the HTTP response into the text `parse` expects.
+
+        The default is `response.text`, so httpx's charset handling applies. Adapters
+        whose feed ships a container format -- ORESTAR serves a ZIP of CSV -- override
+        this to unwrap `response.content`, so the cache and `parse` both see the same
+        unwrapped text.
+        """
+        return response.text
+
+    def _fetch_live(self) -> str:
+        """One HTTP GET against `feed_url`. Raises on any transport or status error."""
+        try:
+            import httpx
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError(
+                f"{self.name}: httpx is required for live fetch -- "
+                "install it with: pip install 'pdx-1i[live]'"
+            ) from exc
+        response = httpx.get(self.feed_url, timeout=self.timeout, follow_redirects=True)
+        response.raise_for_status()
+        return self._decode(response)
 
     def _read_raw(self) -> str:
         if self.fixture_path is not None:
             return self.fixture_path.read_text(encoding="utf-8")
         if self._live and self.feed_url:
             try:
-                import httpx
-            except ImportError as exc:  # pragma: no cover
-                raise RuntimeError(
-                    f"{self.name}: httpx is required for live fetch -- "
-                    "install it with: pip install 'pdx-1i[live]'"
-                ) from exc
-            response = httpx.get(self.feed_url, timeout=self.timeout, follow_redirects=True)
-            response.raise_for_status()
-            return response.text
+                text = self._fetch_live()
+            except Exception as exc:  # noqa: BLE001 - any failure may fall back to cache
+                cached = self._read_cache()
+                if cached is None:
+                    raise
+                logger.warning(
+                    "%s: live fetch failed (%s) -- serving last-good cache from %s",
+                    self.name,
+                    exc,
+                    self.cache_path(),
+                )
+                return cached
+            self._write_cache(text)
+            return text
         raise RuntimeError(
             f"{self.name}: no fixture_path configured and live fetch is not enabled"
         )
