@@ -102,7 +102,7 @@ surfaces built on top of it:
 
 ```bash
 # Run one full cycle over the checked-in fixtures
-python -m pdx1.pipeline          # or: pdx1
+pdx1                              # or: python -m pdx1, or python -m pdx1.pipeline
 
 # Serve the API on :8000
 pdx1-api                          # or: python -m pdx1.api.app
@@ -242,7 +242,7 @@ input yields no records and therefore no brief.
 
 ```
 pdx-1i/
-├── src/pdx1/                  42 modules
+├── src/pdx1/                  43 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -261,7 +261,7 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     23 test files, 440 tests
+├── tests/                     24 test files, 447 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -357,7 +357,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-440 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+447 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
