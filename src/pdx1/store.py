@@ -73,7 +73,12 @@ CREATE TABLE IF NOT EXISTS briefs (
     confidence   REAL NOT NULL,
     section_count INTEGER NOT NULL,
     produced_at  TEXT NOT NULL,
-    payload      TEXT NOT NULL
+    payload      TEXT NOT NULL,
+    -- Audit trail from the observation-only checks, flattened out of `payload` so it
+    -- can be queried without JSON extraction. Defaulted, so a database written before
+    -- observations existed opens without a rewrite.
+    observations TEXT NOT NULL DEFAULT '[]',
+    observation_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_briefs_produced ON briefs(produced_at);
 CREATE INDEX IF NOT EXISTS idx_briefs_run      ON briefs(run_id);
@@ -113,7 +118,26 @@ class DualWriteStore:
     def _init_db(self) -> None:
         with closing(self._connect()) as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
             conn.commit()
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """
+        Bring an existing database up to the current schema.
+
+        `CREATE TABLE IF NOT EXISTS` leaves an already-created table alone, so columns
+        added later have to be applied by hand. Each is defaulted, so rows written
+        before the column existed stay readable -- ground truth is the JSONL either
+        way, and this table is a query layer that can be rebuilt from it.
+        """
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(briefs)")}
+        for column, ddl in (
+            ("observations", "TEXT NOT NULL DEFAULT '[]'"),
+            ("observation_count", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if column not in existing:
+                conn.execute(f"ALTER TABLE briefs ADD COLUMN {column} {ddl}")
 
     # ── Writing ──────────────────────────────────────────────────────────────
 
@@ -274,13 +298,21 @@ class DualWriteStore:
         return True
 
     def _insert_brief(self, brief: Brief) -> None:
+        # Flattened from the sections so the audit trail is queryable directly. Each
+        # entry carries the section it came from -- an observation without its section
+        # says a term appeared somewhere in the brief, which is not much use.
+        observations = [
+            {"section": section.title, **observation.model_dump()}
+            for section in brief.sections
+            for observation in section.observations
+        ]
         with closing(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO briefs
                     (brief_id, run_id, date, headline, confidence, section_count,
-                     produced_at, payload)
-                VALUES (?,?,?,?,?,?,?,?)
+                     produced_at, payload, observations, observation_count)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     brief.brief_id,
@@ -291,6 +323,8 @@ class DualWriteStore:
                     len(brief.sections),
                     brief.produced_at.isoformat(),
                     brief.model_dump_json(),
+                    json.dumps(observations),
+                    len(observations),
                 ),
             )
             conn.commit()

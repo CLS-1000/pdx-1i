@@ -20,9 +20,18 @@ These are not style preferences. Each one exists because breaking it changes wha
 engine publishes about real people and institutions.
 
 1. **Descriptive, not prosecutorial.** The engine reports structure and timing. It
-   does not allege, and a tie in the graph is not a finding. Three gates enforce this
-   in code — tone, hedging, attribution — and they are the reason the project can make
-   that claim honestly. Do not weaken a gate to make a section publish.
+   does not allege, and a tie in the graph is not a finding.
+
+   **Only attribution enforces this in code.** Tone and hedging are observation-only:
+   they match vocabulary, attach an `Observation` to the section, and publish it
+   anyway. They were gates until a live run showed they could not distinguish a press
+   report of a guilty plea from the engine alleging one — see the README. So the
+   project can no longer claim the descriptive constraint is enforced end to end, and
+   the docs say so; do not restore the stronger claim without restoring the gates.
+
+   Attribution is different and still rejects. Do not weaken it to make a section
+   publish: a section citing a record the engine does not hold breaks traceability,
+   which is the one thing every published line depends on.
 2. **Officials are role-based seats, never named individuals.** `graph.py` holds
    "Metro Councilor · D2", not a person. A seat can be described structurally without
    characterising whoever holds it. The one deliberate exception is the static dataset
@@ -59,12 +68,12 @@ src/pdx1/            43 modules
     base.py          adapter contract + three-tier live read
     normalize.py     money/date/header coercions shared by the adapters
   watch/             6 infrastructure monitors, declared in targets.py
-  neutrality/        tone · hedging · attribution gates
+  neutrality/        attribution gate · tone + hedging observations
   publication/       IssueBuilder · BriefPublisher · PDF renderer
   api/               FastAPI app, routes (incl. /graph), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               24 files, 449 tests
+tests/               26 files, 463 tests
   fixtures/          source payloads replayed by the adapters
 ```
 

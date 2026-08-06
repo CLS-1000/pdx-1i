@@ -94,6 +94,10 @@ class CycleResult:
     brief: Brief | None = None
     dropped: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    #: Audit notes from the observation-only checks. Not failures -- these sections
+    #: published. Kept apart from `errors` so a run log does not read as if something
+    #: went wrong when nothing did.
+    observations: list[str] = field(default_factory=list)
 
     @property
     def stored(self) -> int:
@@ -364,18 +368,45 @@ def run_cycle(
 
     decision = trigger.evaluate(now)
     if decision.should_publish and records:
-        builder = IssueBuilder(run_id=run_id, tone_gate=settings.tone_gate)
-        result.brief = builder.build(records, date=now.date().isoformat())
-        if result.brief is not None:
-            # Persist before marking published. A brief that was assembled but not
-            # stored would be unrecoverable -- the novelty gate drops these signals on
-            # the next cycle, so nothing would regenerate it.
-            store.write_brief(result.brief)
-            trigger.mark_published(now)
-        for rejection in builder.rejected:
-            errors.append(f"section {rejection.title!r} dropped: {rejection.reason}")
+        _publish(result, records, run_id, now, settings, store, trigger, errors)
 
     return result
+
+
+def _publish(
+    result: CycleResult,
+    records: list[IntelligenceRecord],
+    run_id: str,
+    now: datetime,
+    settings: Settings,
+    store: DualWriteStore,
+    trigger: TriggerState,
+    errors: list[str],
+) -> None:
+    """
+    Assemble and persist the brief, and record what the run has to say about it.
+
+    Split out of `run_cycle` to keep that function under the complexity ceiling CI
+    enforces; it is one stage of the cycle and reads as one.
+    """
+    builder = IssueBuilder(run_id=run_id, tone_gate=settings.tone_gate)
+    result.brief = builder.build(records, date=now.date().isoformat())
+
+    if result.brief is not None:
+        # Persist before marking published. A brief that was assembled but not stored
+        # would be unrecoverable -- the novelty gate drops these signals on the next
+        # cycle, so nothing would regenerate it.
+        store.write_brief(result.brief)
+        trigger.mark_published(now)
+
+    # Withheld sections are failures; observed ones are not. Keeping them in separate
+    # channels is what stops a healthy run reading like a broken one.
+    for rejection in builder.rejected:
+        errors.append(f"section {rejection.title!r} dropped: {rejection.reason}")
+    for note in builder.observed:
+        result.observations.append(
+            f"section {note.title!r} observation: {note.describe()}"
+        )
 
 
 # ── Object-oriented facade ───────────────────────────────────────────────────
@@ -483,6 +514,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"                {result.brief.headline}")
     else:
         print("  brief         not triggered")
+
+    for note in result.observations:
+        print(f"  [info] {note}")
 
     for err in result.errors:
         print(f"  [warn] {err}")
