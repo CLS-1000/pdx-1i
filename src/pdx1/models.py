@@ -340,19 +340,48 @@ class Jurisdiction(BaseModel):
 # ── Publication ──────────────────────────────────────────────────────────────
 
 
+class Observation(BaseModel):
+    """
+    An audit note attached to a published section.
+
+    Tone and hedging are observation-only: they record what vocabulary they matched
+    and never withhold the section. An observation is a measurement of the text, in
+    the same spirit as an anomaly reading -- it says which terms appeared, not what
+    they mean. Reading anything into one is the reader's job, not the engine's.
+
+    Attribution is not represented here. It still rejects, because a section citing a
+    record the engine does not hold is a traceability failure rather than a matter of
+    vocabulary.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    gate: str
+    rule: str = "observation_only"
+    severity: str = "info"
+    matched_terms: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
 class BriefSection(BaseModel):
     """One section of an assembled brief, with the records backing it."""
 
     title: str
     body: str
     source_record_ids: list[str] = Field(default_factory=list)
+    #: Audit notes from the observation-only gates. Empty when nothing matched.
+    #: Additive and defaulted, so records written before observations existed still
+    #: load -- they read back as a section with nothing observed.
+    observations: list[Observation] = Field(default_factory=list)
 
 
 class Brief(BaseModel):
     """
     An assembled Metro Citizens Brief.
 
-    Every section has cleared the tone and attribution gates before it lands here.
+    Every section has cleared the attribution gate before it lands here. Tone and
+    hedging do not gate publication; what they matched rides along on each section as
+    `observations`.
     """
 
     brief_id: str

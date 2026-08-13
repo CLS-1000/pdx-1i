@@ -19,16 +19,43 @@ The engine reports **structure and timing**. It makes conflict-of-interest struc
 visible and legible; it does not allege anything, and a tie in the graph is not a
 finding.
 
-Three constraints are enforced in code rather than left to editorial discipline:
+Two constraints are enforced in code — a section that breaks either does not publish:
 
-- **Descriptive, not prosecutorial.** The tone gate (`src/pdx1/neutrality/tone.py`)
-  rejects prosecutorial vocabulary, motive attribution, and loaded framing before a
-  section can be published.
 - **Every claim traces to a record.** The attribution gate rejects any section that
   cites nothing, cites a record the engine does not hold, or uses vague sourcing.
 - **Officials are role-based seats**, never named individuals — "Metro Councilor · D2",
   not a person. A seat can be described structurally without characterising whoever
   holds it.
+
+Two more are **observed and recorded, not enforced.** They annotate; they do not
+withhold:
+
+- **Descriptive, not prosecutorial.** The tone check
+  (`src/pdx1/neutrality/tone.py`) matches prosecutorial vocabulary, motive attribution
+  and loaded framing.
+- **No implication without a claim.** The hedging check
+  (`src/pdx1/neutrality/hedging.py`) matches prose that characterises by insinuation —
+  "raises questions", "appears to", "clearly". Such a sentence asserts nothing, so
+  neither of the other checks can see it.
+
+Both attach an `observation` to the published section, carried into the store:
+
+```json
+{"gate": "tone_gate", "rule": "observation_only", "severity": "info",
+ "matched_terms": ["fraud", "fraudulent", "guilty"],
+ "note": "Prosecutorial or subjective vocabulary detected in source text."}
+```
+
+**This is a deliberate trade, and it is worth understanding before relying on the
+engine's neutrality.** These two were gates until a live run showed the flaw: they scan
+the assembled section body, and a record's `pattern` carries harvested source text into
+it — so a newspaper reporting that someone pleaded guilty to fraud tripped exactly what
+the engine alleging fraud would. The check cannot tell those apart, and withholding the
+section suppressed the report in order to prevent the accusation.
+
+What is given up: nothing in code now stops prosecutorial or insinuating language
+reaching a reader. Editorial judgement sits with whoever reads the observations. The
+engine still *detects* everything it detected before, and says so on the record.
 
 Anomalies are reported as measurements, never adjectives: "3.0 sigma against a 90-day
 baseline of 5.00 (sd 2.00, n=8)", not "unusually high".
@@ -96,7 +123,7 @@ surfaces built on top of it:
 
 ```bash
 # Run one full cycle over the checked-in fixtures
-python -m pdx1.pipeline          # or: pdx1
+pdx1                              # or: python -m pdx1, or python -m pdx1.pipeline
 
 # Serve the API on :8000
 pdx1-api                          # or: python -m pdx1.api.app
@@ -122,23 +149,124 @@ print(len(result), "signals", "ok" if result.ok else result.errors)
 
 Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
 needs no connectivity. Set `PDX1_LIVE=true` (and install the `live` extra) to fetch over
-HTTP instead: `LiveSourceAdapter` overrides only `_read_raw`, so the parse logic is the
-same either way.
+HTTP instead.
 
-> **Live mode is a transport, not a working integration.** The HTTP plumbing is real and
-> tested, but two things stand between it and live data, and neither is done:
->
-> 1. **The parsers expect the fixtures' schema.** Every `parse` requires the exact keys
->    the fixtures use — `tran_id`, `filed_at`, `contributor_city`. A real government
->    export uses different field names and raises `KeyError` on the first record. Each
->    adapter needs a field mapping written against its actual feed.
-> 2. **The `feed_url` values are unverified.** They are plausible-looking guesses, and
->    the only test covering them asserts that the string is non-empty and starts with
->    `https://` — which cannot fail for a wrong URL.
->
-> The live tests mock `httpx.get` and hand back fixture content, so they prove the
-> request is made with the right URL and timeout. They do not prove that anything on the
-> other end parses. Treat `PDX1_LIVE=true` as unimplemented until the mappings land.
+A live read resolves in three tiers, in order:
+
+| Tier | Source | When |
+|---|---|---|
+| 1 | `fixture_path` | an explicit local payload; wins over everything |
+| 2 | live HTTP | the registered `feed_url`; writes a last-good cache on success |
+| 3 | last-good cache | the previous successful body, when the live fetch fails |
+
+Tier 3 is why a cycle survives a feed outage with real data rather than none. It does
+not weaken the velocity gate: a cached payload carries its original timestamps, so
+stale records are dropped downstream exactly as they would be if the feed had served
+them. The cache makes an outage non-fatal; it does not make old records publishable.
+Set the location with `PDX1_CACHE_DIR`.
+
+Every adapter now reads its real payload shape, and each feed needed something
+different:
+
+| Adapter | Live shape |
+|---|---|
+| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
+| **OLIS** | the OData service — rows under `value`, paged via `@odata.nextLink`. |
+| **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
+| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object, and rejects HTML loudly rather than returning nothing. |
+| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled only OregonLive. |
+
+The four record feeds map field names through an alias table, so correcting a name is a
+one-line change in one place, and a name matching nothing leaves its field empty and
+logs rather than raising. Alias resolution reads the union of every row's keys, because
+exports omit empty optional columns per row and reading only the first row would drop a
+field for every record on the strength of whichever sorted first.
+
+#### What a live run actually reached
+
+`PDX1_LIVE=true` was run against the real endpoints on **2026-08-06**. The cycle
+completed and published a brief, which is the fault-tolerance design working as
+intended — but most endpoints answered 404. Recorded here and in the source so nobody
+re-derives it:
+
+| Endpoint | Result |
+|---|---|
+| OLIS | **200** — URL and OData envelope confirmed |
+| SEI landing page | **200 HTML**, rejected by `parse` as designed |
+| OregonLive · KOIN | **200** |
+| TriMet watch | **200** |
+| ORESTAR bulk export | 404 — path or filename convention is wrong |
+| WA PDC dataset | 404 — right host and shape, wrong dataset id |
+| Willamette Week · NW Politics | 404 |
+| Pamplin Media | SSL handshake failure |
+| OHSU · PPB · NW Natural · Water Bureau | 404 |
+| PGE watch | DNS failure |
+
+Two things follow from that run, both aimed at making the next correction cheap:
+
+```bash
+pdx1 --check-endpoints    # probe every registered URL, print its status, exit non-zero on failure
+```
+
+It harvests nothing and writes nothing — it exists because a dead endpoint is
+otherwise quiet by design, recorded as an adapter error while the cycle carries on.
+
+Every endpoint is then overridable from `.env`, so a publisher moving one costs a line
+rather than a release:
+
+| Setting | Overrides |
+|---|---|
+| `PDX1_ORESTAR_URL` | the bulk export (may contain `{year}`) |
+| `PDX1_OLIS_URL` | the OData service |
+| `PDX1_SEI_URL` | the OGEC landing page |
+| `PDX1_WA_PDC_URL` | the Socrata dataset |
+| `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
+
+**Field names remain unconfirmed for all four record feeds.** No row from a live
+response has been parsed yet — OLIS reached 200 but no measure was read on that run,
+and the other three never returned data — so the spellings still come from two prior
+PDX-1i implementations. The mapping *logic* is tested across 73 offline tests; the
+*names* are not. Correcting a wrong URL is data entry, and correcting a wrong column is
+a one-line change in one alias table; neither touches the parse logic.
+
+Portland Press is the exception to all of this: RSS is a standard format, so there is
+nothing to verify beyond the URLs themselves.
+
+#### Why tone and hedging stopped being gates
+
+That same run dropped a section:
+
+```
+section 'Under Review' rejected -- tone gate: prosecutorial language
+  ['fraud', 'fraudulent', 'guilty']
+```
+
+Those words came from **press headlines the engine had harvested**, not from anything
+the engine wrote. A newspaper reporting that someone pleaded guilty to fraud is stating
+a court outcome; the tone gate could not tell that apart from the engine alleging
+fraud, because it scans the assembled section body and a record's `pattern` carries the
+source text into it. Withholding the section suppressed the report in order to prevent
+the accusation.
+
+Both checks are now observation-only. The same run produces:
+
+```
+  [info] section 'Under Review' observation: tone_gate matched
+         ['fraud', 'fraudulent', 'guilty']
+```
+
+and the section publishes with that note attached. Withheld sections still print as
+`[warn]`; only attribution can withhold one now.
+
+The trade is stated under *What it does, and what it refuses to do* — detection is
+unchanged, enforcement is gone, and editorial judgement moves to whoever reads the
+observations. `PDX1_TONE_GATE=false` now means "do not annotate" rather than "do not
+withhold", since nothing is withheld either way.
+
+Records that cannot be dated are dropped rather than dated to now. Defaulting to the
+current time would make an undated record look fresh and slip it past the velocity
+gate, which is the record the gate exists to drop. OLIS logs a warning when every
+fetched row is undated, so a broken date mapping cannot read as a quiet session.
 
 Because the fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the
 **newest harvested signal** rather than wall-clock time — otherwise a replay would drop
@@ -209,7 +337,7 @@ input yields no records and therefore no brief.
 
 ```
 pdx-1i/
-├── src/pdx1/                  40 modules
+├── src/pdx1/                  43 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -222,13 +350,13 @@ pdx-1i/
 │   ├── scheduler.py           APScheduler cron — daily cycle, default 06:00 PT
 │   ├── sources/               ORESTAR · OLIS · SEI · WA PDC · Portland Press
 │   ├── watch/                 6 infrastructure monitors
-│   ├── neutrality/            tone gate · attribution gate
+│   ├── neutrality/            tone · hedging · attribution gates
 │   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
 │   ├── api/                   FastAPI app, routes (incl. /graph), API-key auth
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     19 test files, 338 tests
+├── tests/                     27 test files, 484 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -324,7 +452,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-338 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+484 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -379,9 +507,13 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Working live fetch.** The HTTP transport exists; the field mappings do not. Each
-  adapter's `parse` needs rewriting against its real feed's schema, and each `feed_url`
-  needs verifying against the actual endpoint. See *Fixture replay vs live fetch*.
+- **Working endpoints for most feeds.** The transport, mapping and fault tolerance are
+  done and exercised against the real internet — a live run completes and publishes.
+  What is missing is correct URLs: as of 2026-08-06 only OLIS, two press feeds and one
+  watch target answer, and no record feed has yet returned a row, so no field mapping
+  has been confirmed against real data. Every failure is recorded per-endpoint in
+  *Fixture replay vs live fetch* and beside the URL in the source. This is data entry
+  plus one alias-table pass, not new machinery.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed

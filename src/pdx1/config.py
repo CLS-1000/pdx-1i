@@ -63,6 +63,24 @@ class GateConfig:
 
 
 @dataclass(frozen=True)
+class SourceUrls:
+    """
+    Per-source endpoint overrides.
+
+    Empty means "use the adapter's registered default". These exist because feed URLs
+    rot: a live run on 2026-08-06 found most of the defaults returning 404, and a
+    publisher moving an endpoint should cost an .env line rather than a release. Run
+    `pdx1 --check-endpoints` to see which are answering before changing one.
+    """
+
+    orestar: str = ""
+    olis: str = ""
+    sei: str = ""
+    wa_pdc: str = ""
+    portland_press: str = ""
+
+
+@dataclass(frozen=True)
 class SourceTimeouts:
     """Per-adapter HTTP timeouts, in seconds."""
 
@@ -81,11 +99,15 @@ class Settings:
     db_path: Path = Path("pdx1.db")
     #: Ground truth for assembled briefs. None derives it from `store_path`.
     briefs_path: Path | None = None
+    #: Last-good payload cache for live adapters. A feed outage falls back to the
+    #: newest body here rather than dropping the source from the cycle.
+    cache_dir: Path = Path("cache/pdx1")
     environment: str = "development"
     log_level: str = "INFO"
 
     gates: GateConfig = field(default_factory=GateConfig)
     timeouts: SourceTimeouts = field(default_factory=SourceTimeouts)
+    urls: SourceUrls = field(default_factory=SourceUrls)
 
     baseline_window_days: int = 90
     publish_on_change: bool = False
@@ -98,6 +120,10 @@ class Settings:
     cron_minute: int = 0
 
     live_fetch: bool = False
+    #: When False the vocabulary gates -- tone and hedging -- are bypassed; source
+    #: language is published as-is while citation discipline (attribution gate)
+    #: remains enforced.
+    tone_gate: bool = True
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -116,12 +142,20 @@ class Settings:
                 if os.environ.get("PDX1_BRIEFS_PATH", "").strip()
                 else None
             ),
+            cache_dir=Path(_env("PDX1_CACHE_DIR", "cache/pdx1")),
             environment=_env("PDX1_ENVIRONMENT", "development"),
             log_level=_env("PDX1_LOG_LEVEL", "INFO").upper(),
             gates=GateConfig(
                 min_credibility=_env_float("PDX1_GATE_MIN_CREDIBILITY", 0.5),
                 min_words=_env_int("PDX1_GATE_MIN_WORDS", 50),
                 max_age_hours=_env_int("PDX1_GATE_MAX_AGE_HOURS", 48),
+            ),
+            urls=SourceUrls(
+                orestar=_env("PDX1_ORESTAR_URL", ""),
+                olis=_env("PDX1_OLIS_URL", ""),
+                sei=_env("PDX1_SEI_URL", ""),
+                wa_pdc=_env("PDX1_WA_PDC_URL", ""),
+                portland_press=_env("PDX1_PORTLAND_PRESS_URL", ""),
             ),
             timeouts=SourceTimeouts(
                 orestar=_env_int("ORESTAR_TIMEOUT", 30),
@@ -139,4 +173,5 @@ class Settings:
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
             live_fetch=_env_bool("PDX1_LIVE", False),
+            tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )

@@ -7,6 +7,19 @@ that belong to Watch monitoring.
 
 Endpoints are public feeds or press-release RSS channels. They are read-only polling;
 nothing is written to these services.
+
+Status from a live run on 2026-08-06 -- one of six answered:
+
+    TriMet                  200
+    OHSU                    404  -- URL needs correcting
+    PPB                     404  -- URL needs correcting
+    PGE                     DNS failure (host does not resolve)
+    NW Natural              404  -- URL needs correcting
+    Portland Water Bureau   404  -- URL needs correcting
+
+A dead target costs that target only: `safe_fetch` records the failure and the cycle
+completes. Correcting these is data entry against each body's newsroom page, not a
+code change.
 """
 
 from __future__ import annotations

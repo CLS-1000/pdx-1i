@@ -24,7 +24,7 @@ import argparse
 import logging
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,6 +59,7 @@ from .sources import (
     SourceAdapter,
     WaPdcAdapter,
 )
+from .sources.portland_press import FEEDS as PRESS_FEEDS
 from .store import DualWriteStore
 from .trigger import TriggerState
 from .watch import WATCH_TARGETS, WatchAdapter
@@ -94,6 +95,10 @@ class CycleResult:
     brief: Brief | None = None
     dropped: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    #: Audit notes from the observation-only checks. Not failures -- these sections
+    #: published. Kept apart from `errors` so a run log does not read as if something
+    #: went wrong when nothing did.
+    observations: list[str] = field(default_factory=list)
 
     @property
     def stored(self) -> int:
@@ -114,16 +119,21 @@ def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> lis
     t = settings.timeouts
 
     if settings.live_fetch:
-        # No fixture paths — adapters fetch from their registered feed_url.
+        # No fixture paths — adapters fetch from their registered feed_url, writing a
+        # last-good cache so the next outage degrades to stale data rather than none.
+        cache = settings.cache_dir
+        u = settings.urls
         adapters: list[SourceAdapter] = [
-            OrestarAdapter(timeout=t.orestar, live=True),
-            OlisAdapter(timeout=t.olis, live=True),
-            SeiAdapter(timeout=t.sei, live=True),
-            WaPdcAdapter(timeout=t.wa_pdc, live=True),
-            PortlandPressAdapter(timeout=30, live=True),
+            OrestarAdapter(timeout=t.orestar, live=True, cache_dir=cache, feed_url=u.orestar),
+            OlisAdapter(timeout=t.olis, live=True, cache_dir=cache, feed_url=u.olis),
+            SeiAdapter(timeout=t.sei, live=True, cache_dir=cache, feed_url=u.sei),
+            WaPdcAdapter(timeout=t.wa_pdc, live=True, cache_dir=cache, feed_url=u.wa_pdc),
+            PortlandPressAdapter(
+                timeout=30, live=True, cache_dir=cache, feed_url=u.portland_press
+            ),
         ]
         for target in WATCH_TARGETS:
-            adapters.append(WatchAdapter(target, timeout=60, live=True))
+            adapters.append(WatchAdapter(target, timeout=60, live=True, cache_dir=cache))
         return adapters
 
     return [
@@ -362,18 +372,45 @@ def run_cycle(
 
     decision = trigger.evaluate(now)
     if decision.should_publish and records:
-        builder = IssueBuilder(run_id=run_id)
-        result.brief = builder.build(records, date=now.date().isoformat())
-        if result.brief is not None:
-            # Persist before marking published. A brief that was assembled but not
-            # stored would be unrecoverable -- the novelty gate drops these signals on
-            # the next cycle, so nothing would regenerate it.
-            store.write_brief(result.brief)
-            trigger.mark_published(now)
-        for rejection in builder.rejected:
-            errors.append(f"section {rejection.title!r} dropped: {rejection.reason}")
+        _publish(result, records, run_id, now, settings, store, trigger, errors)
 
     return result
+
+
+def _publish(
+    result: CycleResult,
+    records: list[IntelligenceRecord],
+    run_id: str,
+    now: datetime,
+    settings: Settings,
+    store: DualWriteStore,
+    trigger: TriggerState,
+    errors: list[str],
+) -> None:
+    """
+    Assemble and persist the brief, and record what the run has to say about it.
+
+    Split out of `run_cycle` to keep that function under the complexity ceiling CI
+    enforces; it is one stage of the cycle and reads as one.
+    """
+    builder = IssueBuilder(run_id=run_id, tone_gate=settings.tone_gate)
+    result.brief = builder.build(records, date=now.date().isoformat())
+
+    if result.brief is not None:
+        # Persist before marking published. A brief that was assembled but not stored
+        # would be unrecoverable -- the novelty gate drops these signals on the next
+        # cycle, so nothing would regenerate it.
+        store.write_brief(result.brief)
+        trigger.mark_published(now)
+
+    # Withheld sections are failures; observed ones are not. Keeping them in separate
+    # channels is what stops a healthy run reading like a broken one.
+    for rejection in builder.rejected:
+        errors.append(f"section {rejection.title!r} dropped: {rejection.reason}")
+    for note in builder.observed:
+        result.observations.append(
+            f"section {note.title!r} observation: {note.describe()}"
+        )
 
 
 # ── Object-oriented facade ───────────────────────────────────────────────────
@@ -443,7 +480,70 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Directory of source fixtures (default: tests/fixtures).",
     )
+    parser.add_argument(
+        "--check-endpoints",
+        dest="check_endpoints",
+        action="store_true",
+        help=(
+            "Probe every registered feed URL and report its HTTP status, then exit. "
+            "Harvests nothing and writes nothing. Use this to find which endpoints "
+            "have moved before correcting them via the PDX1_*_URL settings."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def check_endpoints(settings: Settings) -> int:
+    """
+    Probe every registered endpoint and print what it answers.
+
+    Feed URLs rot, and the failure is quiet: an adapter that 404s is recorded as an
+    error and the cycle carries on, which is right for a cron job and unhelpful when
+    you are trying to find out what still works. This does one HEAD-ish GET per
+    endpoint and prints the result.
+
+    Returns non-zero when anything is unreachable, so it is usable as a check.
+    """
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - depends on the live extra
+        print("--check-endpoints needs the live extra: pip install 'pdx-1i[live]'")
+        return 2
+
+    live = replace(settings, live_fetch=True)
+    targets: list[tuple[str, str]] = []
+    for adapter in default_adapters(live):
+        # Portland Press polls a map of feeds rather than its single registered URL,
+        # so it is enumerated below instead -- listing both would report one outlet
+        # twice and imply the others are not polled.
+        if isinstance(adapter, PortlandPressAdapter):
+            continue
+        url = getattr(adapter, "feed_url", "")
+        if url:
+            targets.append((adapter.name, url))
+    for outlet, url in PRESS_FEEDS.items():
+        targets.append((f"PORTLAND_PRESS/{outlet}", url))
+
+    failures = 0
+    width = max(len(name) for name, _ in targets)
+    for name, url in targets:
+        try:
+            response = httpx.get(
+                url, timeout=15, follow_redirects=True, headers={"Range": "bytes=0-0"}
+            )
+            status = str(response.status_code)
+            ok = response.status_code < 400
+        except Exception as exc:  # noqa: BLE001 - report every failure mode alike
+            status = type(exc).__name__
+            ok = False
+        if not ok:
+            failures += 1
+        print(f"  {'ok  ' if ok else 'FAIL'} {name:<{width}}  {status:<20} {url}")
+
+    print(f"\n{len(targets) - failures}/{len(targets)} endpoints answered.")
+    if failures:
+        print("Override a moved endpoint with the matching PDX1_*_URL setting.")
+    return 1 if failures else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -454,6 +554,9 @@ def main(argv: list[str] | None = None) -> int:
         level=getattr(logging, settings.log_level, logging.INFO),
         format="%(levelname)s %(name)s :: %(message)s",
     )
+
+    if args.check_endpoints:
+        return check_endpoints(settings)
 
     now = None
     if args.as_of:
@@ -481,6 +584,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"                {result.brief.headline}")
     else:
         print("  brief         not triggered")
+
+    for note in result.observations:
+        print(f"  [info] {note}")
 
     for err in result.errors:
         print(f"  [warn] {err}")
