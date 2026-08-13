@@ -18,9 +18,14 @@ def test_skip_link_matches_controls_destination(source):
     assert '<a class="skip" href="#controls">Skip to the filters</a>' in source
 
 
-def test_api_base_uses_same_origin(source):
+def test_api_base_uses_query_override_and_localhost_default(source):
+    assert "const params        = new URLSearchParams(window.location.search);" in source
+    assert "const api = params.get('api');" in source
+    assert "return /\\/api\\/v1\\/nodes$/.test(base) ? base : `${base}/api/v1/nodes`;" in source
+    assert "window.location.hostname === 'localhost'" in source
+    assert "window.location.hostname === '127.0.0.1'" in source
+    assert "return 'http://localhost:8000/api/v1/nodes';" in source
     assert "new URL('/api/v1/nodes', window.location.href).href.replace(/\\/$/, '')" in source
-    assert "http://localhost:8000/api/v1/nodes" not in source
 
 
 def test_hours_since_clamps_future_timestamps(source):

@@ -563,7 +563,18 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
 
 /* ── Configuration ────────────────────────────────────────────────────────── */
 
-const API_BASE      = new URL('/api/v1/nodes', window.location.href).href.replace(/\/$/, '');
+const params        = new URLSearchParams(window.location.search);
+const API_BASE      = (() => {
+  const api = params.get('api');
+  if (api) {
+    const base = api.replace(/\/$/, '');
+    return /\/api\/v1\/nodes$/.test(base) ? base : `${base}/api/v1/nodes`;
+  }
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:8000/api/v1/nodes';
+  }
+  return new URL('/api/v1/nodes', window.location.href).href.replace(/\/$/, '');
+})();
 const NOTITIA_BASE  = 'https://notitiacivica.com';
 const FRESH_LIVE_H  = 6;    // < 6h  → LIVE
 const FRESH_RECENT_H= 24;   // < 24h → RECENT, else STALE
