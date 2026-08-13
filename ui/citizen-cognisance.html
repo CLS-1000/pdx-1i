@@ -563,7 +563,18 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
 
 /* ── Configuration ────────────────────────────────────────────────────────── */
 
-const API_BASE      = new URL('/api/v1/nodes', window.location.href).href.replace(/\/$/, '');
+const params        = new URLSearchParams(window.location.search);
+const API_BASE      = (() => {
+  const api = params.get('api');
+  if (api) {
+    const base = api.replace(/\/$/, '');
+    return /\/api\/v1\/nodes$/.test(base) ? base : `${base}/api/v1/nodes`;
+  }
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:8000/api/v1/nodes';
+  }
+  return new URL('/api/v1/nodes', window.location.href).href.replace(/\/$/, '');
+})();
 const NOTITIA_BASE  = 'https://notitiacivica.com';
 const FRESH_LIVE_H  = 6;    // < 6h  → LIVE
 const FRESH_RECENT_H= 24;   // < 24h → RECENT, else STALE
@@ -1445,16 +1456,38 @@ function buildControls() {
   });
 
   const sigHost = document.getElementById('sig-chips');
-  sigHost.innerHTML = SIG_FILTERS.map(s =>
-    `<button type="button" class="chip" data-sig="${s}" aria-pressed="${s === 'all'}">${esc(s.toUpperCase())}</button>`).join('');
+  sigHost.innerHTML = SIG_FILTERS.map((s, i) =>
+    `<button type="button" class="chip" role="radio" data-sig="${s}" aria-checked="${s === 'all'}" tabindex="${i === 0 ? 0 : -1}">${esc(s.toUpperCase())}</button>`).join('');
+
+  function activateSig(b) {
+    sigFilter = b.dataset.sig;
+    sigHost.querySelectorAll('[data-sig]').forEach(x => {
+      const active = x.dataset.sig === sigFilter;
+      x.setAttribute('aria-checked', String(active));
+      x.tabIndex = active ? 0 : -1;
+    });
+    b.focus();
+    unpin();
+    refresh();
+  }
+
   sigHost.addEventListener('click', e => {
     const b = e.target.closest('[data-sig]');
     if (!b) return;
-    sigFilter = b.dataset.sig;
-    sigHost.querySelectorAll('[data-sig]').forEach(x =>
-      x.setAttribute('aria-pressed', String(x.dataset.sig === sigFilter)));
-    unpin();
-    refresh();
+    activateSig(b);
+  });
+
+  sigHost.addEventListener('keydown', e => {
+    const buttons = Array.from(sigHost.querySelectorAll('[data-sig]'));
+    const idx = buttons.indexOf(document.activeElement);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      activateSig(buttons[(idx + 1) % buttons.length]);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      activateSig(buttons[(idx - 1 + buttons.length) % buttons.length]);
+    }
   });
 }
 
