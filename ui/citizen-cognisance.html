@@ -1456,8 +1456,8 @@ function buildControls() {
   });
 
   const sigHost = document.getElementById('sig-chips');
-  sigHost.innerHTML = SIG_FILTERS.map((s, i) =>
-    `<button type="button" class="chip" data-sig="${s}" aria-pressed="${s === 'all'}" tabindex="${i === 0 ? 0 : -1}">${esc(s.toUpperCase())}</button>`).join('');
+  sigHost.innerHTML = SIG_FILTERS.map(s =>
+    `<button type="button" class="chip" data-sig="${s}" aria-pressed="${s === 'all'}" tabindex="${s === 'all' ? 0 : -1}">${esc(s.toUpperCase())}</button>`).join('');
 
   function activateSig(b) {
     sigFilter = b.dataset.sig;
