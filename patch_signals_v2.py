@@ -9,13 +9,17 @@ Idempotent. Run after patch_citizen_weights.py has already been applied.
 """
 
 import pathlib
-import re
 import shutil
 import sys
 from datetime import datetime
 
-SRC = pathlib.Path.home() / "pdx-1i/ui/citizen-cognisance.html"
-
+SRC = pathlib.Path(__file__).resolve().parent / "ui/citizen-cognisance.html"
+if "--file" in sys.argv:
+    i = sys.argv.index("--file")
+    if i + 1 >= len(sys.argv):
+        sys.exit("✗ --file requires a path")
+    SRC = pathlib.Path(sys.argv[i + 1]).expanduser()
+DRY_RUN = "--dry-run" in sys.argv
 # ── Sentinels ─────────────────────────────────────────────────────────────
 SIGNALS_FETCH_SENTINEL = "// ── Signals index fetch"
 MATCHERS_V2_SENTINEL = "s.text ||"
