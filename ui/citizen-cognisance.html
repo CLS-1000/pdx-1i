@@ -1457,13 +1457,13 @@ function buildControls() {
 
   const sigHost = document.getElementById('sig-chips');
   sigHost.innerHTML = SIG_FILTERS.map((s, i) =>
-    `<button type="button" class="chip" role="radio" data-sig="${s}" aria-checked="${s === 'all'}" tabindex="${i === 0 ? 0 : -1}">${esc(s.toUpperCase())}</button>`).join('');
+    `<button type="button" class="chip" data-sig="${s}" aria-pressed="${s === 'all'}" tabindex="${i === 0 ? 0 : -1}">${esc(s.toUpperCase())}</button>`).join('');
 
   function activateSig(b) {
     sigFilter = b.dataset.sig;
     sigHost.querySelectorAll('[data-sig]').forEach(x => {
       const active = x.dataset.sig === sigFilter;
-      x.setAttribute('aria-checked', String(active));
+      x.setAttribute('aria-pressed', String(x.dataset.sig === sigFilter));
       x.tabIndex = active ? 0 : -1;
     });
     b.focus();
