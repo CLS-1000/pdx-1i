@@ -439,6 +439,31 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* ── Topic Weight Sliders ── */
+.topic-weights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-surface, #18181b);
+  border: 1px solid var(--border-color, #27272a);
+  border-radius: 6px;
+  font-family: var(--f-mono, monospace);
+  font-size: 11px;
+}
+.topic-weights label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted, #a1a1aa);
+}
+.topic-weights input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent, #3b82f6);
+}
+
 </style>
 </head>
 <body>
@@ -460,6 +485,16 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
 </header>
 
 <main>
+
+  <!-- Topic Weight Sliders -->
+  <div class="topic-weights" id="topic-weights">
+    <label>Housing <input type="range" id="w-housing" min="0" max="3" step="0.25" value="1"></label>
+    <label>Civic Money <input type="range" id="w-civic_money" min="0" max="3" step="0.25" value="1"></label>
+    <label>Public Safety <input type="range" id="w-public_safety" min="0" max="3" step="0.25" value="1"></label>
+    <label>Environment <input type="range" id="w-environment" min="0" max="3" step="0.25" value="1"></label>
+    <label>State Politics <input type="range" id="w-state_politics" min="0" max="3" step="0.25" value="1"></label>
+  </div>
+
 
   <!-- ═══ 2 · Lede ═════════════════════════════════════════════════════════ -->
   <section class="lede">
@@ -1578,6 +1613,76 @@ window.addEventListener('resize', () => {
 });
 
 loadSignals();
+
+
+// ── Topic Weights & Signals v2 ──────────────────────────────────────────
+const TOPIC_WEIGHTS = {
+  housing: 1.0,
+  civic_money: 1.0,
+  public_safety: 1.0,
+  environment: 1.0,
+  state_politics: 1.0,
+};
+
+const TOPIC_MATCHERS = {
+  housing:        s => /housing|zoning|permit|rezone|development|land.use/i.test(s.text || ''),
+  civic_money:    s => /budget|allocation|contract|auditor|financ|appropriat/i.test(s.text || '')
+                    || /BUDGET|FINANCE|AUDIT/.test(s.source_type || ''),
+  public_safety:  s => /police|ppb|court|crime|incident|enforcement|safety/i.test(s.text || '')
+                    || /PPB|COURT/.test(s.source_type || ''),
+  environment:    s => /pge|pnw.natural|trimet|water.bureau|utility|environ|transit/i.test(s.text || '')
+                    || /PGE|TRIMET|WATER|OHSU/.test(s.source_type || ''),
+  state_politics: s => /olis|orestar|legislat|bill|measure|campaign|pac/i.test(s.text || '')
+                    || /OLIS|ORESTAR/.test(s.source_type || ''),
+};
+
+const SIGNAL_INDEX = new Map();
+
+(async () => {
+  try {
+    const res = await fetch('/signals?limit=200');
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const sig of (data.items || [])) {
+      for (const eid of (sig.entity_ids || [])) {
+        if (!SIGNAL_INDEX.has(eid)) SIGNAL_INDEX.set(eid, sig);
+      }
+    }
+    if (typeof renderList === 'function') renderList();
+  } catch (_) {}
+})();
+
+function topicScore(node) {
+  const e   = typeof entryFor === 'function' ? entryFor(node.id) : {};
+  const sig = SIGNAL_INDEX.get(node.id) || (e ? e.sig : null) || null;
+  const base = sig ? (sig.credibility || sig.confidence || 0) : 0;
+  let tagSum = 0;
+  if (sig) {
+    for (const [t, w] of Object.entries(TOPIC_WEIGHTS)) {
+      if (TOPIC_MATCHERS[t]) tagSum += w * (TOPIC_MATCHERS[t](sig) ? 1.0 : 0.0);
+    }
+  }
+  const hours     = (e && e.hours != null) ? e.hours : 48;
+  const vPenalty  = Math.min(hours / 48, 1.0);
+  const wBreaking = Math.min((TOPIC_WEIGHTS.state_politics || 1) / 2, 1);
+  return base + tagSum - vPenalty * (1 - wBreaking);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  Object.keys(TOPIC_WEIGHTS).forEach(topic => {
+    const el = document.getElementById(`w-${topic}`);
+    if (el) {
+      el.addEventListener('input', (e) => {
+        TOPIC_WEIGHTS[topic] = parseFloat(e.target.value);
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+  });
+});
+
+
+// (signals index fetch already defined above)
+
 </script>
 </body>
 </html>
