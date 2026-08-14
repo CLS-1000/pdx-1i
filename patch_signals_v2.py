@@ -21,9 +21,8 @@ if "--file" in sys.argv:
     SRC = pathlib.Path(sys.argv[i + 1]).expanduser()
 DRY_RUN = "--dry-run" in sys.argv
 # ── Sentinels ─────────────────────────────────────────────────────────────
-SIGNALS_FETCH_SENTINEL = "// ── Signals index fetch"
+SIGNALS_FETCH_SENTINEL = "fetch('/signals?limit=200')"
 MATCHERS_V2_SENTINEL = "s.text ||"
-
 # ── Signals fetch + lookup map (injected before </script>) ────────────────
 SIGNALS_FETCH = """
 // ── Signals index fetch ──────────────────────────────────────────────────
