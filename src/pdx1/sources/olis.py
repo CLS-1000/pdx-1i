@@ -87,19 +87,11 @@ class OlisAdapter(LiveSourceAdapter):
         base class still owns caching and the fixture path, so a partial walk that
         raises falls back to the last-good cache exactly as a single failed GET would.
         """
-        try:
-            import httpx
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                f"{self.name}: httpx is required for live fetch -- "
-                "install it with: pip install 'pdx-1i[live]'"
-            ) from exc
-
         rows: list[dict[str, Any]] = []
         url: str | None = self.feed_url
 
         for page in range(MAX_PAGES):
-            response = httpx.get(url, timeout=self.timeout, follow_redirects=True)
+            response = self._get(url)
             response.raise_for_status()
             payload = response.json()
 

@@ -73,7 +73,7 @@ src/pdx1/            43 modules
   api/               FastAPI app, routes (incl. /graph), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               27 files, 484 tests
+tests/               30 files, 546 tests
   fixtures/          source payloads replayed by the adapters
 ```
 
@@ -90,9 +90,15 @@ gate — a cached payload carries its original timestamps, so stale records stil
 **Field mappings are only partly verified.** The four record feeds map real payload
 shapes through alias tables (`_COLUMN_ALIASES` in `orestar.py`, `_FIELD_ALIASES`
 elsewhere), and each table carries a comment saying how far it has been confirmed. The
-endpoints are unreachable from the sandboxes this was developed in, so the *mapping
-logic* is tested and the *field names* are not. If you can reach the real endpoints,
-verify the names and update the comment to say so.
+*mapping logic* is tested and the *field names* are mostly not.
+
+A live probe on 2026-08-21 did reach the network -- earlier sandboxes could not -- and
+found **5 of 15 registered endpoints answering**; the measured table is in
+`SHIPPING.md`. Of the four record feeds, ORESTAR and WA_PDC 404, SEI answers HTML
+because OGEC publishes no API, and OLIS answers 200 with something that is not JSON. So
+the field names are still unverified, but for a different reason than before: the
+endpoints are reachable now, and mostly wrong. Verify an alias table against a real
+payload before trusting it, and update the comment on it to say how far you got.
 
 Two feeds are special cases worth knowing before you touch them:
 

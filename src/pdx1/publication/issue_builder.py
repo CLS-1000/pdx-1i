@@ -19,6 +19,7 @@ from ..models import (
     AnomalyTier,
     Brief,
     BriefSection,
+    FeedCoverage,
     IntelligenceRecord,
     Observation,
     Outcome,
@@ -73,6 +74,10 @@ class IssueBuilder:
     #: controls whether the text is annotated, not whether it publishes. Attribution
     #: is unaffected and always enforced.
     tone_gate: bool = True
+    #: What the harvest reached this cycle. When present it is stated in the brief's
+    #: summary and stored on the brief. None means the caller did not measure it, and
+    #: the brief stays silent rather than implying full coverage it cannot vouch for.
+    coverage: FeedCoverage | None = None
 
     def build(
         self,
@@ -115,6 +120,7 @@ class IssueBuilder:
             sections=sections,
             confidence=confidence,
             sources=sorted({r.source for r in records}),
+            coverage=self.coverage,
         )
 
     # ── Section assembly ─────────────────────────────────────────────────────
@@ -213,7 +219,12 @@ class IssueBuilder:
             else " No record carries a TIER_1 baseline deviation."
         )
 
+        # Coverage leads the summary rather than trailing it. A reader who stops after
+        # the first sentence must still know the brief is missing a feed -- that is
+        # what "says so on its face" has to mean for it to be worth anything.
+        head = f"{self.coverage.describe()} " if self.coverage is not None else ""
+
         return (
-            f"This cycle cleared {len(records)} records through the four-gate filter: "
-            f"{breakdown}.{tail} Every line traces to run {self.run_id}."
+            f"{head}This cycle cleared {len(records)} records through the four-gate "
+            f"filter: {breakdown}.{tail} Every line traces to run {self.run_id}."
         )

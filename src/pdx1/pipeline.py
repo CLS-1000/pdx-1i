@@ -29,13 +29,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .anomaly import BaselineRegistry
-from .config import Settings
+from .config import ConfigError, Settings
 from .gates import FourGateFilter, composite_score
 from .graph import ALIASES, NODES
 from .models import (
     AnomalyTier,
     Brief,
     ConfidenceTier,
+    FeedCoverage,
     IntelligenceRecord,
     Investigation,
     Opportunity,
@@ -83,6 +84,49 @@ _WS = re.compile(r"\s+")
 
 
 @dataclass
+class AdapterOutcome:
+    """
+    What one adapter did this cycle, as a first-class event.
+
+    Carries `run_id` so a failure is traceable to the run that hit it, the same
+    requirement every published record is held to. A dead feed is not a log line that
+    scrolls away -- it is the reason a brief is missing a section, and the two have to
+    be connectable after the fact.
+    """
+
+    run_id: str
+    source: str
+    ok: bool
+    items: int
+    #: True when the adapter answered without error and returned nothing.
+    empty: bool = False
+    #: True when the last-good cache answered after a failed live fetch.
+    from_cache: bool = False
+    http_status: int | None = None
+    elapsed_s: float = 0.0
+    attempts: int = 0
+    errors: list[str] = field(default_factory=list)
+
+    def describe(self) -> str:
+        """One line, measured. Suitable for a run log or the health check."""
+        status = "ok" if self.ok else "FAIL"
+        if self.ok and self.empty:
+            status = "EMPTY"
+        bits = [
+            f"{self.source} {status}",
+            f"items={self.items}",
+            f"http={self.http_status if self.http_status is not None else '-'}",
+            f"attempts={self.attempts}",
+            f"elapsed={self.elapsed_s:.3f}s",
+        ]
+        if self.from_cache:
+            bits.append("served=last-good-cache")
+        if self.errors:
+            bits.append(f"error={self.errors[0]}")
+        return " ".join(bits)
+
+
+@dataclass
 class CycleResult:
     """What one cycle did. Returned by `run_cycle` and summarised on the CLI."""
 
@@ -99,6 +143,10 @@ class CycleResult:
     #: published. Kept apart from `errors` so a run log does not read as if something
     #: went wrong when nothing did.
     observations: list[str] = field(default_factory=list)
+    #: Per-adapter outcomes, one per adapter attempted, in harvest order.
+    adapters: list[AdapterOutcome] = field(default_factory=list)
+    #: What the harvest reached. Also stored on the brief.
+    coverage: FeedCoverage | None = None
 
     @property
     def stored(self) -> int:
@@ -123,17 +171,25 @@ def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> lis
         # last-good cache so the next outage degrades to stale data rather than none.
         cache = settings.cache_dir
         u = settings.urls
+        # Every live adapter gets the same bounded retry budget. Passed explicitly
+        # rather than left to the adapter default so PDX1_RETRY_* reaches all of them.
+        r = {
+            "max_attempts": settings.retry.max_attempts,
+            "retry_backoff_s": settings.retry.backoff_s,
+        }
         adapters: list[SourceAdapter] = [
-            OrestarAdapter(timeout=t.orestar, live=True, cache_dir=cache, feed_url=u.orestar),
-            OlisAdapter(timeout=t.olis, live=True, cache_dir=cache, feed_url=u.olis),
-            SeiAdapter(timeout=t.sei, live=True, cache_dir=cache, feed_url=u.sei),
-            WaPdcAdapter(timeout=t.wa_pdc, live=True, cache_dir=cache, feed_url=u.wa_pdc),
+            OrestarAdapter(timeout=t.orestar, live=True, cache_dir=cache, feed_url=u.orestar, **r),
+            OlisAdapter(timeout=t.olis, live=True, cache_dir=cache, feed_url=u.olis, **r),
+            SeiAdapter(timeout=t.sei, live=True, cache_dir=cache, feed_url=u.sei, **r),
+            WaPdcAdapter(timeout=t.wa_pdc, live=True, cache_dir=cache, feed_url=u.wa_pdc, **r),
             PortlandPressAdapter(
-                timeout=30, live=True, cache_dir=cache, feed_url=u.portland_press
+                timeout=30, live=True, cache_dir=cache, feed_url=u.portland_press, **r
             ),
         ]
         for target in WATCH_TARGETS:
-            adapters.append(WatchAdapter(target, timeout=60, live=True, cache_dir=cache))
+            adapters.append(
+                WatchAdapter(target, timeout=60, live=True, cache_dir=cache, **r)
+            )
         return adapters
 
     return [
@@ -147,6 +203,40 @@ def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> lis
 
 def make_run_id(now: datetime) -> str:
     return f"pdx1_{now:%Y_%m%d_%H%M%S}"
+
+
+def _outcome(run_id: str, result: FetchResult) -> AdapterOutcome:
+    """Bind one adapter's fetch to the run that made it."""
+    return AdapterOutcome(
+        run_id=run_id,
+        source=result.source,
+        ok=result.ok,
+        items=len(result),
+        empty=result.empty,
+        from_cache=result.from_cache,
+        http_status=result.http_status,
+        elapsed_s=result.elapsed_s,
+        attempts=result.attempts,
+        errors=list(result.errors),
+    )
+
+
+def _coverage(outcomes: list[AdapterOutcome]) -> FeedCoverage:
+    """
+    Summarise what the harvest reached.
+
+    An adapter counts as having returned only if it produced at least one signal. A
+    feed that answered with nothing contributed nothing to the brief, and counting it
+    as covered would let a brief built from one live feed and four empty ones describe
+    itself as complete.
+    """
+    return FeedCoverage(
+        attempted=len(outcomes),
+        returned=sum(1 for o in outcomes if o.ok and o.items),
+        failed=[o.source for o in outcomes if not o.ok],
+        empty=[o.source for o in outcomes if o.ok and o.empty],
+        stale=[o.source for o in outcomes if o.from_cache],
+    )
 
 
 # ── Stage 01: Harvest ────────────────────────────────────────────────────────
@@ -282,22 +372,47 @@ def run_cycle(
         publish_tier=settings.publish_anomaly_tier,
     )
 
+    # The first thing in the journal for any run: which world this cycle is describing.
+    # Reading a morning's log and being unable to tell whether it fetched anything is
+    # the failure mode the explicit PDX1_LIVE switch exists to close.
+    logger.info(
+        "cycle starting — live=%s environment=%s adapters=%d",
+        settings.live_fetch,
+        settings.environment,
+        len(adapters),
+    )
+
     # ── 01 Harvest ──
+    # Each adapter is isolated: `safe_fetch` has already turned any failure into an
+    # error on its result, so nothing here can abort the cycle. What this loop adds is
+    # that a failure is *recorded* rather than merely survived.
     signals: list[Signal] = []
     errors: list[str] = []
+    fetched: list[FetchResult] = []
     for adapter in adapters:
-        result = harvest(adapter)
-        signals.extend(result.signals)
-        errors.extend(f"{result.source}: {e}" for e in result.errors)
-        logger.info(
-            "harvest %s: %d signal(s), ok=%s", result.source, len(result), result.ok
-        )
+        fetch_result = harvest(adapter)
+        fetched.append(fetch_result)
+        signals.extend(fetch_result.signals)
+        errors.extend(f"{fetch_result.source}: {e}" for e in fetch_result.errors)
 
     if now is None:
         now = max((s.published_at for s in signals), default=datetime.now(timezone.utc))
 
     run_id = make_run_id(now)
-    result = CycleResult(run_id=run_id, harvested=len(signals), errors=errors)
+    outcomes = [_outcome(run_id, f) for f in fetched]
+    for outcome in outcomes:
+        # Logged at warning when the feed did not deliver, so a partial cycle is
+        # visible in the journal without reading the brief.
+        level = logging.INFO if (outcome.ok and not outcome.empty) else logging.WARNING
+        logger.log(level, "harvest %s", outcome.describe())
+
+    result = CycleResult(
+        run_id=run_id,
+        harvested=len(signals),
+        errors=errors,
+        adapters=outcomes,
+        coverage=_coverage(outcomes),
+    )
 
     # ── 02 Parse ──
     parsed_signals = [parse_signal(s, resolver) for s in signals]
@@ -393,7 +508,9 @@ def _publish(
     Split out of `run_cycle` to keep that function under the complexity ceiling CI
     enforces; it is one stage of the cycle and reads as one.
     """
-    builder = IssueBuilder(run_id=run_id, tone_gate=settings.tone_gate)
+    builder = IssueBuilder(
+        run_id=run_id, tone_gate=settings.tone_gate, coverage=result.coverage
+    )
     result.brief = builder.build(records, date=now.date().isoformat())
 
     if result.brief is not None:
@@ -548,7 +665,14 @@ def check_endpoints(settings: Settings) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ConfigError as exc:
+        # Refusing is the feature. Print the reason rather than a traceback, and exit
+        # non-zero so a scheduler or systemd unit registers it as a failed run instead
+        # of a quiet one.
+        print(f"pdx1: refusing to run -- {exc}", file=sys.stderr)
+        return 2
 
     logging.basicConfig(
         level=getattr(logging, settings.log_level, logging.INFO),

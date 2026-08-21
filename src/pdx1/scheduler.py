@@ -98,9 +98,17 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s :: %(message)s")
 
-    from .config import Settings
+    from .config import ConfigError, Settings
 
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ConfigError as exc:
+        # The scheduler is the process that runs unattended, so a misconfiguration here
+        # is the one most likely to go unnoticed. Refuse loudly and exit non-zero so
+        # systemd records a failed start rather than a running service quietly
+        # replaying fixtures at 06:00 every morning.
+        logger.error("refusing to start -- %s", exc)
+        raise SystemExit(2) from exc
 
     if not _is_production():
         logger.warning(

@@ -46,11 +46,75 @@ def _env_float(key: str, default: float) -> float:
         return default
 
 
+#: Spellings accepted for a boolean environment variable. Anything else is a typo,
+#: and a typo must not resolve to a silent default -- see `_env_bool_strict`.
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+
+
+class ConfigError(RuntimeError):
+    """
+    Configuration is missing or ambiguous and the process must not start.
+
+    Raised rather than defaulted because the values guarded this way decide what the
+    engine reads and publishes. A run that silently fell back would still write records
+    and still assemble a brief -- it would just be describing the wrong world.
+    """
+
+
 def _env_bool(key: str, default: bool) -> bool:
     raw = os.environ.get(key)
     if raw is None or not raw.strip():
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return raw.strip().lower() in _TRUE
+
+
+def _env_bool_strict(key: str) -> bool | None:
+    """
+    Read a boolean that is not allowed to be guessed at.
+
+    Returns None when unset or blank, so the caller decides whether absence is legal
+    in its environment. Raises `ConfigError` on a value that is neither true nor false
+    -- `PDX1_LIVE=ture` is not a request for fixture mode, it is a mistake, and
+    resolving it to False would run the whole cycle against checked-in payloads while
+    reporting success.
+    """
+    raw = os.environ.get(key)
+    if raw is None or not raw.strip():
+        return None
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    raise ConfigError(
+        f"{key}={raw!r} is not a recognised boolean. "
+        f"Use one of {sorted(_TRUE)} or {sorted(_FALSE)}."
+    )
+
+
+def _resolve_live_fetch(environment: str) -> bool:
+    """
+    Decide fixture replay vs live HTTP -- the single switch, with no production default.
+
+    Fixture mode is the right default for development and CI, where a reproducible
+    cycle matters more than a fresh one. It is never a defensible default in
+    production: an unset `PDX1_LIVE` on the VM would produce a brief every morning,
+    on schedule, entirely from checked-in payloads, and nothing downstream would
+    report anything wrong. So production must say which it wants.
+    """
+    explicit = _env_bool_strict("PDX1_LIVE")
+    if explicit is not None:
+        return explicit
+    if environment.strip().lower() == "production":
+        raise ConfigError(
+            "PDX1_LIVE is unset and PDX1_ENVIRONMENT=production. "
+            "Production must choose explicitly: set PDX1_LIVE=true to fetch from the "
+            "real sources, or PDX1_LIVE=false to acknowledge a fixture replay. "
+            "There is no default here because a silent fixture run publishes a brief "
+            "that looks correct and describes nothing current."
+        )
+    return False
 
 
 @dataclass(frozen=True)
@@ -81,6 +145,21 @@ class SourceUrls:
 
 
 @dataclass(frozen=True)
+class RetryPolicy:
+    """
+    Bounded retry for live fetches.
+
+    `max_attempts` counts the first try, so 3 means two retries. It is deliberately
+    small: the cycle runs five adapters in series under a cron schedule, and a generous
+    retry budget multiplied across them turns a partial outage into a run that is still
+    going when the next one is due.
+    """
+
+    max_attempts: int = 3
+    backoff_s: float = 2.0
+
+
+@dataclass(frozen=True)
 class SourceTimeouts:
     """Per-adapter HTTP timeouts, in seconds."""
 
@@ -108,6 +187,7 @@ class Settings:
     gates: GateConfig = field(default_factory=GateConfig)
     timeouts: SourceTimeouts = field(default_factory=SourceTimeouts)
     urls: SourceUrls = field(default_factory=SourceUrls)
+    retry: RetryPolicy = field(default_factory=RetryPolicy)
 
     baseline_window_days: int = 90
     publish_on_change: bool = False
@@ -134,6 +214,8 @@ class Settings:
         except ValueError:
             tier = AnomalyTier.TIER_1
 
+        environment = _env("PDX1_ENVIRONMENT", "development")
+
         return cls(
             store_path=Path(_env("PDX1_STORE_PATH", "pdx1_signals.jsonl")),
             db_path=Path(_env("PDX1_DB_PATH", "pdx1.db")),
@@ -143,7 +225,7 @@ class Settings:
                 else None
             ),
             cache_dir=Path(_env("PDX1_CACHE_DIR", "cache/pdx1")),
-            environment=_env("PDX1_ENVIRONMENT", "development"),
+            environment=environment,
             log_level=_env("PDX1_LOG_LEVEL", "INFO").upper(),
             gates=GateConfig(
                 min_credibility=_env_float("PDX1_GATE_MIN_CREDIBILITY", 0.5),
@@ -164,6 +246,10 @@ class Settings:
                 wa_pdc=_env_int("WA_PDC_TIMEOUT", 30),
                 pdx911=_env_int("PDX911_TIMEOUT", 60),
             ),
+            retry=RetryPolicy(
+                max_attempts=max(1, _env_int("PDX1_RETRY_MAX_ATTEMPTS", 3)),
+                backoff_s=max(0.0, _env_float("PDX1_RETRY_BACKOFF_S", 2.0)),
+            ),
             baseline_window_days=_env_int("PDX1_BASELINE_WINDOW_DAYS", 90),
             publish_on_change=_env_bool("PDX1_PUBLISH_ON_CHANGE", False),
             publish_anomaly_tier=tier,
@@ -172,6 +258,6 @@ class Settings:
             timezone=_env("PDX1_TIMEZONE", "America/Los_Angeles"),
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
-            live_fetch=_env_bool("PDX1_LIVE", False),
+            live_fetch=_resolve_live_fetch(environment),
             tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )

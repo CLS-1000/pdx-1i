@@ -91,31 +91,30 @@ class PortlandPressAdapter(LiveSourceAdapter):
         and skipped. If every feed fails the error is raised, which lets the base class
         fall back to the last-good cache exactly as a single failed GET would.
         """
-        try:
-            import httpx
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                f"{self.name}: httpx is required for live fetch -- "
-                "install it with: pip install 'pdx-1i[live]'"
-            ) from exc
-
         bodies: list[dict[str, str]] = []
         failures: list[str] = []
+        # `_get` records the status of whichever request ran last, which for a
+        # multi-feed adapter is whichever outlet happens to sort last -- so a run that
+        # collected four outlets fine would report the fifth one's 404 and read as
+        # broken. Track the last status that actually contributed a body instead.
+        contributing_status: int | None = None
 
         for outlet, url in self.feeds.items():
             try:
-                response = httpx.get(url, timeout=self.timeout, follow_redirects=True)
+                response = self._get(url)
                 response.raise_for_status()
             except Exception as exc:  # noqa: BLE001 - one dead outlet is not fatal
                 logger.warning("%s: feed %s failed: %s", self.name, outlet, exc)
                 failures.append(f"{outlet}: {type(exc).__name__}")
                 continue
             bodies.append({"outlet": outlet, "body": response.text})
+            contributing_status = getattr(response, "status_code", None)
 
         if not bodies:
             raise RuntimeError(
                 f"{self.name}: every tracked feed failed ({'; '.join(failures)})"
             )
+        self._http_status = contributing_status
         if failures:
             logger.info(
                 "%s: %d of %d feeds returned (%s unavailable)",
