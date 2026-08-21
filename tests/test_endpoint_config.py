@@ -18,13 +18,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pdx1.config import Settings, SourceUrls
+from pdx1.config import Settings, SourceMode, SourceUrls
 from pdx1.pipeline import check_endpoints, default_adapters
 from pdx1.sources import OlisAdapter, PortlandPressAdapter
 
 
 def _live(**urls) -> Settings:
-    return replace(Settings(), live_fetch=True, urls=SourceUrls(**urls))
+    return replace(Settings(), source_mode=SourceMode.LIVE, urls=SourceUrls(**urls))
 
 
 # ── Overrides ─────────────────────────────────────────────────────────────────

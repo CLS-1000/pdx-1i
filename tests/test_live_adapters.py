@@ -108,10 +108,10 @@ def test_live_adapter_timeout_is_forwarded():
 
 
 def test_default_adapters_fixture_mode_uses_fixture_paths(fixture_dir):
-    from pdx1.config import Settings
+    from pdx1.config import Settings, SourceMode
     from pdx1.pipeline import default_adapters
 
-    settings = Settings(live_fetch=False)
+    settings = Settings(source_mode=SourceMode.FIXTURE)
     adapters = default_adapters(settings, fixture_dir)
 
     assert all(a.fixture_path is not None for a in adapters)
@@ -119,10 +119,10 @@ def test_default_adapters_fixture_mode_uses_fixture_paths(fixture_dir):
 
 
 def test_default_adapters_live_mode_sets_live_flag():
-    from pdx1.config import Settings
+    from pdx1.config import Settings, SourceMode
     from pdx1.pipeline import default_adapters
 
-    settings = Settings(live_fetch=True)
+    settings = Settings(source_mode=SourceMode.LIVE)
     adapters = default_adapters(settings)
 
     # All adapters should have live=True and no fixture_path.
@@ -132,11 +132,11 @@ def test_default_adapters_live_mode_sets_live_flag():
 
 
 def test_default_adapters_live_mode_includes_watch_targets():
-    from pdx1.config import Settings
+    from pdx1.config import Settings, SourceMode
     from pdx1.pipeline import default_adapters
     from pdx1.watch import WatchAdapter
 
-    settings = Settings(live_fetch=True)
+    settings = Settings(source_mode=SourceMode.LIVE)
     adapters = default_adapters(settings)
 
     watch = [a for a in adapters if isinstance(a, WatchAdapter)]

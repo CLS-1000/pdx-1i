@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from pdx1.config import GateConfig, Settings
+from pdx1.config import GateConfig, Settings, SourceMode
 from pdx1.graph import ALIASES, NODES
 from pdx1.models import AnomalyTier, Outcome, Priority, SourceType
 from pdx1.pipeline import (
@@ -33,6 +33,7 @@ def settings(tmp_path) -> Settings:
         store_path=tmp_path / "signals.jsonl",
         db_path=tmp_path / "pdx1.db",
         gates=GateConfig(),
+        source_mode=SourceMode.FIXTURE,
     )
 
 

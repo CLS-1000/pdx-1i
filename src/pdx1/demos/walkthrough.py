@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
-from ..config import Settings
+from ..config import Settings, SourceMode
 from ..gates import FourGateFilter, composite_score
 from ..graph import ALIASES, NODES
 from ..pipeline import FIXTURE_DIR, default_adapters, parse_signal, run_cycle
@@ -28,7 +29,11 @@ def rule(title: str) -> None:
 
 
 def main() -> int:
-    settings = Settings.from_env()
+    # The walkthrough is a fixture replay by construction -- it narrates a known
+    # cycle -- so it declares that mode itself rather than inheriting whatever the
+    # environment is set to. Everything else (gate thresholds especially) still comes
+    # from the environment, so the walkthrough shows your tuning.
+    settings = replace(Settings.from_env(), source_mode=SourceMode.FIXTURE)
     adapters = default_adapters(settings, FIXTURE_DIR)
     resolver = EntityResolver(NODES, ALIASES)
 

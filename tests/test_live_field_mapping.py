@@ -374,7 +374,8 @@ def test_olis_follows_a_relative_next_link(tmp_path):
     second_url = mock_get.call_args_list[1].args[0]
     assert second_url.startswith("https://"), f"relative link was not resolved: {second_url}"
     assert second_url == (
-        "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$skiptoken=100"
+        "https://api.oregonlegislature.gov/odata/odataservice.svc/"
+        "Measures?$skiptoken=100&$format=json"
     )
 
 
@@ -388,7 +389,49 @@ def test_olis_absolute_next_link_is_left_alone(tmp_path):
     with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
         OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
 
-    assert mock_get.call_args_list[1].args[0] == absolute
+    assert mock_get.call_args_list[1].args[0] == f"{absolute}&$format=json"
+
+
+def test_olis_next_link_keeps_asking_for_json(tmp_path):
+    """
+    Regression test for the second real failure against the live service.
+
+    OLIS serves its nextLink without the `$format=json` the first request carried, and
+    OData then falls back to the service default: page two answered 200 with 26 MB of
+    Atom XML, `response.json()` raised on it, and the whole walk was discarded --
+    including page one, which had parsed. Measured 2026-08-21; restoring the parameter
+    returned a 5,000-row JSON envelope from the same URL.
+    """
+    page_one = _response(
+        payload={"value": [_measure(1)], "@odata.nextLink": "Measures?$skiptoken=312,'SB','2019R1'"}
+    )
+    page_one.url = "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$format=json"
+    page_two = _response(payload={"value": [_measure(2)]})
+
+    with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
+        result = OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.ok, result.errors
+    second_url = mock_get.call_args_list[1].args[0]
+    assert second_url.endswith("&$format=json")
+    # The skiptoken carries literal commas and quotes; re-encoding them would produce
+    # a token the service does not recognise.
+    assert "$skiptoken=312,'SB','2019R1'" in second_url
+
+
+def test_olis_does_not_double_the_format_parameter(tmp_path):
+    """A nextLink that already asks for JSON is passed through unchanged."""
+    already = (
+        "https://api.oregonlegislature.gov/odata/odataservice.svc/"
+        "Measures?$format=json&$skiptoken=100"
+    )
+    page_one = _response(payload={"value": [_measure(1)], "@odata.nextLink": already})
+    page_two = _response(payload={"value": [_measure(2)]})
+
+    with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
+        OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert mock_get.call_args_list[1].args[0] == already
 
 
 def test_olis_paging_stops_at_the_ceiling(tmp_path):

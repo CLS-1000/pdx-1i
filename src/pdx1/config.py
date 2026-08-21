@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,6 +21,74 @@ from dotenv import load_dotenv
 from .models import AnomalyTier
 
 load_dotenv()
+
+
+class ConfigError(RuntimeError):
+    """
+    Configuration is missing or self-contradictory, and the process must not run.
+
+    Raised rather than defaulted. Every use of this exception guards a choice where a
+    silent default would change what the engine publishes -- above all the choice
+    between replaying fixtures and reading the real sources.
+    """
+
+
+class SourceMode(str, Enum):
+    """
+    Where adapters read their payloads from. There is no default.
+
+    This is the single value that selects fixture replay or live fetch. It must be
+    declared explicitly, because the two modes produce different records from the same
+    code: a fixture replay publishes a brief about a frozen May 2026 snapshot, and it
+    does so without a single network call to say otherwise. An operator who believes
+    they are running live and is not gets a plausible brief built from replayed data,
+    which is the failure this enum exists to make impossible.
+    """
+
+    LIVE = "live"
+    FIXTURE = "fixture"
+
+
+#: The environment key that selects the mode.
+SOURCE_MODE_KEY = "PDX1_SOURCE_MODE"
+
+#: Removed in favour of SOURCE_MODE_KEY. Still recognised -- to refuse. A stale
+#: `PDX1_LIVE=true` that was quietly ignored would be a live deployment silently
+#: serving fixtures, which is exactly the failure this rewrite removes.
+_LEGACY_LIVE_KEY = "PDX1_LIVE"
+
+
+def _resolve_source_mode(env: dict[str, str] | None = None) -> SourceMode:
+    """
+    Read the source mode, refusing anything that is not one explicit valid value.
+
+    Missing, blank, unrecognised, or accompanied by the legacy key -- all refuse. The
+    only outcomes are SourceMode.LIVE, SourceMode.FIXTURE, and ConfigError.
+    """
+    env = os.environ if env is None else env
+    valid = ", ".join(m.value for m in SourceMode)
+
+    if env.get(_LEGACY_LIVE_KEY) is not None:
+        raise ConfigError(
+            f"{_LEGACY_LIVE_KEY} is no longer read; it was replaced by "
+            f"{SOURCE_MODE_KEY} ({valid}). Remove {_LEGACY_LIVE_KEY} from the "
+            "environment and from .env, then set the new key. Refusing to run "
+            "rather than guess which one you meant."
+        )
+
+    raw = env.get(SOURCE_MODE_KEY, "").strip()
+    if not raw:
+        raise ConfigError(
+            f"{SOURCE_MODE_KEY} is not set. It has no default: set it to one of "
+            f"({valid}). `fixture` replays the checked-in payloads and reaches no "
+            "network; `live` reads the real sources."
+        )
+    try:
+        return SourceMode(raw.lower())
+    except ValueError:
+        raise ConfigError(
+            f"{SOURCE_MODE_KEY}={raw!r} is not a source mode. Valid values: {valid}."
+        ) from None
 
 
 def _env(key: str, default: str) -> str:
@@ -119,7 +188,10 @@ class Settings:
     cron_hour: int = 6
     cron_minute: int = 0
 
-    live_fetch: bool = False
+    #: Fixture replay or live fetch. None means "not declared", which is not a
+    #: runnable state: `default_adapters` refuses it rather than picking one. There is
+    #: deliberately no default here -- see SourceMode.
+    source_mode: SourceMode | None = None
     #: When False the vocabulary gates -- tone and hedging -- are bypassed; source
     #: language is published as-is while citation discipline (attribution gate)
     #: remains enforced.
@@ -127,7 +199,13 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        """Build settings from the current environment."""
+        """
+        Build settings from the current environment.
+
+        Raises `ConfigError` when PDX1_SOURCE_MODE is missing or unrecognised. That is
+        the point: a process that cannot say which sources it is reading must not
+        start, because both answers produce a publishable brief.
+        """
         tier_raw = _env("PDX1_PUBLISH_ANOMALY_TIER", AnomalyTier.TIER_1.value).upper()
         try:
             tier = AnomalyTier(tier_raw)
@@ -172,6 +250,6 @@ class Settings:
             timezone=_env("PDX1_TIMEZONE", "America/Los_Angeles"),
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
-            live_fetch=_env_bool("PDX1_LIVE", False),
+            source_mode=_resolve_source_mode(),
             tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )

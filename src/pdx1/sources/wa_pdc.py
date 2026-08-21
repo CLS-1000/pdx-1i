@@ -36,26 +36,56 @@ PAGE_SIZE = 1000
 #: spin forever.
 MAX_PAGES = 50
 
+#: Newest receipts first, undated rows last.
+#
+#: Socrata does not guarantee an order without one, and the live dataset holds 6.35
+#: million rows against roughly 90 in any 48-hour window -- so an unordered walk reads
+#: 50,000 arbitrary rows and the velocity gate discards very nearly all of them. Under
+#: this order the rows the gate can actually accept are on the first page. Paging over
+#: an unordered Socrata collection can also repeat and skip rows between requests,
+#: which an explicit sort removes.
+#:
+#: NULLS LAST is not decoration: 14,965 rows carry no receipt_date, and Socrata's
+#: Postgres backend sorts nulls *first* under DESC. Without it the walk spends its
+#: first fifteen pages on rows the adapter drops as undated, and a payload sampled
+#: from them has no receipt_date column at all.
+ORDER_BY = "receipt_date DESC NULLS LAST"
+
 # Socrata column names for each canonical field, in preference order.
 #
-# UNVERIFIED. The dataset could not be fetched from the environment this mapping was
-# written in, so these names come from a prior PDX-1i implementation rather than from
-# a real response. Matching is case- and punctuation-insensitive. Verify against a live
-# response before treating output as authoritative; a name matching nothing leaves its
-# field empty rather than raising.
+# VERIFIED against a live response from the dataset below on 2026-08-21: thirteen of
+# the fourteen canonical fields resolve, and the one that does not is noted inline.
+# Matching is case- and punctuation-insensitive, and nothing was invented to fill a
+# gap -- an unmatched field is left empty and the record says "not stated".
+#
+# The check was run over the union of 6,000 rows, not a handful. A five-row sample of
+# the same dataset reported `jurisdiction` and `recipient_type` as unmatched: Socrata
+# omits null columns per row, and neither column appeared in those five. That is the
+# `union_keys` hazard the module contract describes, met in the field.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "receipt_id": ("id", "receipt id", "transaction id", "report number"),
     "recipient": ("filer name", "filer", "recipient", "candidate"),
+    # Resolves to `office` live ("STATE REPRESENTATIVE").
     "recipient_type": ("filer type", "recipient type", "office"),
+    # Resolves to `jurisdiction` live ("LEG DISTRICT 33 - HOUSE").
     "jurisdiction": ("jurisdiction", "legislative district", "county"),
     "election_cycle": ("election year", "election cycle", "cycle"),
     "contributor": ("contributor name", "contributor", "donor"),
     "contributor_city": ("contributor city", "city"),
     "contributor_state": ("contributor state", "state"),
+    # Resolves to `cash_or_in_kind` live. The dataset also has `contributor_category`
+    # ("Organization", "Individual"); left unmapped because which of the two the
+    # record should report is an editorial choice, not a correction.
     "contributor_type": ("contributor type", "cash or in kind", "code"),
     "amount": ("amount", "contribution amount"),
+    # NO LIVE MATCH: no aggregate column. `_to_signal` falls back to the contribution
+    # amount, so the record states the contribution rather than a cycle total.
     "aggregate": ("aggregate amount", "aggregate"),
     "contribution_date": ("receipt date", "contribution date", "date"),
+    # Resolves to the same `receipt_date` column as contribution_date: the dataset
+    # records when the receipt was dated, not separately when it was filed. So the
+    # record's "filing was received" line restates the contribution date rather than
+    # adding a second fact.
     "filed_at": ("filed date", "report date", "receipt date"),
     "url": ("url", "link", "report url"),
 }
@@ -70,11 +100,11 @@ class WaPdcAdapter(LiveSourceAdapter):
     # Washington PDC contributions, served as a Socrata dataset on the state open-data
     # portal. Washington's disclosure regime exposes a real API where Oregon's does not.
     #
-    # VERIFIED WRONG: HTTP 404 on a live run, 2026-08-06. `data.wa.gov` is the right
-    # host and Socrata is the right shape, but this dataset identifier is not. Find the
-    # current one in the portal's dataset catalogue; the paging and mapping below are
-    # independent of it.
-    feed_url = "https://data.wa.gov/resource/tijg-9uu3.json"
+    # VERIFIED REACHABLE: HTTP 200 on 2026-08-21, 6,354,167 rows, last updated that
+    # same day. The previous identifier (`tijg-9uu3`) answered 404 on two live runs;
+    # this one was found in the portal's own catalogue as "Contributions to Candidates
+    # and Political Committees" and confirmed by fetching and parsing rows from it.
+    feed_url = "https://data.wa.gov/resource/kv7h-kjye.json"
 
     # ── Live fetch ───────────────────────────────────────────────────────────
 
@@ -92,7 +122,11 @@ class WaPdcAdapter(LiveSourceAdapter):
         for page in range(MAX_PAGES):
             response = httpx.get(
                 self.feed_url,
-                params={"$limit": PAGE_SIZE, "$offset": page * PAGE_SIZE},
+                params={
+                    "$limit": PAGE_SIZE,
+                    "$offset": page * PAGE_SIZE,
+                    "$order": ORDER_BY,
+                },
                 timeout=self.timeout,
                 follow_redirects=True,
             )
@@ -146,6 +180,21 @@ class WaPdcAdapter(LiveSourceAdapter):
             )
         return signals
 
+    @staticmethod
+    def _url_text(value: Any) -> str | None:
+        """
+        Flatten Socrata's URL column, which is an object rather than a string.
+
+        The live dataset serves `{"url": "https://...", "description": ...}`. Handed
+        to Signal unflattened it fails validation, and because `parse` is not
+        individually fault-tolerant that one field takes the whole feed down with it --
+        which is what a corrected endpoint did on first contact, turning a 404 into a
+        parse failure. Fixtures carry a plain string, so both shapes are accepted.
+        """
+        if isinstance(value, dict):
+            value = value.get("url")
+        return str(value) if value else None
+
     def _to_signal(self, rec: dict[str, Any]) -> Signal | None:
         """Render one contribution, or None when it cannot be dated."""
         filed_at = parse_timestamp(rec.get("filed_at")) or parse_timestamp(
@@ -178,7 +227,7 @@ class WaPdcAdapter(LiveSourceAdapter):
             source=self.name,
             source_type=self.source_type,
             text=text,
-            url=rec.get("url") or None,
+            url=self._url_text(rec.get("url")),
             author=rec.get("recipient") or None,
             published_at=filed_at,
             credibility=self.credibility,

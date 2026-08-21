@@ -36,24 +36,40 @@ MAX_PAGES = 50
 
 # OData field spellings for each canonical field, in preference order.
 #
-# ENDPOINT VERIFIED, FIELD NAMES NOT. A live run on 2026-08-06 got HTTP 200 from
-# `feed_url` and a response carrying a nextLink, so the URL and the OData envelope are
-# confirmed. No row was ever parsed on that run -- the walk aborted on page 2 (see
-# `_fetch_live`) -- so these spellings still come from the two prior PDX-1i
-# implementations rather than an observed response. They are the last unconfirmed
-# piece of this adapter; check them against a real payload.
+# ENDPOINT AND FIELD NAMES VERIFIED against a live response on 2026-08-21: the
+# Measures collection answered 200 with 31,405 rows over 7 pages, and these spellings
+# were checked against the union of keys on a 5,000-row page. Four map exactly
+# (CatchLine, SessionKey, CurrentLocation, MeasureSummary; each non-null on 5,000/5,000
+# rows). Two do not, and no name was guessed to cover them:
+#
+#   committee  the collection carries CurrentCommitteeCode (a code, non-null on
+#              2,983/5,000) and no committee *name* field at all.
+#   action     the collection carries no action field. Measure actions are a separate
+#              OData collection; `_to_signal` falls back to the measure's status,
+#              which is what the record then says.
+#   url        no URL field either -- `_measure_url` builds the OLIS web link instead.
+#
+# The unmatched aliases are left in place: they cost nothing, and a fixture or a future
+# schema may still carry them.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "title": ("CatchLine", "RelatingTo", "MeasureTitle", "title"),
     "session": ("SessionKey", "Session", "session"),
     "status": ("CurrentLocation", "CurrentStatus", "MeasureStatus", "status"),
     "summary": ("MeasureSummary", "Summary", "summary"),
-    "committee": ("CurrentCommitteeName", "CommitteeName", "committee"),
+    # CurrentCommitteeCode is the only committee field the live collection has -- a
+    # code rather than a name. Preferred over the unobserved name spellings so the
+    # record says which committee holds the measure instead of "not stated".
+    "committee": ("CurrentCommitteeCode", "CurrentCommitteeName", "CommitteeName", "committee"),
     "action": ("CurrentAction", "LastAction", "action"),
     "url": ("MeasureUrl", "WebSiteUrl", "url"),
 }
 
 # Timestamp fields, tried in order. A measure with none of these cannot be placed on
 # the timeline and is dropped rather than dated to now.
+#
+# Live measured 2026-08-21: the collection carries ModifiedDate and CreatedDate (both
+# non-null on 5,000/5,000 rows) and none of the three action-date spellings above them,
+# so a live measure is dated by ModifiedDate.
 _DATE_FIELDS = (
     "action_at",
     "ActionDate",
@@ -64,6 +80,26 @@ _DATE_FIELDS = (
 )
 
 _OLIS_WEB_BASE = "https://olis.oregonlegislature.gov/liz"
+
+
+def _with_json_format(url: str) -> str:
+    """
+    Ensure a page URL still asks for JSON.
+
+    OLIS serves its nextLink without the `$format=json` the first request carried, and
+    OData content negotiation then falls back to the service default -- Atom XML. Page
+    two answers 200 with 26 MB of XML, `response.json()` raises on it, and the walk is
+    discarded along with every page that did parse. Measured against the live service
+    on 2026-08-21: with the parameter restored the same URL returns a JSON envelope of
+    5,000 rows.
+
+    Appended textually rather than through urlencode because the skiptoken carries
+    literal commas and quotes (`$skiptoken=312,'SB','2019R1'`) that a re-encode would
+    rewrite.
+    """
+    if "$format=" in url:
+        return url
+    return f"{url}{'&' if '?' in url else '?'}$format=json"
 
 
 class OlisAdapter(LiveSourceAdapter):
@@ -116,7 +152,7 @@ class OlisAdapter(LiveSourceAdapter):
             # httpx unresolved raises UnsupportedProtocol -- which is what happened on
             # the first real run against the live service: page 1 returned 200 and the
             # walk then died on page 2.
-            url = urljoin(str(response.url), str(next_link))
+            url = _with_json_format(urljoin(str(response.url), str(next_link)))
             if page == MAX_PAGES - 1:
                 logger.warning(
                     "%s: stopped at the %d-page ceiling with a nextLink still set",

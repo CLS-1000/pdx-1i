@@ -16,6 +16,20 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
 EPOCH = datetime(2026, 5, 28, 12, 0, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def declared_source_mode(monkeypatch):
+    """
+    Declare fixture mode for every test, because nothing declares it implicitly.
+
+    PDX1_SOURCE_MODE has no default and an undeclared mode refuses to run, so a suite
+    that replays fixtures has to say so. Doing it once here keeps that refusal real in
+    production: the tests that exercise it delete the key themselves rather than
+    relying on it never having been set.
+    """
+    monkeypatch.delenv("PDX1_LIVE", raising=False)
+    monkeypatch.setenv("PDX1_SOURCE_MODE", "fixture")
+
+
 @pytest.fixture
 def fixture_dir() -> Path:
     return FIXTURE_DIR

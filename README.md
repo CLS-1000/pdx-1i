@@ -211,9 +211,29 @@ print(len(result), "signals", "ok" if result.ok else result.errors)
 
 ### Fixture replay vs live fetch
 
-Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
-needs no connectivity. Set `PDX1_LIVE=true` (and install the `live` extra) to fetch over
-HTTP instead.
+`PDX1_SOURCE_MODE` selects which, and it has **no default**:
+
+| Value | What it does |
+|---|---|
+| `fixture` | replays the checked-in payloads; reproducible, and reaches no network |
+| `live` | reads the real endpoints and adds the watch monitors; needs the `live` extra |
+| anything else, or unset | **refuses to start** |
+
+There is no third behaviour and no fallback. Both modes run the same code and both end
+in a publishable brief, so an operator who believes they are running live and is not
+would see a plausible brief assembled from a frozen May 2026 snapshot with nothing in
+the output to contradict it. That is the failure the missing default exists to prevent:
+an unreadable setting stops the process instead of picking a side. The CLI reports the
+mode it resolved on its first summary line, and the API logs it at startup.
+
+The removed `PDX1_LIVE` key is refused rather than ignored — a stale `PDX1_LIVE=true`
+that was silently dropped would be exactly the situation above.
+
+The two modes also anchor the velocity gate differently when `--as-of` is not given. A
+fixture replay anchors to the newest harvested signal, because the payloads carry fixed
+dates and wall-clock would age them out of every run. A live cycle anchors to wall
+clock, because under replay-anchoring a feed that stopped updating months ago would
+present its last batch as fresh — the one thing the velocity gate exists to prevent.
 
 A live read resolves in three tiers, in order:
 
@@ -236,7 +256,7 @@ different:
 |---|---|
 | **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
 | **OLIS** | the OData service — rows under `value`, paged via `@odata.nextLink`. |
-| **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
+| **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset` and sorted newest-first. Washington's disclosure regime exposes a real API where Oregon's does not. |
 | **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object, and rejects HTML loudly rather than returning nothing. |
 | **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled only OregonLive. |
 
@@ -248,25 +268,42 @@ field for every record on the strength of whichever sorted first.
 
 #### What a live run actually reached
 
-`PDX1_LIVE=true` was run against the real endpoints on **2026-08-06**. The cycle
-completed and published a brief, which is the fault-tolerance design working as
-intended — but most endpoints answered 404. Recorded here and in the source so nobody
-re-derives it:
+`PDX1_SOURCE_MODE=live` was run against the real endpoints on **2026-08-21**. Every
+adapter, its HTTP result, what it returned and how long it took:
 
-| Endpoint | Result |
-|---|---|
-| OLIS | **200** — URL and OData envelope confirmed |
-| SEI landing page | **200 HTML**, rejected by `parse` as designed |
-| OregonLive · KOIN | **200** |
-| TriMet watch | **200** |
-| ORESTAR bulk export | 404 — path or filename convention is wrong |
-| WA PDC dataset | 404 — right host and shape, wrong dataset id |
-| Willamette Week · NW Politics | 404 |
-| Pamplin Media | SSL handshake failure |
-| OHSU · PPB · NW Natural · Water Bureau | 404 |
-| PGE watch | DNS failure |
+| Adapter | HTTP | Items | Elapsed | Note |
+|---|---|---|---|---|
+| **OLIS** | 200 × 7 pages | **31,405** | 21.0 s | 31,405 measures, all dated; first live rows this project has parsed |
+| **WA PDC** | 200 × 50 pages | **50,000** | 97.9 s | stops at the 50-page ceiling; 6,354,167 rows exist |
+| **Portland Press** | 200, 404, 200, SSL, 404 | **60** | 4.1 s | OregonLive + KOIN answered; three outlets did not |
+| **ORESTAR** | 404 | 0 | 1.3 s | bulk export path still wrong |
+| **SEI** | 200 HTML | 0 | 0.7 s | landing page, rejected by `parse` as designed |
+| WATCH/TriMet | 200 | 10 | 1.2 s | |
+| WATCH/OHSU · NW Natural | 404 | 0 | | |
+| WATCH/PPB · Water Bureau | 403 | 0 | | portland.gov refuses the client outright |
+| WATCH/PGE | connect failure | 0 | | |
 
-Two things follow from that run, both aimed at making the next correction cheap:
+The whole cycle: **81,475 harvested → 91 written**, three brief sections, three records
+at elevated disposition, 3 m 45 s wall clock, 88 MB of last-good cache written. Six of
+fifteen registered endpoints answer.
+
+Two feeds were fixed in the course of that run, both found only by going live:
+
+- **OLIS was returning nothing despite a 200.** Its `@odata.nextLink` drops the
+  `$format=json` the first request carried, so page two answered 200 with 26 MB of Atom
+  XML, `response.json()` raised, and the walk was discarded — including page one, which
+  had parsed. Restoring the parameter on each next link turned 0 rows into 31,405.
+- **WA PDC pointed at a retired dataset id.** The current one is `kv7h-kjye`
+  ("Contributions to Candidates and Political Committees", 6.35 M rows, updated daily),
+  found in the portal's own catalogue and confirmed by fetching and parsing it. Two
+  further changes were needed before the corrected endpoint was usable: Socrata serves
+  the URL column as an *object*, which failed `Signal` validation and took the whole
+  feed down, and an unordered walk over 6.35 M rows reads 50,000 arbitrary rows against
+  roughly 90 that fall inside any 48-hour window. It now sorts `receipt_date DESC NULLS
+  LAST` — nulls last because 14,965 rows have no date and Postgres sorts nulls first
+  under `DESC`.
+
+Two things also follow from the run, both aimed at making the next correction cheap:
 
 ```bash
 pdx1 --check-endpoints    # probe every registered URL, print its status, exit non-zero on failure
@@ -286,12 +323,23 @@ rather than a release:
 | `PDX1_WA_PDC_URL` | the Socrata dataset |
 | `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
 
-**Field names remain unconfirmed for all four record feeds.** No row from a live
-response has been parsed yet — OLIS reached 200 but no measure was read on that run,
-and the other three never returned data — so the spellings still come from two prior
-PDX-1i implementations. The mapping *logic* is tested across 73 offline tests; the
-*names* are not. Correcting a wrong URL is data entry, and correcting a wrong column is
-a one-line change in one alias table; neither touches the parse logic.
+**Field names are now confirmed for two of the four record feeds, and still unconfirmed
+for the other two.**
+
+| Feed | Field names |
+|---|---|
+| **OLIS** | verified against 31,405 live rows. Four canonical fields map exactly; `committee` resolves only to a committee *code*, and the collection carries no action and no URL field at all, so the record falls back to status and a constructed OLIS link. |
+| **WA PDC** | verified against a 6,000-row union. Thirteen of fourteen map; there is no aggregate column, so a record states the contribution rather than a cycle total. |
+| **ORESTAR** | unconfirmed — the export has never returned a row. |
+| **SEI** | unconfirmed — no API exists to return one. |
+
+Verification was done over the *union* of thousands of rows, not a sample. A five-row
+sample of the WA PDC dataset reported two fields as unmatched that in fact map: Socrata
+omits null columns per row, and neither column appeared in those five. That is the
+`union_keys` hazard this codebase already documents, met in the field.
+
+Correcting a wrong URL is data entry, and correcting a wrong column is a one-line change
+in one alias table; neither touches the parse logic.
 
 Portland Press is the exception to all of this: RSS is a standard format, so there is
 nothing to verify beyond the URLs themselves.
@@ -571,13 +619,14 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Working endpoints for most feeds.** The transport, mapping and fault tolerance are
-  done and exercised against the real internet — a live run completes and publishes.
-  What is missing is correct URLs: as of 2026-08-06 only OLIS, two press feeds and one
-  watch target answer, and no record feed has yet returned a row, so no field mapping
-  has been confirmed against real data. Every failure is recorded per-endpoint in
-  *Fixture replay vs live fetch* and beside the URL in the source. This is data entry
-  plus one alias-table pass, not new machinery.
+- **Working endpoints for the remaining feeds.** The transport, mapping and fault
+  tolerance are done and exercised against the real internet — a live run completes and
+  publishes, and as of 2026-08-21 two record feeds (OLIS, WA PDC) return real rows with
+  verified field names. Six of fifteen registered endpoints answer. ORESTAR is the one
+  that needs more than data entry: the Secretary of State publishes no static bulk
+  export at any path checked, and its public transaction search is a session-based web
+  application rather than a URL. SEI has no API by design. Every failure is recorded
+  per-endpoint in *Fixture replay vs live fetch* and beside the URL in the source.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed

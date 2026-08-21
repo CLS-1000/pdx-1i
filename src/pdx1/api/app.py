@@ -46,11 +46,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.settings = settings
     app.state.store = store
+    # The source mode is logged by name rather than as a boolean: an operator reading
+    # a startup line needs to see which sources this process reads, and `live=False`
+    # reads as a default rather than as a declaration.
     logger.info(
-        "PDX-1i API started — store=%s db=%s live=%s",
+        "PDX-1i API started — store=%s db=%s sources=%s",
         settings.store_path,
         settings.db_path,
-        settings.live_fetch,
+        settings.source_mode.value,
     )
     yield
 

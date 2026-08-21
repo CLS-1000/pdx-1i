@@ -79,20 +79,32 @@ tests/               27 files, 484 tests
 
 ## Fixture replay vs live fetch
 
-Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
-needs no connectivity. `PDX1_LIVE=true` (with the `live` extra) switches to HTTP.
+`PDX1_SOURCE_MODE` selects one or the other and **has no default**: `fixture` replays
+the checked-in payloads, `live` reads the real endpoints (with the `live` extra), and
+anything else — unset, blank, misspelled, or the removed `PDX1_LIVE` key still present
+— refuses to start. Do not add a fallback. Both modes publish a brief, so a wrong guess
+here is invisible in the output; that is the whole reason the value is declared rather
+than defaulted. `default_adapters` is the single place the two diverge, and it raises
+`ConfigError` rather than choosing. The test suite declares the mode once, in
+`conftest.py`.
+
+The mode also anchors the velocity gate when `--as-of` is not passed: fixture replay
+anchors to the newest harvested signal (fixtures carry fixed dates), live anchors to
+wall clock (a stale feed must not get to say what "now" is).
 
 A live read resolves in three tiers: **fixture_path**, then **live HTTP** (which writes
 a last-good cache), then **that cache** when the fetch fails. The third tier is why an
 outage costs freshness rather than the whole source. It does not weaken the velocity
 gate — a cached payload carries its original timestamps, so stale records still drop.
 
-**Field mappings are only partly verified.** The four record feeds map real payload
-shapes through alias tables (`_COLUMN_ALIASES` in `orestar.py`, `_FIELD_ALIASES`
-elsewhere), and each table carries a comment saying how far it has been confirmed. The
-endpoints are unreachable from the sandboxes this was developed in, so the *mapping
-logic* is tested and the *field names* are not. If you can reach the real endpoints,
-verify the names and update the comment to say so.
+**Field mappings are partly verified, and each alias table says how far.** The four
+record feeds map real payload shapes through alias tables (`_COLUMN_ALIASES` in
+`orestar.py`, `_FIELD_ALIASES` elsewhere). As of 2026-08-21 OLIS and WA PDC are
+verified against live rows; ORESTAR and SEI are not, because neither has ever returned
+one. If you can reach an unverified endpoint, check the names and update the comment to
+say so — and check them against `union_keys` over thousands of rows, not a handful. A
+five-row sample of the WA PDC dataset reported two fields as unmatched that in fact
+map, because Socrata omits null columns per row.
 
 Two feeds are special cases worth knowing before you touch them:
 
@@ -117,8 +129,8 @@ optional columns per row, so reading the first row alone drops that field for *e
 record — a whole feed silently emptied by whichever row sorted first.
 
 Because fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the newest
-harvested signal rather than wall-clock time. Override with `--as-of`. Live runs should
-pass the real clock.
+harvested signal rather than wall-clock time in fixture mode; live mode anchors to the
+real clock. Override either with `--as-of`.
 
 ## Working on it
 

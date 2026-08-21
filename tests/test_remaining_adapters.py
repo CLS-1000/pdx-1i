@@ -134,6 +134,54 @@ def test_wa_pdc_sends_socrata_paging_params(tmp_path):
     assert params["$limit"] and params["$offset"] == 0
 
 
+def test_wa_pdc_asks_for_the_newest_receipts_first(tmp_path):
+    """
+    Order is not cosmetic on a 6.35-million-row dataset.
+
+    Roughly 90 rows fall inside any 48-hour window, and the walk stops at a 50,000-row
+    ceiling. Unordered, those 50,000 are an arbitrary slice of twenty years and the
+    velocity gate discards essentially all of them. NULLS LAST matters as much as the
+    sort: 14,965 rows carry no receipt_date and Socrata's Postgres backend puts nulls
+    first under DESC, so without it the walk spends its first fifteen pages on rows
+    this adapter drops as undated. Both measured against the live dataset, 2026-08-21.
+    """
+    with patch("httpx.get", return_value=_response(payload=[_SOCRATA_ROW])) as mock_get:
+        WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    order = mock_get.call_args.kwargs["params"]["$order"]
+    assert order == "receipt_date DESC NULLS LAST"
+
+
+def test_wa_pdc_flattens_the_socrata_url_object(tmp_path):
+    """
+    Socrata serves a URL column as an object, and Signal takes a string.
+
+    Handed the object unflattened, Signal validation fails inside `parse`, and because
+    parse is all-or-nothing that one field takes the entire feed down -- which is what
+    the corrected endpoint did on first contact, turning a 404 into a parse failure.
+    """
+    row = dict(
+        _SOCRATA_ROW,
+        url={"url": "https://my.pdc.wa.gov/public/document?repno=100583837"},
+    )
+    with patch("httpx.get", return_value=_response(payload=[row])):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.ok, result.errors
+    assert result.signals[0].url == (
+        "https://my.pdc.wa.gov/public/document?repno=100583837"
+    )
+
+
+def test_wa_pdc_still_reads_a_plain_url_string(tmp_path):
+    """Fixtures carry a bare string; both shapes have to work."""
+    row = dict(_SOCRATA_ROW, url="https://example.invalid/report/1")
+    with patch("httpx.get", return_value=_response(payload=[row])):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.signals[0].url == "https://example.invalid/report/1"
+
+
 def test_wa_pdc_drops_undated_rows(tmp_path):
     undated = {k: v for k, v in _SOCRATA_ROW.items() if k != "receipt_date"}
     with patch("httpx.get", return_value=_response(payload=[undated, _SOCRATA_ROW])):

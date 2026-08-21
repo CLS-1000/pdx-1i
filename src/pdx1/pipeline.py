@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .anomaly import BaselineRegistry
-from .config import Settings
+from .config import ConfigError, Settings, SourceMode
 from .gates import FourGateFilter, composite_score
 from .graph import ALIASES, NODES
 from .models import (
@@ -107,18 +107,38 @@ class CycleResult:
 
 def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> list[SourceAdapter]:
     """
-    The PDX-1i feeds.
+    The PDX-1i feeds, built for whichever source mode was declared.
 
-    Fixture mode (default, `settings.live_fetch=False`): adapters read checked-in
-    payloads so a cycle is reproducible and CI needs no network.
+    `SourceMode.FIXTURE`: adapters read checked-in payloads, so a cycle is reproducible
+    and CI needs no network.
 
-    Live mode (`PDX1_LIVE=true`): adapters fetch from their registered `feed_url` and
-    the watch targets are included. Requires the `live` extra.
+    `SourceMode.LIVE`: adapters fetch from their registered `feed_url` and the watch
+    targets are included. Requires the `live` extra.
+
+    There is no third case. An undeclared mode raises `ConfigError` rather than picking
+    one -- this is the single point where fixture replay and live fetch diverge, and
+    both branches end in a publishable brief, so a wrong guess here is not visible in
+    the output. So does a `fixture_dir` passed under live mode: the two arguments
+    contradict each other, and silently honouring one of them is how a run ends up
+    reading something other than what its operator believes.
     """
+    if settings.source_mode is None:
+        raise ConfigError(
+            "source mode is not declared, so there is no way to know whether to "
+            "replay fixtures or read the real sources. Set PDX1_SOURCE_MODE=live "
+            "or PDX1_SOURCE_MODE=fixture, or pass Settings(source_mode=...)."
+        )
+    if settings.source_mode is SourceMode.LIVE and fixture_dir is not None:
+        raise ConfigError(
+            f"source mode is {SourceMode.LIVE.value} but a fixture directory was "
+            f"passed ({fixture_dir}). Refusing to run rather than silently ignore "
+            "one of them."
+        )
+
     fx = fixture_dir or FIXTURE_DIR
     t = settings.timeouts
 
-    if settings.live_fetch:
+    if settings.source_mode is SourceMode.LIVE:
         # No fixture paths — adapters fetch from their registered feed_url, writing a
         # last-good cache so the next outage degrades to stale data rather than none.
         cache = settings.cache_dir
@@ -263,10 +283,17 @@ def run_cycle(
     """
     Run one full intelligence cycle.
 
-    `now` anchors the velocity gate. It defaults to the newest harvested signal rather
-    than wall-clock time, because the adapters replay fixed fixtures: anchoring a replay
-    to real time would drop every record on velocity as the fixtures age. Live adapters
-    should pass the real clock.
+    `now` anchors the velocity gate. When it is not passed, the source mode decides:
+
+    - fixture replay anchors to the newest harvested signal, because the payloads carry
+      fixed dates and anchoring a replay to real time would drop every record on
+      velocity as the fixtures age;
+    - a live run anchors to wall clock, because the newest harvested signal is exactly
+      what a stale feed controls. Anchoring to it would let a feed that stopped
+      updating months ago present its last batch as fresh, which is the one thing the
+      velocity gate exists to prevent.
+
+    An explicit `now` overrides both -- that is what `--as-of` is for.
     """
     settings = settings or Settings.from_env()
     adapters = adapters if adapters is not None else default_adapters(settings)
@@ -294,7 +321,11 @@ def run_cycle(
         )
 
     if now is None:
-        now = max((s.published_at for s in signals), default=datetime.now(timezone.utc))
+        now = (
+            datetime.now(timezone.utc)
+            if settings.source_mode is SourceMode.LIVE
+            else max((s.published_at for s in signals), default=datetime.now(timezone.utc))
+        )
 
     run_id = make_run_id(now)
     result = CycleResult(run_id=run_id, harvested=len(signals), errors=errors)
@@ -510,7 +541,7 @@ def check_endpoints(settings: Settings) -> int:
         print("--check-endpoints needs the live extra: pip install 'pdx-1i[live]'")
         return 2
 
-    live = replace(settings, live_fetch=True)
+    live = replace(settings, source_mode=SourceMode.LIVE)
     targets: list[tuple[str, str]] = []
     for adapter in default_adapters(live):
         # Portland Press polls a map of feeds rather than its single registered URL,
@@ -548,7 +579,13 @@ def check_endpoints(settings: Settings) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ConfigError as exc:
+        # A cron job reads its own stderr badly enough already; a traceback for a
+        # missing setting reads as a crash rather than as a refusal.
+        print(f"pdx1: refusing to run -- {exc}", file=sys.stderr)
+        return 2
 
     logging.basicConfig(
         level=getattr(logging, settings.log_level, logging.INFO),
@@ -564,12 +601,17 @@ def main(argv: list[str] | None = None) -> int:
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
 
-    adapters = default_adapters(
-        settings, Path(args.fixtures) if args.fixtures else None
-    )
+    try:
+        adapters = default_adapters(
+            settings, Path(args.fixtures) if args.fixtures else None
+        )
+    except ConfigError as exc:
+        print(f"pdx1: refusing to run -- {exc}", file=sys.stderr)
+        return 2
     result = run_cycle(settings=settings, adapters=adapters, now=now)
 
     print(f"run {result.run_id}")
+    print(f"  sources       {settings.source_mode.value}")
     print(f"  harvested     {result.harvested}")
     print(f"  parsed        {result.parsed}")
     print(f"  opportunities {result.opportunities}")
