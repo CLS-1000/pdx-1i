@@ -132,7 +132,7 @@ def test_no_cache_written_when_cache_dir_not_configured(tmp_path, fixture_dir):
     """Constructing an adapter directly must not touch the disk."""
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
     with patch("httpx.get", return_value=_response(text=body)):
-        adapter = OrestarAdapter(live=True)
+        adapter = OrestarAdapter(live=True, retry_backoff_s=0)
         assert adapter.safe_fetch().ok
     assert adapter.cache_path() is None
     assert list(tmp_path.iterdir()) == []
@@ -141,7 +141,7 @@ def test_no_cache_written_when_cache_dir_not_configured(tmp_path, fixture_dir):
 def test_successful_live_fetch_writes_cache(tmp_path, fixture_dir):
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
     with patch("httpx.get", return_value=_response(text=body)):
-        adapter = OrestarAdapter(live=True, cache_dir=tmp_path)
+        adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
         assert adapter.safe_fetch().ok
 
     assert adapter.cache_path().is_file()
@@ -153,7 +153,7 @@ def test_failed_live_fetch_falls_back_to_cache(tmp_path, fixture_dir):
     import httpx
 
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
-    adapter = OrestarAdapter(live=True, cache_dir=tmp_path)
+    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
 
     with patch("httpx.get", return_value=_response(text=body)):
         assert adapter.safe_fetch().ok
@@ -170,7 +170,7 @@ def test_failed_live_fetch_without_cache_still_errors(tmp_path):
     import httpx
 
     with patch("httpx.get", side_effect=httpx.ConnectError("connection refused")):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert not result.ok
     assert "ConnectError" in result.errors[0]
@@ -178,7 +178,7 @@ def test_failed_live_fetch_without_cache_still_errors(tmp_path):
 
 def test_cache_is_not_consulted_when_fetch_succeeds(tmp_path, fixture_dir):
     """A live success overwrites the cache rather than serving the stale copy."""
-    adapter = OrestarAdapter(live=True, cache_dir=tmp_path)
+    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
     adapter.cache_path().parent.mkdir(parents=True, exist_ok=True)
     adapter.cache_path().write_text("[]", encoding="utf-8")
 
@@ -222,7 +222,7 @@ def _zipped(csv_text: str, name: str = "transactions.csv") -> bytes:
 
 def test_orestar_unwraps_bulk_zip_and_parses_csv(tmp_path):
     with patch("httpx.get", return_value=_response(content=_zipped(_CSV))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert result.ok, result.errors
     assert len(result) == 1
@@ -235,7 +235,7 @@ def test_orestar_unwraps_bulk_zip_and_parses_csv(tmp_path):
 
 def test_orestar_caches_the_unwrapped_csv_not_the_zip(tmp_path):
     """The cache holds decoded text, so a fallback read needs no unzip step."""
-    adapter = OrestarAdapter(live=True, cache_dir=tmp_path)
+    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
     with patch("httpx.get", return_value=_response(content=_zipped(_CSV))):
         assert adapter.safe_fetch().ok
 
@@ -255,7 +255,7 @@ def test_orestar_zip_without_csv_is_reported(tmp_path):
         archive.writestr("readme.txt", "no data here")
 
     with patch("httpx.get", return_value=_response(content=payload.getvalue())):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert not result.ok
     assert "no CSV" in result.errors[0]
@@ -267,7 +267,7 @@ def test_orestar_header_matching_is_case_and_punctuation_insensitive(tmp_path):
         "1,Committee A,Donor B,100,2026-05-27T00:00:00+00:00\r\n"
     )
     with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert len(result) == 1
     assert "Committee A" in result.signals[0].text
@@ -281,7 +281,7 @@ def test_orestar_drops_rows_with_no_readable_date(tmp_path):
         "2,Committee C,Donor D,200,05/26/2026,\r\n"
     )
     with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert len(result) == 1, "the undated row is dropped, the dated one survives"
     assert "Committee C" in result.signals[0].text
@@ -290,7 +290,7 @@ def test_orestar_drops_rows_with_no_readable_date(tmp_path):
 def test_orestar_falls_back_to_transaction_date_when_filed_date_missing(tmp_path):
     csv_text = "Tran Id,Filer,Contributor/Payee,Amount,Tran Date\r\n1,A,B,100,05/26/2026\r\n"
     with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert len(result) == 1
     assert result.signals[0].published_at.date() == datetime(2026, 5, 26).date()

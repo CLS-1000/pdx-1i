@@ -80,21 +80,11 @@ class WaPdcAdapter(LiveSourceAdapter):
 
     def _fetch_live(self) -> str:
         """Walk the Socrata pages and return one combined JSON array."""
-        try:
-            import httpx
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                f"{self.name}: httpx is required for live fetch -- "
-                "install it with: pip install 'pdx-1i[live]'"
-            ) from exc
-
         rows: list[dict[str, Any]] = []
         for page in range(MAX_PAGES):
-            response = httpx.get(
+            response = self._get(
                 self.feed_url,
                 params={"$limit": PAGE_SIZE, "$offset": page * PAGE_SIZE},
-                timeout=self.timeout,
-                follow_redirects=True,
             )
             response.raise_for_status()
             batch = response.json()

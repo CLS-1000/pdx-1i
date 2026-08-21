@@ -375,6 +375,63 @@ class BriefSection(BaseModel):
     observations: list[Observation] = Field(default_factory=list)
 
 
+class FeedCoverage(BaseModel):
+    """
+    Which feeds the run actually reached.
+
+    A brief assembled from four of five feeds is not the same document as one assembled
+    from five, and the difference is invisible from the records alone -- the records
+    that exist look identical either way. What is missing leaves no trace unless the
+    run records it here, so this travels with the brief and is stated on its face.
+
+    `empty` is kept apart from `failed` because they need different responses. A feed
+    that errored is broken. A feed that answered and returned nothing may simply have
+    had nothing to file, and may equally have changed shape underneath the parser --
+    the run cannot tell, so it reports the measurement rather than a conclusion.
+    """
+
+    #: Adapters run this cycle.
+    attempted: int = 0
+    #: Adapters that returned at least one signal.
+    returned: int = 0
+    #: Adapters that raised. Named so the brief can say which.
+    failed: list[str] = Field(default_factory=list)
+    #: Adapters that answered without error and returned nothing.
+    empty: list[str] = Field(default_factory=list)
+    #: Adapters served from the last-good cache after a live fetch failed. Their
+    #: records are real but not fresh.
+    stale: list[str] = Field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        """True when every adapter attempted returned something of its own."""
+        return bool(self.attempted) and self.returned == self.attempted
+
+    def describe(self) -> str:
+        """
+        One sentence, stating what the run reached and what it did not.
+
+        Descriptive by construction: counts and feed names, no characterisation of what
+        the absence means.
+        """
+        if not self.attempted:
+            return "No feed was attempted this cycle."
+
+        parts = [f"Generated from {self.returned} of {self.attempted} feeds."]
+        if self.failed:
+            parts.append(f"Did not return: {', '.join(sorted(self.failed))}.")
+        if self.empty:
+            parts.append(f"Returned no items: {', '.join(sorted(self.empty))}.")
+        if self.stale:
+            parts.append(
+                f"Served from last-good cache after a failed fetch: "
+                f"{', '.join(sorted(self.stale))}."
+            )
+        if self.complete and not self.stale:
+            parts.append("No feed was missing from this cycle.")
+        return " ".join(parts)
+
+
 class Brief(BaseModel):
     """
     An assembled Metro Citizens Brief.
@@ -393,6 +450,10 @@ class Brief(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     sources: list[str] = Field(default_factory=list)
     produced_at: datetime = Field(default_factory=utcnow)
+    #: What the run reached. Additive and defaulted, so briefs written before coverage
+    #: existed still load -- they read back as a brief that does not say, which is
+    #: honest about them: the run that produced them did not measure it.
+    coverage: FeedCoverage | None = None
 
 
 # ── Run reporting ────────────────────────────────────────────────────────────
