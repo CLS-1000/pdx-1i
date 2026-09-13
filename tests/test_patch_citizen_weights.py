@@ -226,6 +226,9 @@ def test_freshness_ordering_survives(target):
 def test_signal_filter_keeps_a_focusable_fallback_after_patching(target):
     html = (_run(target), target.read_text(encoding="utf-8"))[1]
     assert "if (!sigHost.querySelector('[data-sig][tabindex=\"0\"]')) {" in html
+    assert "sigHost.querySelectorAll('[data-sig]').forEach(x => {" in html
+    assert "x.setAttribute('aria-pressed', 'false');" in html
+    assert "x.tabIndex = -1;" in html
     assert "initialSig.setAttribute('aria-pressed', 'true');" in html
     assert "initialSig.tabIndex = 0;" in html
 

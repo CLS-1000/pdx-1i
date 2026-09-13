@@ -1492,6 +1492,10 @@ function buildControls() {
   if (!sigHost.querySelector('[data-sig][tabindex="0"]')) {
     const initialSig = sigHost.querySelector('[data-sig]');
     if (initialSig) {
+      sigHost.querySelectorAll('[data-sig]').forEach(x => {
+        x.setAttribute('aria-pressed', 'false');
+        x.tabIndex = -1;
+      });
       initialSig.setAttribute('aria-pressed', 'true');
       initialSig.tabIndex = 0;
     }
