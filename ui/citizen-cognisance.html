@@ -1489,6 +1489,13 @@ function buildControls() {
       activateSig(buttons[(idx - 1 + buttons.length) % buttons.length]);
     }
   });
+  if (!sigHost.querySelector('[data-sig][tabindex="0"]')) {
+    const initialSig = sigHost.querySelector('[data-sig]');
+    if (initialSig) {
+      initialSig.setAttribute('aria-pressed', 'true');
+      initialSig.tabIndex = 0;
+    }
+  }
 }
 
 function buildLegend() {
