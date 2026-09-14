@@ -77,31 +77,31 @@ SLIDER_HTML = """
         <label class="slider-row">
           <span class="slider-label">Housing &amp; development</span>
           <input type="range" min="0" max="2" step="0.1" value="1" id="w-housing"
-                 oninput="TOPIC_WEIGHTS.housing=+this.value;_sv('v-housing',this.value);renderList()">
+                 oninput="globalThis.TOPIC_WEIGHTS.housing=+this.value;_sv('v-housing',this.value);renderList()">
           <span class="slider-val" id="v-housing">1.0</span>
         </label>
         <label class="slider-row">
           <span class="slider-label">Civic money</span>
           <input type="range" min="0" max="2" step="0.1" value="1" id="w-civic"
-                 oninput="TOPIC_WEIGHTS.civic_money=+this.value;_sv('v-civic',this.value);renderList()">
+                 oninput="globalThis.TOPIC_WEIGHTS.civic_money=+this.value;_sv('v-civic',this.value);renderList()">
           <span class="slider-val" id="v-civic">1.0</span>
         </label>
         <label class="slider-row">
           <span class="slider-label">Public safety</span>
           <input type="range" min="0" max="2" step="0.1" value="1" id="w-safety"
-                 oninput="TOPIC_WEIGHTS.public_safety=+this.value;_sv('v-safety',this.value);renderList()">
+                 oninput="globalThis.TOPIC_WEIGHTS.public_safety=+this.value;_sv('v-safety',this.value);renderList()">
           <span class="slider-val" id="v-safety">1.0</span>
         </label>
         <label class="slider-row">
           <span class="slider-label">Environment &amp; utilities</span>
           <input type="range" min="0" max="2" step="0.1" value="1" id="w-env"
-                 oninput="TOPIC_WEIGHTS.environment=+this.value;_sv('v-env',this.value);renderList()">
+                 oninput="globalThis.TOPIC_WEIGHTS.environment=+this.value;_sv('v-env',this.value);renderList()">
           <span class="slider-val" id="v-env">1.0</span>
         </label>
         <label class="slider-row">
           <span class="slider-label">State politics</span>
           <input type="range" min="0" max="2" step="0.1" value="1" id="w-state"
-                 oninput="TOPIC_WEIGHTS.state_politics=+this.value;_sv('v-state',this.value);renderList()">
+                 oninput="globalThis.TOPIC_WEIGHTS.state_politics=+this.value;_sv('v-state',this.value);renderList()">
           <span class="slider-val" id="v-state">1.0</span>
         </label>
       </div>
@@ -112,11 +112,14 @@ SLIDER_HTML = """
 
 JS_BLOCK = """
 // ── Topic weights + re-rank ──────────────────────────────────────────────
-const TOPIC_WEIGHTS = {
+const PATCH_TOPIC_WEIGHTS_DEFAULTS = {
   housing: 1.0, civic_money: 1.0, public_safety: 1.0,
   environment: 1.0, state_politics: 1.0,
 };
-const TOPIC_MATCHERS = {
+if (!globalThis.TOPIC_WEIGHTS) {
+  globalThis.TOPIC_WEIGHTS = { ...PATCH_TOPIC_WEIGHTS_DEFAULTS };
+}
+const PATCH_TOPIC_MATCHERS = {
   housing:        s => /housing|zoning|permit|rezone|development|land.use/i.test(s.pattern || ''),
   civic_money:    s => /budget|allocation|contract|auditor|financ|appropriat/i.test(s.pattern || '')
                     || /BUDGET|FINANCE|AUDIT/.test(s.source_type || ''),
@@ -127,27 +130,31 @@ const TOPIC_MATCHERS = {
   state_politics: s => /olis|orestar|legislat|bill|measure|campaign|pac/i.test(s.pattern || '')
                     || /OLIS|ORESTAR/.test(s.source_type || ''),
 };
+function _topicWeights() {
+  return globalThis.TOPIC_WEIGHTS || PATCH_TOPIC_WEIGHTS_DEFAULTS;
+}
 function topicScore(node) {
   const e = entryFor(node.id), sig = e.sig;
   const base = sig ? (sig.confidence || 0) : 0;
   let tagSum = 0;
   if (sig) {
-    for (const [t, w] of Object.entries(TOPIC_WEIGHTS))
-      tagSum += w * (TOPIC_MATCHERS[t](sig) ? 1.0 : 0.0);
+    for (const [t, w] of Object.entries(_topicWeights()))
+      tagSum += w * (PATCH_TOPIC_MATCHERS[t](sig) ? 1.0 : 0.0);
   }
   const hours    = e.hours != null ? e.hours : 48;
   const vPenalty = Math.min(hours / 48, 1.0);
-  const wBreaking = Math.min(TOPIC_WEIGHTS.state_politics / 2, 1);
+  const wBreaking = Math.min(_topicWeights().state_politics / 2, 1);
   return base + tagSum - vPenalty * (1 - wBreaking);
 }
 function weightsActive() {
-  return Object.values(TOPIC_WEIGHTS).some(w => w !== 1.0);
+  return Object.values(_topicWeights()).some(w => w !== 1.0);
 }
 function _sv(id, v) {
   document.getElementById(id).textContent = Number(v).toFixed(1);
 }
 function resetWeights() {
-  Object.keys(TOPIC_WEIGHTS).forEach(k => TOPIC_WEIGHTS[k] = 1.0);
+  const weights = _topicWeights();
+  Object.keys(weights).forEach(k => weights[k] = 1.0);
   [['housing','v-housing'],['civic','v-civic'],['safety','v-safety'],
    ['env','v-env'],['state','v-state']].forEach(([sid, vid]) => {
     document.getElementById('w-' + sid).value = 1;
