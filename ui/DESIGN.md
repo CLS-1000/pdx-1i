@@ -173,7 +173,7 @@ NODE TYPE  [People ✓][Issues ✓][Entities ✓][Jurisdictions ✓]   SIGNAL  [
 ```
 
 Node-type chips are independent toggles (`aria-pressed`); signal state is a
-single-select segmented group (`role="radiogroup"`). Active = `--accent-wash`
+single-active segmented control (`aria-pressed` buttons, exactly one active at a time). Active = `--accent-wash`
 fill, `--accent` border and text. Focus = 2px `--accent` outline at 2px offset.
 Filters drive the graph and the mobile list from the same state object.
 
