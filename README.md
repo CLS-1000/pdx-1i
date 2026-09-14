@@ -13,6 +13,70 @@ Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily 
 a PDF renderer for the brief, and two single-page viewers — the daily brief and the
 force-directed political web. What is *not* built is listed at the bottom.
 
+---
+
+## Executive Summary
+
+### What it was
+
+PDX-1i began as a research prototype: a set of harvesting scripts pointed at
+Portland-metro public-records endpoints, producing flat files that had to be read
+manually. There was no scoring logic, no entity resolution, no anomaly detection, and
+no publication pipeline. The outputs were raw and unannotated — useful only to someone
+who already knew what to look for. The UI did not exist. The record of what had been
+fetched lived only on whoever's laptop ran the scripts.
+
+### What it is
+
+A deterministic, reproducible OSINT engine covering the bi-state Portland metro
+(Multnomah, Washington, Clackamas, Clark). It ingests five public-record feeds —
+ORESTAR, OLIS, SEI, WA PDC, and Portland Press — runs every signal through a
+four-gate filter (credibility, volume, velocity, novelty), resolves named entities
+against a role-based registry of jurisdictions and seats, and measures each surviving
+signal against a 90-day rolling baseline. Anomalies are reported as sigma measurements,
+not adjectives. Every published line traces to the run that produced it.
+
+A neutrality layer applies before publication: attribution is a hard gate (a section
+that cites nothing does not publish); tone and hedging are observation-only (flagged and
+carried into the store, not suppressed — because the check cannot distinguish a
+newspaper reporting a conviction from the engine alleging one, and suppression is worse
+than annotation).
+
+The outputs are a structured JSONL ground-truth store, a queryable SQLite layer, a
+daily PDF brief, a JSON API, and two single-page viewers: a brief reader and a
+force-directed political web. A daily cron cycle drives the whole thing. Six
+infrastructure-watch monitors run alongside the record feeds and feed the same pipeline.
+
+As of the current build, the transport, scoring, storage, and publication machinery
+are fully exercised. Live connectivity is partial: OLIS, two press feeds, and one watch
+target answer; the remaining feed URLs are documented 404s, and no record feed has yet
+returned a row that confirmed its field-alias table against real data.
+
+### What it will be
+
+Three bodies of work remain, in priority order:
+
+1. **Feed verification.** Correct the dead endpoint URLs and confirm each adapter's
+   field-alias table against a real payload. This is data entry and one alias-table
+   pass per feed — no new machinery required. Until it is done, the engine publishes
+   only press records and watch events.
+
+2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
+   GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
+   endpoints they depend on exist; the work is front-end. The visual language also
+   needs to converge on the SPEC-1 monochrome design system (black canvas, white
+   opacity hierarchy, hue reserved for live-status only).
+
+3. **Network diagrams in the PDF brief.** The renderer currently emits text only —
+   headings, paragraphs, tables. Structural diagrams of the political web are the
+   natural next addition once the data layer is verified.
+
+None of these require changes to the scoring logic, the gate thresholds, the neutrality
+layer, or the publication trigger. The engine's guarantees — traceability, role-based
+attribution, sigma-scaled anomaly reporting, fault-tolerant cycle — are stable.
+
+---
+
 ## What it does, and what it refuses to do
 
 The engine reports **structure and timing**. It makes conflict-of-interest structure
