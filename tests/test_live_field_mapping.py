@@ -19,6 +19,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
@@ -344,8 +345,10 @@ def test_olis_follows_the_next_link(tmp_path):
         payload={"value": [_measure(1)], "@odata.nextLink": "https://example.invalid/page2"}
     )
 
+    # `sessions=` pins the session list so no LegislativeSessions request is made and
+    # the call count measures the Measures walk alone.
     with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
-        result = OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OlisAdapter(live=True, cache_dir=tmp_path, sessions=["2026R1"]).safe_fetch()
 
     assert mock_get.call_count == 2
     assert len(result) == 2
@@ -366,16 +369,22 @@ def test_olis_follows_a_relative_next_link(tmp_path):
     page_two = _response(payload={"value": [_measure(2)]})
 
     with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
-        result = OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OlisAdapter(live=True, cache_dir=tmp_path, sessions=["2026R1"]).safe_fetch()
 
     assert result.ok, result.errors
     assert len(result) == 2
 
     second_url = mock_get.call_args_list[1].args[0]
     assert second_url.startswith("https://"), f"relative link was not resolved: {second_url}"
-    assert second_url == (
-        "https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$skiptoken=100"
-    )
+
+    parts = urlsplit(second_url)
+    assert parts.path == "/odata/odataservice.svc/Measures"
+    query = dict(parse_qsl(parts.query))
+    assert query["$skiptoken"] == "100"
+    # OLIS drops $format from its own nextLink, so page 2 comes back as Atom XML unless
+    # the walk puts it back. This is the second half of that first-run failure: fixing
+    # the relative URL only got the walk as far as an unparseable page.
+    assert query["$format"] == "json"
 
 
 def test_olis_absolute_next_link_is_left_alone(tmp_path):
@@ -386,9 +395,14 @@ def test_olis_absolute_next_link_is_left_alone(tmp_path):
     page_two = _response(payload={"value": [_measure(2)]})
 
     with patch("httpx.get", side_effect=[page_one, page_two]) as mock_get:
-        OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        OlisAdapter(live=True, cache_dir=tmp_path, sessions=["2026R1"]).safe_fetch()
 
-    assert mock_get.call_args_list[1].args[0] == absolute
+    second_url = mock_get.call_args_list[1].args[0]
+    parts = urlsplit(second_url)
+    # Same scheme, host and path as the link the service gave -- urljoin did not
+    # rewrite it against the base. Only $format is added.
+    assert (parts.scheme, parts.netloc, parts.path) == urlsplit(absolute)[:3]
+    assert dict(parse_qsl(parts.query)) == {"$skip": "100", "$format": "json"}
 
 
 def test_olis_paging_stops_at_the_ceiling(tmp_path):
@@ -400,7 +414,7 @@ def test_olis_paging_stops_at_the_ceiling(tmp_path):
     )
 
     with patch("httpx.get", return_value=looping) as mock_get:
-        result = OlisAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = OlisAdapter(live=True, cache_dir=tmp_path, sessions=["2026R1"]).safe_fetch()
 
     assert mock_get.call_count == MAX_PAGES
     assert len(result) == MAX_PAGES

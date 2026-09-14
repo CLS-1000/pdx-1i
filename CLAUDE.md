@@ -52,7 +52,7 @@ engine publishes about real people and institutions.
 ## Layout
 
 ```
-src/pdx1/            43 modules
+src/pdx1/            44 modules
   config.py          settings; every PDX1_* key is documented in .env.example
   models.py          Pydantic schemas — Signal → IntelligenceRecord
   gates.py           the four-gate filter (credibility, volume, velocity, novelty)
@@ -65,6 +65,7 @@ src/pdx1/            43 modules
   __main__.py        `python -m pdx1` entry point
   scheduler.py       APScheduler cron — daily cycle, default 06:00 PT
   sources/           ORESTAR · OLIS · SEI · WA PDC · Portland Press
+    olis_actions.py  copied proc_track rules: action text -> procedural state
     base.py          adapter contract + three-tier live read
     normalize.py     money/date/header coercions shared by the adapters
   watch/             6 infrastructure monitors, declared in targets.py
@@ -73,7 +74,7 @@ src/pdx1/            43 modules
   api/               FastAPI app, routes (incl. /graph), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               27 files, 484 tests
+tests/               31 files, 524 tests
   fixtures/          source payloads replayed by the adapters
 ```
 

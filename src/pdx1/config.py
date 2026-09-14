@@ -46,6 +46,21 @@ def _env_float(key: str, default: float) -> float:
         return default
 
 
+def _env_list(key: str) -> list[str] | None:
+    """
+    Read a comma-separated override, or None when unset.
+
+    None and empty are deliberately distinct: None means "resolve at runtime", while
+    an explicitly empty value would mean "no sessions", which is never what an
+    operator wants and is therefore folded back into None.
+    """
+    raw = os.environ.get(key)
+    if raw is None or not raw.strip():
+        return None
+    items = [part.strip() for part in raw.split(",") if part.strip()]
+    return items or None
+
+
 def _env_bool(key: str, default: bool) -> bool:
     raw = os.environ.get(key)
     if raw is None or not raw.strip():
@@ -119,6 +134,12 @@ class Settings:
     cron_hour: int = 6
     cron_minute: int = 0
 
+    #: Explicit OLIS session keys, e.g. ["2026R1"]. None resolves them at runtime from
+    #: the LegislativeSessions collection -- see `olis.resolve_sessions`.
+    olis_sessions: list[str] | None = None
+    #: How far back a session's BeginDate may be and still be harvested.
+    olis_session_lookback_days: int = 540
+
     live_fetch: bool = False
     #: When False the vocabulary gates -- tone and hedging -- are bypassed; source
     #: language is published as-is while citation discipline (attribution gate)
@@ -172,6 +193,8 @@ class Settings:
             timezone=_env("PDX1_TIMEZONE", "America/Los_Angeles"),
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
+            olis_sessions=_env_list("PDX1_OLIS_SESSIONS"),
+            olis_session_lookback_days=_env_int("PDX1_OLIS_SESSION_LOOKBACK_DAYS", 540),
             live_fetch=_env_bool("PDX1_LIVE", False),
             tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )
