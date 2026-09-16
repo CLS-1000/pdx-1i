@@ -192,6 +192,18 @@ because the guess reads as verified.
 One caveat on WATCH/PGE: its `ProxyError` came from the development sandbox's outbound
 proxy and is not evidence about the endpoint itself. It needs re-testing from the VM.
 
+### Addendum 2026-09-16 — OLIS may no longer be in this state
+
+Work landed on `main` (#33, #34) that rewrote the OLIS adapter: it re-adds `$format=json`
+to every paged URL, which is aimed squarely at the failure measured above — OLIS answered
+200 and then `response.json()` raised, because page 2 onward came back as Atom XML.
+
+**That fix has not been re-measured live.** The table above is a dated measurement from
+2026-08-21 and stays as recorded; it is not a claim about today. Whether OLIS now returns
+usable data is open until someone runs it live and writes the number down. The other three
+record feeds — ORESTAR, SEI, WA_PDC — are untouched by that work and still stand as
+measured.
+
 ---
 
 ## Day 30 is the decision point
