@@ -153,7 +153,12 @@ class CycleResult:
         return self.written
 
 
-def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> list[SourceAdapter]:
+def default_adapters(
+    settings: Settings,
+    fixture_dir: Path | None = None,
+    store: DualWriteStore | None = None,
+    bootstrap: bool = False,
+) -> list[SourceAdapter]:
     """
     The PDX-1i feeds.
 
@@ -177,9 +182,26 @@ def default_adapters(settings: Settings, fixture_dir: Path | None = None) -> lis
             "max_attempts": settings.retry.max_attempts,
             "retry_backoff_s": settings.retry.backoff_s,
         }
+        # OLIS needs the store at construction time: it records which procedural
+        # transitions it has already emitted, and without that it would re-emit a
+        # whole session every cycle. run_cycle builds its own instance over the same
+        # two files, which is safe -- DualWriteStore opens a connection per call.
+        olis_store = store or DualWriteStore(
+            settings.store_path, settings.db_path, settings.briefs_path
+        )
         adapters: list[SourceAdapter] = [
             OrestarAdapter(timeout=t.orestar, live=True, cache_dir=cache, feed_url=u.orestar, **r),
-            OlisAdapter(timeout=t.olis, live=True, cache_dir=cache, feed_url=u.olis, **r),
+            OlisAdapter(
+                timeout=t.olis,
+                live=True,
+                cache_dir=cache,
+                feed_url=u.olis,
+                sessions=settings.olis_sessions,
+                session_lookback_days=settings.olis_session_lookback_days,
+                store=olis_store,
+                bootstrap=bootstrap,
+                **r,
+            ),
             SeiAdapter(timeout=t.sei, live=True, cache_dir=cache, feed_url=u.sei, **r),
             WaPdcAdapter(timeout=t.wa_pdc, live=True, cache_dir=cache, feed_url=u.wa_pdc, **r),
             PortlandPressAdapter(
@@ -598,6 +620,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory of source fixtures (default: tests/fixtures).",
     )
     parser.add_argument(
+        "--bootstrap",
+        dest="bootstrap",
+        action="store_true",
+        help=(
+            "Replay the OLIS action history, record every procedural transition as "
+            "already emitted, and emit no Signals. The first run against a new "
+            "session must be a bootstrap run: 2025R1 alone holds 3,466 measures, and "
+            "a first cycle against an empty table would push thousands of Signals "
+            "through the gates at once. Requires PDX1_LIVE=true."
+        ),
+    )
+    parser.add_argument(
         "--check-endpoints",
         dest="check_endpoints",
         action="store_true",
@@ -663,6 +697,49 @@ def check_endpoints(settings: Settings) -> int:
     return 1 if failures else 0
 
 
+def bootstrap_olis(settings: Settings) -> int:
+    """
+    Populate `olis_emitted` without emitting anything.
+
+    Replays every resolved session's action history, records the transitions it
+    computes, and returns. The next ordinary cycle then emits only what appears after
+    this point, which is the difference between a first run that publishes three
+    thousand Signals and one that publishes the day's actual movement.
+    """
+    if not settings.live_fetch:
+        print("--bootstrap needs live mode: set PDX1_LIVE=true")
+        return 2
+
+    store = DualWriteStore(settings.store_path, settings.db_path, settings.briefs_path)
+    adapter = OlisAdapter(
+        timeout=settings.timeouts.olis,
+        live=True,
+        cache_dir=settings.cache_dir,
+        feed_url=settings.urls.olis,
+        sessions=settings.olis_sessions,
+        session_lookback_days=settings.olis_session_lookback_days,
+        store=store,
+        bootstrap=True,
+    )
+
+    result = adapter.safe_fetch()
+    for session in adapter._resolved_sessions:
+        print(f"  {session:8} {store.olis_emitted_count(session):6} transition(s) on record")
+    # The Measures pass still runs and still builds its per-measure Signals; nothing is
+    # written here, so none of them are published either. What matters is that no
+    # *transition* Signal was produced -- that is what the recorded rows suppress.
+    transitions = [s for s in result.signals if s.meta]
+    print(f"  transition signals {len(transitions)} (bootstrap emits none by design)")
+    print(f"  measure signals    {len(result.signals) - len(transitions)} (not written)")
+    if adapter.last_halts:
+        print(f"  halted measures {len(adapter.last_halts)}")
+        for mid, why in adapter.last_halts[:10]:
+            print(f"    {mid}: {why}")
+    for err in result.errors:
+        print(f"  [warn] {err}")
+    return 1 if result.errors else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
@@ -687,6 +764,9 @@ def main(argv: list[str] | None = None) -> int:
         now = datetime.fromisoformat(args.as_of)
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
+
+    if args.bootstrap:
+        return bootstrap_olis(settings)
 
     adapters = default_adapters(
         settings, Path(args.fixtures) if args.fixtures else None

@@ -139,6 +139,15 @@ class Signal(BaseModel):
     author: str | None = None
     published_at: datetime
     credibility: float = Field(default=0.5, ge=0.0, le=1.0)
+    #: Structured adapter output, kept out of the `text` prose blob.
+    #:
+    #: OLIS puts procedural state here (from_state/to_state/action_id/rules_version).
+    #: The alternative -- burying it in `text` -- forces the gates, the brief writer
+    #: and the `political_signals` ingest to re-parse prose to filter on state, which
+    #: is the `CurrentLocation` problem one layer down.
+    #:
+    #: Defaulted, so every existing construction site is untouched.
+    meta: dict | None = None
 
     @property
     def display_title(self) -> str:

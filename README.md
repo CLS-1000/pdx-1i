@@ -242,7 +242,7 @@ different:
 | Adapter | Live shape |
 |---|---|
 | **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
-| **OLIS** | the OData service — rows under `value`, paged via `@odata.nextLink`. |
+| **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
 | **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
 | **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object, and rejects HTML loudly rather than returning nothing. |
 | **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled only OregonLive. |
@@ -262,7 +262,7 @@ re-derives it:
 
 | Endpoint | Result |
 |---|---|
-| OLIS | **200** — URL and OData envelope confirmed |
+| OLIS | **200** — URL and OData envelope confirmed; field names and paging since verified against real rows on 2026-09-07 |
 | SEI landing page | **200 HTML**, rejected by `parse` as designed |
 | OregonLive · KOIN | **200** |
 | TriMet watch | **200** |
@@ -293,15 +293,94 @@ rather than a release:
 | `PDX1_WA_PDC_URL` | the Socrata dataset |
 | `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
 
-**Field names remain unconfirmed for all four record feeds.** No row from a live
-response has been parsed yet — OLIS reached 200 but no measure was read on that run,
-and the other three never returned data — so the spellings still come from two prior
-PDX-1i implementations. The mapping *logic* is tested across 73 offline tests; the
-*names* are not. Correcting a wrong URL is data entry, and correcting a wrong column is
-a one-line change in one alias table; neither touches the parse logic.
+**Field names are confirmed for OLIS and remain unconfirmed for the other three.** A
+live pull on **2026-09-07** read 304 measures and 3,912 action rows from the 2026R1
+session, so OLIS's spellings are now checked against a real payload rather than
+inherited from two prior PDX-1i implementations. That check corrected three of them:
+`CurrentCommitteeName` does not exist (the real names are `CurrentCommitteeCode` and
+`CurrentSubCommittee`, so the committee field had been resolving to "not stated" on
+every live row), and neither `CurrentStatus` nor `CurrentAction` exists either. It also
+found that `MeasureNumber` is served as a *string* by `Measures` and an *int* by
+`MeasureHistoryActions`, which the join now coerces.
+
+ORESTAR, WA PDC and SEI never returned data, so their spellings are still unverified.
+The mapping *logic* is tested offline; those *names* are not. Correcting a wrong URL is
+data entry, and correcting a wrong column is a one-line change in one alias table;
+neither touches the parse logic.
 
 Portland Press is the exception to all of this: RSS is a standard format, so there is
 nothing to verify beyond the URLs themselves.
+
+#### OLIS procedural state
+
+`Measures` returns one row per bill carrying a `CurrentLocation` field, and that field
+cannot be trusted to say what happened to a measure. It reports one current position,
+not the sequence that produced it, and the positions are written in the vocabulary of
+whichever desk the paper is sitting on: a vetoed bill can read "Senate - Tabled". The
+adjacent `Vetoed` boolean is no better — HB 4177 in 2026R1 was vetoed by the Governor
+and carries `Vetoed: false`.
+
+So procedural state is derived instead, by replaying each measure's full action history
+from `MeasureHistoryActions` through a table of ~100 regex rules and a chamber-aware
+state machine (`sources/olis_actions.py`). The rules come from the `proc_track` project
+and are copied in rather than imported; `RULES_VERSION` digests the table and
+`tests/test_olis_actions_parity.py` fails if the copy is edited without bumping it.
+That detects drift; it does not prevent it.
+
+Replay coverage, measured live on 2026-09-07 across eleven sessions:
+
+| Sessions | Measures | Replayed to completion |
+|---|---|---|
+| 2019R1, 2021R1, 2023R1, 2025R1 (long) | 11,723 | 11,722 |
+| 2026R1, 2024R1, 2022R1 (short) | 870 | 870 |
+| 2020S1–S3, 2025S1 (special) | 49 | 49 |
+| **total** | **12,642** | **12,641 (99.99%)** |
+
+The single halt is SB 579 in 2023R1, whose "Rescission of the subsequent referral denied
+by Order of the President" no rule claims. A measure that halts is tallied, logged at
+WARNING and skipped; the cycle completes. One anomalous measure must not take down a
+feed.
+
+**What gets emitted.** One signal per procedural *transition* not previously emitted —
+not one per measure, and not one per measure whose final state changed. A measure can
+cross several reportable states in one cycle, and a final-state comparison collapses
+those into one line. Emittable states are `introduced`, `passed`, `adopted`, `failed`,
+`enacted`, `vetoed`, `veto_sustained`, `veto_overridden`, `signed_by_presiding` and
+`tabled`. Committee churn — `committee`, `public_hearing`, `work_session` — is never
+emitted; it fires many times per measure and would bury the gates in referral traffic.
+`carried_over` is not emitted either: the rule that matches it cannot separate the
+end-of-session outcome from routine floor-calendar carryover, and 2026R1 has 94 rows
+where most are the latter.
+
+Each signal carries its state as structured data on `Signal.meta` — `from_state`,
+`to_state`, `action_id`, the verbatim `action_text` and `rules_version` — rather than
+only as prose, so downstream consumers filter on a field instead of re-parsing a
+sentence. Burying it in the text would reproduce the `CurrentLocation` problem one
+layer down.
+
+**Why the whole session is pulled every cycle.** OLIS edits history after the fact. In
+2025R1, 1,946 of 27,488 rows carry a `ModifiedDate` and 2,188 were created at least a
+day after their own `ActionDate` — one of them 399.9 days after. An `ActionDate`
+watermark would therefore work and be wrong: it would skip exactly those backdated
+inserts. The replay runs from scratch each cycle and the emitted set is diffed against
+an `olis_emitted` table, so a row backdated into the middle of a history shows up as a
+new transition even though nothing changed at the tail.
+
+**Sessions are resolved, not hardcoded.** Interim keys are dropped and what remains is
+filtered by `PDX1_OLIS_SESSION_LOOKBACK_DAYS`; the resolved list is logged at INFO every
+cycle. The service's `DefaultSession` flag is deliberately ignored — it currently points
+at the `2025I1` interim, which carries no measure actions, so an adapter that followed
+it would report healthy forever and harvest nothing.
+
+**The first run against a new session must be a bootstrap run.**
+
+```bash
+PDX1_LIVE=true pdx1 --bootstrap    # replay, record every transition, emit nothing
+```
+
+2025R1 alone holds 3,466 measures; a first cycle against an empty table would push
+thousands of signals through the gates at once. Bootstrap records what already happened
+so the next ordinary cycle emits only genuine movement.
 
 #### Why tone and hedging stopped being gates
 

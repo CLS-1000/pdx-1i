@@ -37,7 +37,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
-from .models import Brief, IntelligenceRecord
+from .models import Brief, IntelligenceRecord, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,35 @@ CREATE TABLE IF NOT EXISTS briefs (
 );
 CREATE INDEX IF NOT EXISTS idx_briefs_produced ON briefs(produced_at);
 CREATE INDEX IF NOT EXISTS idx_briefs_run      ON briefs(run_id);
+
+-- Procedural transitions the OLIS adapter has already emitted a Signal for.
+--
+-- A transition set rather than a final-state map, because OLIS rows are inserted and
+-- edited retroactively: in 2025R1, 7.1% of rows carry a ModifiedDate and 2,188 were
+-- created at least a day after their own ActionDate, one of them 399.9 days after.
+-- The adapter replays each measure from scratch every cycle, so a row backdated into
+-- the middle of a history changes the computed transitions and shows up in the diff
+-- even though nothing new appeared at the tail. A final-state comparison misses that,
+-- and also collapses several emittable transitions landing in one cycle into one.
+--
+-- session_key is part of the primary key because measure numbers repeat across
+-- sessions -- SB 976 exists in both 2019R1 and 2025R1.
+--
+-- rules_version is recorded but deliberately not part of the key: it is there so that
+-- when a rule patch changes historical output you can see which rows were produced
+-- under which ruleset instead of guessing.
+CREATE TABLE IF NOT EXISTS olis_emitted (
+  session_key    TEXT    NOT NULL,
+  measure_prefix TEXT    NOT NULL,
+  measure_number INTEGER NOT NULL,
+  action_id      INTEGER NOT NULL,
+  chamber        TEXT    NOT NULL,
+  state          TEXT    NOT NULL,
+  rules_version  TEXT    NOT NULL,
+  emitted_at     TEXT    NOT NULL,
+  PRIMARY KEY (session_key, measure_prefix, measure_number, action_id, state)
+);
+CREATE INDEX IF NOT EXISTS idx_olis_emitted_session ON olis_emitted(session_key);
 """
 
 
@@ -277,6 +306,85 @@ class DualWriteStore:
             ).fetchall()
 
         return [IntelligenceRecord.model_validate_json(row["payload"]) for row in rows]
+
+    # ── OLIS emitted transitions ─────────────────────────────────────────────
+
+    def olis_emitted(self, session_key: str) -> set[tuple[str, str, int, int, str, str]]:
+        """
+        Every transition already emitted for one session.
+
+        Returned in the adapter's tuple shape --
+        `(session_key, prefix, number, action_id, chamber, state)` -- so the adapter
+        can take a plain set difference against what this cycle's replay produced.
+        """
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT session_key, measure_prefix, measure_number,
+                       action_id, chamber, state
+                  FROM olis_emitted
+                 WHERE session_key = ?
+                """,
+                (session_key,),
+            ).fetchall()
+        return {
+            (
+                r["session_key"],
+                r["measure_prefix"],
+                int(r["measure_number"]),
+                int(r["action_id"]),
+                r["chamber"],
+                r["state"],
+            )
+            for r in rows
+        }
+
+    def record_olis_emitted(
+        self,
+        transitions: Iterable[tuple[str, str, int, int, str, str]],
+        rules_version: str,
+        emitted_at: str | None = None,
+    ) -> int:
+        """
+        Mark transitions as emitted. Returns the number of new rows.
+
+        `INSERT OR IGNORE` rather than a replace: a transition that is already recorded
+        keeps its original `emitted_at` and `rules_version`, which is what makes the
+        rules_version column worth reading later.
+
+        This table is a query-layer bookkeeping aid, not ground truth -- the Signals it
+        gates are written to JSONL by the normal path. It is therefore the one table
+        here that is not reconstructible from `rebuild_from_jsonl`; losing it costs a
+        re-bootstrap, not a record.
+        """
+        stamp = emitted_at or utcnow().isoformat()
+        rows = [(s, p, n, a, c, st, rules_version, stamp) for s, p, n, a, c, st in transitions]
+        if not rows:
+            return 0
+        with closing(self._connect()) as conn:
+            before = conn.execute("SELECT count(*) FROM olis_emitted").fetchone()[0]
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO olis_emitted
+                    (session_key, measure_prefix, measure_number, action_id,
+                     chamber, state, rules_version, emitted_at)
+                VALUES (?,?,?,?,?,?,?,?)
+                """,
+                rows,
+            )
+            conn.commit()
+            after = conn.execute("SELECT count(*) FROM olis_emitted").fetchone()[0]
+        return int(after - before)
+
+    def olis_emitted_count(self, session_key: str | None = None) -> int:
+        """How many transitions are on record, for a session or overall."""
+        with closing(self._connect()) as conn:
+            return int(
+                conn.execute(
+                    "SELECT count(*) FROM olis_emitted WHERE (? IS NULL OR session_key = ?)",
+                    (session_key, session_key),
+                ).fetchone()[0]
+            )
 
     # ── Briefs ───────────────────────────────────────────────────────────────
 

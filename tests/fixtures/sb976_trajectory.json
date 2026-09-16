@@ -1,0 +1,250 @@
+{
+  "source": "https://api.oregonlegislature.gov/odata/odataservice.svc/MeasureHistoryActions",
+  "fetched_at": "2026-08-23",
+  "measure": "SB976",
+  "session": "2025R1",
+  "jurisdiction": "or_legislature",
+  "note": "sorted by ActionDate; API returns rows out of order and MeasureHistoryId order contradicts ActionDate",
+  "actions": [
+    {
+      "seq": 1,
+      "history_id": 620438,
+      "chamber": "S",
+      "occurred_at": "2025-02-04T10:49:12",
+      "recorded_at": "2025-02-04T11:30:29",
+      "modified_at": null,
+      "action_text": "Introduction and first reading. Referred to President's desk.",
+      "vote_text": null
+    },
+    {
+      "seq": 2,
+      "history_id": 620463,
+      "chamber": "S",
+      "occurred_at": "2025-02-04T12:44:55",
+      "recorded_at": "2025-02-04T12:45:15",
+      "modified_at": null,
+      "action_text": "Referred to Natural Resources and Wildfire.",
+      "vote_text": null
+    },
+    {
+      "seq": 3,
+      "history_id": 623666,
+      "chamber": "S",
+      "occurred_at": "2025-02-20T13:01:00",
+      "recorded_at": "2025-02-20T15:07:43",
+      "modified_at": null,
+      "action_text": "Public Hearing held.",
+      "vote_text": null
+    },
+    {
+      "seq": 4,
+      "history_id": 633836,
+      "chamber": "S",
+      "occurred_at": "2025-03-27T13:01:00",
+      "recorded_at": "2025-03-27T15:13:16",
+      "modified_at": null,
+      "action_text": "Work Session held.",
+      "vote_text": null
+    },
+    {
+      "seq": 5,
+      "history_id": 635738,
+      "chamber": "S",
+      "occurred_at": "2025-04-01T13:02:00",
+      "recorded_at": "2025-04-01T14:56:41",
+      "modified_at": null,
+      "action_text": "Work Session held.",
+      "vote_text": null
+    },
+    {
+      "seq": 6,
+      "history_id": 638393,
+      "chamber": "S",
+      "occurred_at": "2025-04-07T14:51:58",
+      "recorded_at": "2025-04-07T14:52:25",
+      "modified_at": null,
+      "action_text": "Recommendation: Do pass with amendments and be referred to Ways and Means. (Printed A-Eng.)",
+      "vote_text": null
+    },
+    {
+      "seq": 7,
+      "history_id": 638394,
+      "chamber": "S",
+      "occurred_at": "2025-04-07T14:51:59",
+      "recorded_at": "2025-04-07T14:52:25",
+      "modified_at": null,
+      "action_text": "Referred to Ways and Means by order of the President.",
+      "vote_text": null
+    },
+    {
+      "seq": 8,
+      "history_id": 654675,
+      "chamber": "S",
+      "occurred_at": "2025-06-12T07:40:00",
+      "recorded_at": "2025-06-16T11:14:41",
+      "modified_at": null,
+      "action_text": "Assigned to Subcommittee On Capital Construction.",
+      "vote_text": null
+    },
+    {
+      "seq": 9,
+      "history_id": 654677,
+      "chamber": "S",
+      "occurred_at": "2025-06-16T08:32:00",
+      "recorded_at": "2025-06-16T11:14:42",
+      "modified_at": null,
+      "action_text": "Work Session held.",
+      "vote_text": null
+    },
+    {
+      "seq": 10,
+      "history_id": 654676,
+      "chamber": "S",
+      "occurred_at": "2025-06-16T08:33:00",
+      "recorded_at": "2025-06-16T11:14:42",
+      "modified_at": null,
+      "action_text": "Returned to Full Committee.",
+      "vote_text": null
+    },
+    {
+      "seq": 11,
+      "history_id": 655908,
+      "chamber": "S",
+      "occurred_at": "2025-06-18T16:02:00",
+      "recorded_at": "2025-06-18T17:20:32",
+      "modified_at": null,
+      "action_text": "Work Session held.",
+      "vote_text": null
+    },
+    {
+      "seq": 12,
+      "history_id": 656462,
+      "chamber": "S",
+      "occurred_at": "2025-06-20T14:05:59",
+      "recorded_at": "2025-06-20T14:10:28",
+      "modified_at": null,
+      "action_text": "Recommendation: Do pass with amendments to the A-Eng. bill.  (Printed B-Eng.)",
+      "vote_text": null
+    },
+    {
+      "seq": 13,
+      "history_id": 656657,
+      "chamber": "S",
+      "occurred_at": "2025-06-23T10:39:32",
+      "recorded_at": "2025-06-23T10:47:18",
+      "modified_at": null,
+      "action_text": "Second reading.",
+      "vote_text": null
+    },
+    {
+      "seq": 14,
+      "history_id": 656912,
+      "chamber": "S",
+      "occurred_at": "2025-06-23T15:36:12",
+      "recorded_at": "2025-06-23T15:36:13",
+      "modified_at": "2025-06-23T15:36:18",
+      "action_text": "Rules suspended. Third reading.  Carried by Nash.  Passed.",
+      "vote_text": "Ayes, 28; Nays, 1--Girod; Excused, 1--Smith DB."
+    },
+    {
+      "seq": 15,
+      "history_id": 656938,
+      "chamber": "H",
+      "occurred_at": "2025-06-23T15:57:17",
+      "recorded_at": "2025-06-23T15:57:26",
+      "modified_at": null,
+      "action_text": "First reading. Referred to Speaker's desk.",
+      "vote_text": null
+    },
+    {
+      "seq": 16,
+      "history_id": 657013,
+      "chamber": "H",
+      "occurred_at": "2025-06-23T16:09:35",
+      "recorded_at": "2025-06-23T16:09:42",
+      "modified_at": null,
+      "action_text": "Referred to Ways and Means.",
+      "vote_text": null
+    },
+    {
+      "seq": 17,
+      "history_id": 657647,
+      "chamber": "H",
+      "occurred_at": "2025-06-25T10:32:48",
+      "recorded_at": "2025-06-25T10:50:05",
+      "modified_at": null,
+      "action_text": "Recommendation: Do pass.",
+      "vote_text": null
+    },
+    {
+      "seq": 18,
+      "history_id": 657867,
+      "chamber": "H",
+      "occurred_at": "2025-06-25T18:29:22",
+      "recorded_at": "2025-06-25T18:30:30",
+      "modified_at": null,
+      "action_text": "Second reading.",
+      "vote_text": null
+    },
+    {
+      "seq": 19,
+      "history_id": 658139,
+      "chamber": "H",
+      "occurred_at": "2025-06-26T14:57:08",
+      "recorded_at": "2025-06-26T14:58:18",
+      "modified_at": "2025-06-26T14:58:23",
+      "action_text": "Third reading. Carried by Smith G. Passed.",
+      "vote_text": "Ayes, 47; Nays, 2--Chaichi, Scharf; Excused, 8--Cate, Diehl, Harbick, McIntire, Nguyen H, Reschke, Wallan, Yunker; Excused for Business of the House, 3--Boshart Davis, Levy B, Speaker Fahey."
+    },
+    {
+      "seq": 20,
+      "history_id": 658406,
+      "chamber": "S",
+      "occurred_at": "2025-06-27T15:58:40",
+      "recorded_at": "2025-06-27T16:02:49",
+      "modified_at": null,
+      "action_text": "President signed.",
+      "vote_text": null
+    },
+    {
+      "seq": 21,
+      "history_id": 658520,
+      "chamber": "H",
+      "occurred_at": "2025-06-27T21:01:10",
+      "recorded_at": "2025-06-27T21:02:19",
+      "modified_at": null,
+      "action_text": "Speaker signed.",
+      "vote_text": null
+    },
+    {
+      "seq": 22,
+      "history_id": 662109,
+      "chamber": "S",
+      "occurred_at": "2025-08-07T20:25:00",
+      "recorded_at": "2025-08-08T08:26:17",
+      "modified_at": null,
+      "action_text": "Governor vetoed.",
+      "vote_text": null
+    },
+    {
+      "seq": 23,
+      "history_id": 662182,
+      "chamber": "S",
+      "occurred_at": "2025-08-29T09:26:00",
+      "recorded_at": "2025-08-29T15:03:27",
+      "modified_at": "2025-08-29T15:07:47",
+      "action_text": "Motion to lay bill, together with Governor's message, on the table carried.",
+      "vote_text": "Ayes, 14; Nays, 8--Anderson, Bonham, Girod, Nash, Robinson, Smith DB, Starr, Weber; Excused, 8--Gelser Blouin, Gorsek, Hayden, Lieber, Linthicum, McLane, Prozanski, Thatcher."
+    },
+    {
+      "seq": 24,
+      "history_id": 662908,
+      "chamber": "S",
+      "occurred_at": "2025-10-01T09:27:00",
+      "recorded_at": "2025-10-01T13:16:22",
+      "modified_at": null,
+      "action_text": "Veto sustained in accordance with Art. V, sec. 15b, Oregon Constitution.",
+      "vote_text": null
+    }
+  ]
+}
