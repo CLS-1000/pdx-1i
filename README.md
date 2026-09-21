@@ -1,5 +1,12 @@
 # PDX-1i — Portland Metro Intelligence
 
+> **SCOPE FROZEN — 2026-08-21.** This repo is finishing one thing: the daily
+> brief, running unattended at 06:00 Pacific against live adapters, for thirty
+> consecutive days. The finish condition and the run count are in
+> [SHIPPING.md](SHIPPING.md); everything deferred to get there is in
+> [PARKED.md](PARKED.md). Work that is not required for an unattended daily run
+> to produce a correct brief belongs in PARKED.md, not in a commit.
+
 Open-source intelligence (OSINT) engine for Portland-area politics and civic
 infrastructure, covering the bi-state metro: Multnomah, Washington and Clackamas
 counties in Oregon, and Clark County in Washington.

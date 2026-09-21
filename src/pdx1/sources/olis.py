@@ -168,24 +168,13 @@ class OlisAdapter(LiveSourceAdapter):
         path = parts.path.rsplit("/", 1)[0]
         return urlunsplit((parts.scheme, parts.netloc, path + "/", "", ""))
 
-    def _httpx(self):
-        try:
-            import httpx
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                f"{self.name}: httpx is required for live fetch -- "
-                "install it with: pip install 'pdx-1i[live]'"
-            ) from exc
-        return httpx
-
     def _walk(self, url: str, what: str) -> list[dict[str, Any]]:
         """Walk an OData collection's pages and return every row."""
-        httpx = self._httpx()
         rows: list[dict[str, Any]] = []
         next_url: str | None = self._with_json(url)
 
         for page in range(MAX_PAGES):
-            response = httpx.get(next_url, timeout=self.timeout, follow_redirects=True)
+            response = self._get(next_url)
             response.raise_for_status()
             payload = response.json()
 

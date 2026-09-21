@@ -83,7 +83,7 @@ def test_live_adapter_propagates_http_error(fixture_dir):
     import httpx
 
     with patch("httpx.get", side_effect=httpx.ConnectError("connection refused")):
-        result = OrestarAdapter(live=True).safe_fetch()
+        result = OrestarAdapter(live=True, retry_backoff_s=0).safe_fetch()
 
     assert not result.ok
     assert result.signals == []
