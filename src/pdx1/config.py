@@ -172,6 +172,10 @@ class RetryPolicy:
 
     max_attempts: int = 3
     backoff_s: float = 2.0
+    #: Total seconds an adapter may spend sleeping between retries in one cycle.
+    #: `max_attempts` bounds iterations, not wall clock -- this bounds wall clock, and
+    #: is what keeps a retrying adapter from running into the next scheduled cycle.
+    budget_s: float = 120.0
 
 
 @dataclass(frozen=True)
@@ -270,6 +274,7 @@ class Settings:
             retry=RetryPolicy(
                 max_attempts=max(1, _env_int("PDX1_RETRY_MAX_ATTEMPTS", 3)),
                 backoff_s=max(0.0, _env_float("PDX1_RETRY_BACKOFF_S", 2.0)),
+                budget_s=max(0.0, _env_float("PDX1_RETRY_BUDGET_S", 120.0)),
             ),
             baseline_window_days=_env_int("PDX1_BASELINE_WINDOW_DAYS", 90),
             publish_on_change=_env_bool("PDX1_PUBLISH_ON_CHANGE", False),

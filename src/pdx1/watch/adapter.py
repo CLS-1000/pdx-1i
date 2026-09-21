@@ -19,6 +19,7 @@ from ..models import Signal, SourceType
 from ..sources.base import (
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_RETRY_BACKOFF_S,
+    DEFAULT_RETRY_BUDGET_S,
     LiveSourceAdapter,
 )
 from . import WatchTarget
@@ -45,6 +46,7 @@ class WatchAdapter(LiveSourceAdapter):
         cache_dir=None,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         retry_backoff_s: float = DEFAULT_RETRY_BACKOFF_S,
+        retry_budget_s: float = DEFAULT_RETRY_BUDGET_S,
     ) -> None:
         super().__init__(
             fixture_path=fixture_path,
@@ -53,6 +55,7 @@ class WatchAdapter(LiveSourceAdapter):
             cache_dir=cache_dir,
             max_attempts=max_attempts,
             retry_backoff_s=retry_backoff_s,
+            retry_budget_s=retry_budget_s,
         )
         self._target = target
         self.name = f"WATCH/{target.name}"

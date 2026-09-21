@@ -181,6 +181,7 @@ def default_adapters(
         r = {
             "max_attempts": settings.retry.max_attempts,
             "retry_backoff_s": settings.retry.backoff_s,
+            "retry_budget_s": settings.retry.budget_s,
         }
         # OLIS needs the store at construction time: it records which procedural
         # transitions it has already emitted, and without that it would re-emit a

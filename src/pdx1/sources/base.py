@@ -57,6 +57,19 @@ DEFAULT_MAX_ATTEMPTS = 3
 #: Seconds before the first retry. Doubles each attempt, so 2.0 gives 2s then 4s.
 DEFAULT_RETRY_BACKOFF_S = 2.0
 
+#: Ceiling on any single backoff sleep. Doubling is useful for the first couple of
+#: retries and absurd after that -- attempt 20 of an exponential backoff waits days.
+MAX_RETRY_DELAY_S = 60.0
+
+#: Total seconds an adapter may spend *sleeping between retries* in one cycle. This is
+#: the bound that actually protects the schedule: `max_attempts` bounds the number of
+#: iterations, which says nothing about wall clock, and both it and the backoff are
+#: operator-supplied with no ceiling of their own. PDX1_RETRY_MAX_ATTEMPTS=20 at the
+#: default backoff is twelve days of sleeping per adapter -- a cron job still napping
+#: when the next eleven runs are due. Exhausting the budget ends the retries and
+#: reports the last failure, which is the outcome a 06:00 job needs.
+DEFAULT_RETRY_BUDGET_S = 120.0
+
 #: Status codes worth a second attempt. 429 is the server asking for one; 5xx is the
 #: server having a bad moment. Every other 4xx is a settled answer about the request.
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504, 507, 508, 509})
@@ -219,12 +232,14 @@ class LiveSourceAdapter(SourceAdapter):
         feed_url: str | None = None,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         retry_backoff_s: float = DEFAULT_RETRY_BACKOFF_S,
+        retry_budget_s: float = DEFAULT_RETRY_BUDGET_S,
     ) -> None:
         super().__init__(fixture_path=fixture_path, timeout=timeout)
         self._live = live
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
         self._max_attempts = max(1, int(max_attempts))
         self._retry_backoff_s = max(0.0, float(retry_backoff_s))
+        self._retry_budget_s = max(0.0, float(retry_budget_s))
         # Per-fetch measurements, lifted onto the FetchResult by `_annotate`.
         self._http_status: int | None = None
         self._attempts = 0
@@ -317,12 +332,17 @@ class LiveSourceAdapter(SourceAdapter):
 
     def _fetch_live_with_retry(self) -> str:
         """
-        `_fetch_live`, retried a bounded number of times.
+        `_fetch_live`, retried under two independent bounds.
 
-        Bounded by construction: the attempt count comes from `range`, so there is no
-        condition under which this loops forever. A cron job that hangs on a retry is
-        worse than one that fails -- the failure is visible at 06:05 and the hang is
-        not visible until someone looks.
+        `max_attempts` bounds the iteration count via `range`, so the loop cannot spin
+        forever. That alone is not enough: it says nothing about wall clock, and both
+        the attempt count and the backoff come from the environment with no ceiling of
+        their own, so an exponential backoff can sleep for days inside a finite loop.
+        The retry *budget* is the bound that protects the schedule -- once the sleeping
+        would exceed it, the adapter stops and reports the last failure.
+
+        A cron job that hangs on a retry is worse than one that fails: the failure is
+        visible at 06:05, and the hang is not visible until someone goes looking.
 
         Only failures that a second attempt could plausibly fix are retried: transport
         errors, 429, and 5xx. A 404 is the endpoint telling you it moved, and asking it
@@ -330,6 +350,7 @@ class LiveSourceAdapter(SourceAdapter):
         with the matching `PDX1_*_URL` override instead.
         """
         last: Exception | None = None
+        slept = 0.0
         for attempt in range(1, self._max_attempts + 1):
             self._attempts = attempt
             try:
@@ -338,7 +359,23 @@ class LiveSourceAdapter(SourceAdapter):
                 last = exc
                 if attempt == self._max_attempts or not _is_retryable(exc):
                     raise
-                delay = self._retry_backoff_s * (2 ** (attempt - 1))
+                # Doubling, then clamped: the first retries benefit from backing off,
+                # and past a minute the wait costs more than the attempt is worth.
+                delay = min(
+                    self._retry_backoff_s * (2 ** (attempt - 1)), MAX_RETRY_DELAY_S
+                )
+                if slept + delay > self._retry_budget_s:
+                    logger.warning(
+                        "%s: attempt %d/%d failed (%s) -- retry budget %.1fs exhausted "
+                        "after %.1fs, giving up rather than delaying the cycle",
+                        self.name,
+                        attempt,
+                        self._max_attempts,
+                        exc,
+                        self._retry_budget_s,
+                        slept,
+                    )
+                    raise
                 logger.warning(
                     "%s: attempt %d/%d failed (%s) -- retrying in %.1fs",
                     self.name,
@@ -348,6 +385,7 @@ class LiveSourceAdapter(SourceAdapter):
                     delay,
                 )
                 time.sleep(delay)
+                slept += delay
         raise last  # pragma: no cover - the loop always returns or raises above
 
     def _read_raw(self) -> str:

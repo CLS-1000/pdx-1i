@@ -16,7 +16,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from pdx1.sources.base import DEFAULT_MAX_ATTEMPTS, _is_retryable
+from pdx1.sources.base import DEFAULT_MAX_ATTEMPTS, MAX_RETRY_DELAY_S, _is_retryable
 from pdx1.sources.orestar import OrestarAdapter
 
 
@@ -202,3 +202,88 @@ def test_a_failed_result_is_not_reported_as_empty():
         result = _adapter().safe_fetch()
     assert not result.ok
     assert not result.empty
+
+
+# ── The wall-clock bound ─────────────────────────────────────────────────────
+#
+# `max_attempts` bounds how many times the loop runs. It says nothing about how long
+# the loop takes, and neither it nor the backoff has a ceiling of its own -- both come
+# straight from the environment. An exponential backoff inside a finite loop can sleep
+# for days, which for a 06:00 cron is indistinguishable from a hang. These guard the
+# budget that bounds the wall clock rather than the iteration count.
+
+
+def _sleepless(monkeypatch):
+    """Record what would have been slept, without actually sleeping."""
+    slept: list[float] = []
+    monkeypatch.setattr("pdx1.sources.base.time.sleep", slept.append)
+    return slept
+
+
+def test_total_retry_sleep_cannot_exceed_the_budget(monkeypatch):
+    """
+    The case that motivated the budget.
+
+    Twenty attempts at the default backoff is over twelve days of sleeping per adapter
+    -- a cycle still napping when the next eleven are due. The loop is finite either
+    way; the budget is what makes it finish.
+    """
+    slept = _sleepless(monkeypatch)
+
+    with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+        OrestarAdapter(
+            live=True, max_attempts=20, retry_backoff_s=2.0, retry_budget_s=30.0
+        ).safe_fetch()
+
+    assert sum(slept) <= 30.0, f"slept {sum(slept)}s against a 30s budget"
+
+
+def test_a_huge_backoff_does_not_buy_a_huge_sleep(monkeypatch):
+    """An absurd backoff is clamped per-attempt and still capped in total."""
+    slept = _sleepless(monkeypatch)
+
+    with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+        OrestarAdapter(
+            live=True, max_attempts=5, retry_backoff_s=86_400.0, retry_budget_s=120.0
+        ).safe_fetch()
+
+    assert all(d <= MAX_RETRY_DELAY_S for d in slept), slept
+    assert sum(slept) <= 120.0
+
+
+def test_no_single_sleep_exceeds_the_delay_ceiling(monkeypatch):
+    """Doubling is useful early and absurd late, so each sleep is clamped."""
+    slept = _sleepless(monkeypatch)
+
+    with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+        OrestarAdapter(
+            live=True, max_attempts=12, retry_backoff_s=2.0, retry_budget_s=10_000.0
+        ).safe_fetch()
+
+    assert slept, "expected some retries"
+    assert max(slept) <= MAX_RETRY_DELAY_S
+
+
+def test_exhausting_the_budget_still_reports_the_real_failure(monkeypatch):
+    """Giving up early must not disguise why the feed failed."""
+    _sleepless(monkeypatch)
+
+    with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+        result = OrestarAdapter(
+            live=True, max_attempts=20, retry_backoff_s=2.0, retry_budget_s=5.0
+        ).safe_fetch()
+
+    assert not result.ok
+    assert "ConnectError" in result.errors[0]
+
+
+def test_the_budget_does_not_interfere_with_normal_retries(fixture_dir, monkeypatch):
+    """A default-configured adapter still gets its retries; the budget is a ceiling."""
+    _sleepless(monkeypatch)
+    body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
+
+    with patch("httpx.get", side_effect=[httpx.ConnectError("refused"), _response(200, body)]):
+        result = OrestarAdapter(live=True).safe_fetch()
+
+    assert result.ok
+    assert result.attempts == 2
