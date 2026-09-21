@@ -1433,18 +1433,18 @@ function pips(gates) {
 function renderList() {
   const host = document.getElementById('cards');
   const visible = NODES.filter(passesFilter).sort((a, b) => {
-    const ha = entryFor(a.id).hours, hb = entryFor(b.id).hours;
-    if (ha == null && hb == null) return (degree.get(b.id) || 0) - (degree.get(a.id) || 0);
-    if (ha == null) return 1;
-    if (hb == null) return -1;
-    return ha - hb;
+    if (apiOnline === false) {
+      return (degree.get(b.id) || 0) - (degree.get(a.id) || 0);
+    }
+    const diff = topicScore(b) - topicScore(a);
+    return diff !== 0 ? diff : (degree.get(b.id) || 0) - (degree.get(a.id) || 0);
   });
 
   document.getElementById('list-note').textContent =
     (typeof d3 === 'undefined' ? 'Map library unavailable · ' : '') +
     (apiOnline === false
       ? 'API offline · ranked by relationship degree'
-      : 'Ranked by signal freshness');
+      : 'Ranked by topic score');
 
   if (!visible.length) {
     host.innerHTML = '<div class="list-empty">No nodes match these filters.</div>';
