@@ -71,11 +71,29 @@ class OrestarAdapter(LiveSourceAdapter):
     # Oregon Secretary of State bulk transaction export -- a ZIP containing one CSV.
     # `{year}` is filled in at fetch time from the current calendar year.
     #
-    # VERIFIED WRONG: HTTP 404 on a live run, 2026-08-06, for the 2026 file. Either the
-    # path or the filename convention differs from what the prior implementation
-    # recorded, or the annual file is not published under this name mid-year. The ZIP
-    # and CSV handling below is independent of the URL and stays valid once it is
-    # corrected; pass `year=` to try another year without a code change.
+    # VERIFIED WRONG, and on 2026-09-22 verified to have no public replacement. The
+    # search was exhaustive enough to be worth not repeating:
+    #
+    #   - This URL 404s (re-confirmed 2026-09-22).
+    #   - The SOS campaign-finance page and its historical-data page link to exactly
+    #     three things: the ORESTAR web app, a data.oregon.gov catalogue query, and a
+    #     support mailbox. Neither page offers a bulk file.
+    #   - data.oregon.gov holds no ORESTAR transaction dataset. Its only campaign-
+    #     finance datasets are Penalty Notices (`fku5-vh2b`, 844 rows, reachable;
+    #     `t6qa-n2ph`, 403 non-tabular) -- enforcement actions, not contributions, so
+    #     not a substitute for this feed.
+    #   - Transactions are served only by the interactive app at
+    #     secure.sos.state.or.us/orestar (`gotoPublicTransactionSearch.do`): a
+    #     session-scoped JSP search whose results POST redirect-loops without the full
+    #     hidden form state, and which exposes no export link.
+    #
+    # So the data appears to be behind an interactive search rather than a public bulk
+    # endpoint. Harvesting it would mean emulating that session and scraping paginated
+    # HTML -- a different shape from this adapter, whose `parse` is pure and whose
+    # fetch expects one document. That is a design decision, not a URL correction.
+    #
+    # The ZIP and CSV handling below is independent of the URL and stays valid if a
+    # bulk file reappears; pass `year=` to try another year without a code change.
     feed_url = "https://sos.oregon.gov/elections/Documents/orestar/{year}_report_transactions.zip"
 
     def __init__(self, *args, year: int | None = None, **kwargs) -> None:
