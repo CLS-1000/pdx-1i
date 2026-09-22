@@ -240,6 +240,42 @@ patcher defines without defining it -- that is the one that actually catches thi
 since the committed output here had been hand-edited away from what the patcher
 generates, so no sentinel matched.
 
+#### It went red a second time the same day, from a clean merge
+
+`main` was green for roughly two hours before `test_real_ui_file_is_patchable`
+failed again. Two causes, in sequence, neither of them a bad edit.
+
+First, #32 added `strip_v2_block` to `STEPS`. That test asserted every step in the
+table prints its label, which held only while every step was unconditional. The new
+step correctly no-ops on a page with no legacy block -- now the normal case -- so it
+printed nothing and the assertion failed. The patcher was right and the test was
+over-strict.
+
+Then the repair itself broke. #37 and PR #39 each rewrote that same function from
+separate branches. Git merged both bodies into one function **with no conflict
+markers**, producing a `for` whose body was a bare `continue`, a stray docstring
+parsed as an expression statement, and `_run` called twice -- so the second call
+reported "No changes needed (already patched)" and every label assertion failed
+against it. It parsed, so nothing flagged it until the suite ran. On PR #39's branch
+the same merge clashed outright and gave an `IndentationError` instead.
+
+Resolved on `9c8d6c6`: one function body, asserting over an explicit `ALWAYS_APPLIED`
+list, with a separate test holding conditional steps silent on the committed file.
+651 passed.
+
+**Still open on `main`.** `test_always_applied_labels_match_the_step_table` guards
+that list with a subset check, which fails on a renamed step but passes when a new
+unconditional step is added to `STEPS` and left out of the list -- at which point
+`test_real_ui_file_is_patchable` silently stops checking that anchor, the same class
+of gap that started this. PR #41 changes it to assert equality against
+`STEPS - CONDITIONAL_STEPS`; until that merges, the gap is real.
+
+Worth recording as a pattern rather than an incident. Five separate breakages in this
+sequence came from two individually-correct changes to the same file merging cleanly,
+and git reported no conflict in any of them. Two agents fixing the same failure within
+the same hour is the cause, not carelessness. What catches this class is a test that
+fails when the step table and its expectations drift apart in either direction.
+
 **3. DEPLOY.md cannot be written yet, and must not be faked.** D4 step 5 says to write
 it "from what you actually did, with measured times — not from what you intended."
 Writing it before deploying would produce the one artifact whose whole value is that

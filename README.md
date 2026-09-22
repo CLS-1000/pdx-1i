@@ -506,7 +506,8 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     27 test files, 484 tests
+├── scripts/                   patch_citizen_weights.py — topic weight sliders
+├── tests/                     37 test files, 651 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -602,7 +603,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-484 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+651 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -652,18 +653,54 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
   interchangeable, and the role-based registry remains the authority for anything the
   engine publishes.
 
+#### Topic weight sliders are applied, not shipped
+
+The page as committed ranks the list by signal freshness and carries no sliders.
+`scripts/patch_citizen_weights.py` adds them — a five-topic weight bar (housing, civic
+money, public safety, environment, state politics) that re-ranks the list by a weighted
+score while any slider sits off 1.0, and falls back to freshness when they are all at
+1.0.
+
+```bash
+python scripts/patch_citizen_weights.py --dry-run   # print the diff, write nothing
+python scripts/patch_citizen_weights.py             # apply, after a timestamped backup
+```
+
+It is idempotent: every injection is guarded by a sentinel drawn from its own text, so a
+second run reports `No changes needed (already patched).` rather than stacking a copy. A
+missing anchor aborts before any write and leaves the file byte-identical. `--file`
+targets a copy.
+
+Kept out of the committed page deliberately. Two independent implementations of this
+feature once landed at the same time and both were applied to the file, which put two
+`TOPIC_WEIGHTS` declarations in one script scope and stopped the whole `<script>` block
+parsing — taking the map and filters down with it, not just the sliders. Keeping the
+page pristine and the feature in a tested patcher is what prevents a repeat;
+`tests/test_patch_citizen_weights.py` asserts the committed file carries no patcher
+output and references no helper the patcher defines.
+
+**The weighting is unverified against live data.** Its matchers read `pattern`,
+`source_type` and `confidence` off the signal payload, and no other code on the page
+reads those three fields. The `/api/v1/nodes/{id}/signal` endpoint is not served from
+this repo, so whether they arrive has never been checked. If they do not, every matcher
+returns false and the ranking quietly degrades to a recency ordering — the sliders move
+and nothing much changes. Worth confirming against a real payload before relying on it.
+
 ## Not built yet
 
 Each of these is a clean follow-on. What is listed here is genuinely absent — if a
 capability is described anywhere above, it exists and has tests.
 
-- **Working endpoints for most feeds.** The transport, mapping and fault tolerance are
-  done and exercised against the real internet — a live run completes and publishes.
-  What is missing is correct URLs: as of 2026-08-06 only OLIS, two press feeds and one
-  watch target answer, and no record feed has yet returned a row, so no field mapping
-  has been confirmed against real data. Every failure is recorded per-endpoint in
-  *Fixture replay vs live fetch* and beside the URL in the source. This is data entry
-  plus one alias-table pass, not new machinery.
+- **Working endpoints for the remaining feeds.** The transport, mapping and fault
+  tolerance are done and exercised against the real internet — a live run completes and
+  publishes. Two of the four record feeds now return real rows, measured on
+  **2026-09-22** by running the adapters rather than by reading a catalog: OLIS gives
+  307 measures plus 1,283 procedural transitions with its field mapping verified against
+  a real payload, and WA PDC gives 49,367 parseable rows via `PDX1_WA_PDC_URL`. What is
+  still missing is ORESTAR, which 404s on every path tried, and SEI, which has no API by
+  design. Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and
+  beside the URL in the source. This is data entry plus one alias-table pass, not new
+  machinery.
 - **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
   and tables. No diagram is drawn.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
