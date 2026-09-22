@@ -467,6 +467,8 @@ Live runs should pass the real clock.
 | `GET /brief` | the most recently published brief |
 | `GET /brief/archive` | every published brief, newest first, paginated |
 | `GET /brief/{brief_id}` | one brief by ID |
+| `GET /brief/pdf` | the latest brief rendered in the SPEC-1 WorldStateBrief format |
+| `GET /brief/{brief_id}/pdf` | one archived brief, same format |
 | `GET /graph` | the political web — every node and tie, with record activity |
 | `GET /graph/districts` | the district roster, for the District Map |
 | `GET /graph/{node_id}` | one node, its ties, its neighbours, and the records touching it |
@@ -479,6 +481,24 @@ the allowed origins.
 `GET /brief` reads the store rather than process memory, so a brief assembled by
 `python -m pdx1.pipeline` or by `pdx1-scheduler` is served here, and survives a restart.
 It 404s only when no cycle has ever published one.
+
+The two `/pdf` routes serve that same brief in the SPEC-1 WorldStateBrief format —
+`title · date`, synopsis, verified-signal count, `[i/total]` sections, and a footer
+carrying the `run_id`. It is a rendering, not a second assembly: the renderer writes no
+prose of its own, so the PDF and the JSON are the same document in two formats, and
+both read a brief that a cycle already published and the attribution gate already
+cleared.
+
+They also append the network diagram, which is the reason these live behind an endpoint
+rather than in the caller. `render_brief_pdf` takes `entity_ids` as a parameter because
+a `Brief` carries *record* ids and resolving them to the bodies named needs the store;
+the route is the layer holding both, and resolves one to the other via
+`entity_ids_for_records`. The diagram is still skipped when it would claim nothing —
+fewer than two known nodes, or no tie between them.
+
+PDF rendering needs the `pdf` extra. Without reportlab installed these routes return
+**503**, not 500: the feature is unconfigured rather than broken, and the distinction
+is the difference between an `.env` fix and a bug hunt.
 
 ## Storage
 
