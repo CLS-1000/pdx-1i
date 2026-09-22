@@ -61,23 +61,33 @@ def _backups(target: Path) -> list[Path]:
 # ── The anchors still exist ──────────────────────────────────────────────────
 
 
+#: Steps that must fire on the baseline page the repo ships.
+#:
+#: `strip_v2_block` is deliberately absent. It only fires on a page still carrying
+#: PR #29's legacy block, which #26 removed, so on the baseline it is correctly a
+#: no-op and prints nothing. Asserting over `patcher.STEPS` instead would fail the
+#: moment any conditional step is added -- which is exactly how this test broke
+#: when #32 introduced that one.
+ALWAYS_APPLIED = [
+    "CSS injected",
+    "Slider HTML injected",
+    "JS injected",
+    "Sort replaced",
+    "List note updated",
+]
+
+
+def test_always_applied_labels_match_the_step_table():
+    """Guard the list above against a step being renamed out from under it."""
+    known = {label for label, _ in patcher.STEPS}
+    assert set(ALWAYS_APPLIED) <= known, set(ALWAYS_APPLIED) - known
+
+
 def test_real_ui_file_is_patchable(target, capsys):
     """Every unconditional anchor resolves against the UI file as it stands."""
     assert _run(target) == 0
     out = capsys.readouterr().out
-    for step_label, _ in patcher.STEPS:
-        if step_label in patcher.CONDITIONAL_STEPS:
-            continue
-    """Every anchor resolves against the UI file as it stands on this commit."""
-    baseline = target.read_text(encoding="utf-8")
-    assert _run(target) == 0
-    out = capsys.readouterr().out
-    expected_steps = [
-        step_label
-        for step_label, _ in patcher.STEPS
-        if step_label != "Legacy v2 block removed" or patcher._V2_SENTINEL in baseline
-    ]
-    for step_label in expected_steps:
+    for step_label in ALWAYS_APPLIED:
         assert step_label in out
 
 
@@ -123,6 +133,90 @@ def test_slider_ids_match_the_handlers_that_drive_them(target):
     ]:
         assert f'id="w-{sid}"' in html
         assert f'id="{vid}"' in html
+
+
+# ── The legacy v2 block (PR #29) is stripped before injection ────────────────
+
+#: A page still carrying PR #29's applied implementation. Shaped after the real
+#: thing as it stood on c8d5ce3: the v2 banner, a `const TOPIC_WEIGHTS`, and a
+#: block closing on `});` followed by the signals-index comment the stripper
+#: anchors its end on.
+V2_LEGACY_BLOCK = """
+// ── Topic Weights & Signals v2 ──────────────────────────────────────────
+const TOPIC_WEIGHTS = {
+  housing: 1.0,
+  civic_money: 1.0,
+};
+document.addEventListener('DOMContentLoaded', () => {
+  Object.keys(TOPIC_WEIGHTS).forEach(topic => {
+    const el = document.getElementById(`w-${topic}`);
+    if (el) { el.addEventListener('input', e => {
+      TOPIC_WEIGHTS[topic] = parseFloat(e.target.value);
+    });
+    }
+  });
+});
+
+
+// (signals index fetch already defined above)
+"""
+
+
+def _with_legacy_block(target: Path) -> Path:
+    """Splice the legacy v2 block into a copy of the real page, before renderList."""
+    html = target.read_text(encoding="utf-8")
+    anchor = "function renderList() {"
+    assert anchor in html
+    target.write_text(html.replace(anchor, V2_LEGACY_BLOCK + anchor, 1), encoding="utf-8")
+    return target
+
+
+def test_legacy_v2_block_is_stripped_v2_fixture(target, capsys):
+    """
+    #29's block is dead code once the patcher's own implementation is injected,
+    and it still wires input handlers onto the same `w-*` slider ids. Leaving it
+    would give those sliders two independent listeners writing two different
+    weight objects.
+    """
+    _with_legacy_block(target)
+    assert _run(target) == 0
+
+    assert "Legacy v2 block removed" in capsys.readouterr().out
+    html = target.read_text(encoding="utf-8")
+    assert patcher._V2_SENTINEL not in html
+    assert "const TOPIC_WEIGHTS = {" not in html
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_page_with_legacy_block_still_parses_after_patching(tmp_path, target):
+    """
+    A page carrying both implementations must still parse.
+
+    Two things keep it parsing, and this guards the pair: the injected JS assigns
+    `globalThis.TOPIC_WEIGHTS` rather than declaring `const TOPIC_WEIGHTS`, and
+    the strip step removes the legacy block. Either alone is sufficient today --
+    disabling the stripper does not fail this test -- but going back to a `const`
+    declaration without the stripper reinstates the duplicate-declaration
+    SyntaxError that took the whole `<script>` block down on main.
+    """
+    _with_legacy_block(target)
+    assert _run(target) == 0
+
+    html = target.read_text(encoding="utf-8")
+    start = html.index("<script>", html.index("</script>")) + len("<script>")
+    js = tmp_path / "legacy_patched.js"
+    js.write_text(html[start : html.index("</script>", start)], encoding="utf-8")
+
+    result = subprocess.run(
+        [shutil.which("node"), "--check", str(js)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_baseline_page_skips_the_strip_step(target, capsys):
+    """No legacy block present -- the step is a no-op and says nothing."""
+    assert _run(target) == 0
+    assert "Legacy v2 block removed" not in capsys.readouterr().out
 
 
 # ── Idempotency ──────────────────────────────────────────────────────────────
