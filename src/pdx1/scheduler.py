@@ -65,6 +65,8 @@ def build_scheduler(settings=None):
     def _cycle_job() -> None:
         logger.info("scheduled cycle starting")
         try:
+            # No explicit `now`: run_cycle anchors live runs to the real clock
+            # itself (see `_anchor`). Passing one here would only duplicate that.
             result = run_cycle(settings=settings)
             logger.info(
                 "scheduled cycle complete: run=%s harvested=%d written=%d",

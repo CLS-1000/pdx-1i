@@ -326,6 +326,45 @@ No replacement is recorded, because none was verified.
 
 ---
 
+## The velocity anchor would have broken the count on day one — found 2026-09-22
+
+The first full live cycle with the recovered feeds harvested **51,029 signals and
+published a brief containing one record**. Velocity dropped 51,028 of them.
+
+Cause: `run_cycle` anchored the velocity gate to the newest harvested signal rather
+than to the clock. Exactly one WA PDC record was dated 2026-10-01, nine days in the
+future. That record became the anchor, the 48-hour window moved with it, and every
+genuinely recent signal fell outside it. The one record that survived was the
+future-dated one — it was measuring itself.
+
+The part that matters for the count: **the cycle reported success.** Exit 0, a brief
+written, a section published, nothing in the run log saying the morning's output was
+empty for a reason unrelated to the news. Thirty of those in a row would have counted
+as thirty clean runs.
+
+`run_cycle` now uses the real clock when `settings.live_fetch` is true and keeps the
+newest-signal anchor for fixture replay, which is what the fixture rationale always
+implied and what the README already said live runs should do. An explicit `--as-of`
+still wins over both.
+
+Measured on the scheduler's exact call path, with no `--as-of`:
+
+| | before | after |
+|---|---|---|
+| harvested | 51,029 | 51,018 |
+| dropped on velocity | 51,028 | 50,881 |
+| written | **1** | **75** |
+| brief | 1 section, 1 feed | **2 sections, 3 feeds, 1 elevated** |
+
+Fixture baseline unchanged: 12 harvested, 10 written, 2 sections.
+
+**Still open, and not fixed here:** one WA PDC record really is dated in the future.
+A future timestamp no longer decides the window, but it still passes the velocity gate
+as "fresh". That is a data-quality question about the source rather than a gate bug,
+and it is worth a look before the count starts.
+
+---
+
 ## Day 30 is the decision point
 
 Only after thirty clean runs is it worth asking who this brief is for and

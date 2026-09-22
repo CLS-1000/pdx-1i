@@ -366,6 +366,31 @@ def summarize(parsed: ParsedSignal, limit: int = 240) -> str:
 # ── The cycle ────────────────────────────────────────────────────────────────
 
 
+def _anchor(settings: Settings, signals: list[Signal]) -> datetime:
+    """
+    Pick the instant the velocity gate measures against.
+
+    Fixture mode anchors to the newest harvested signal. That exists because the
+    checked-in payloads carry fixed dates: against wall-clock time every fixture would
+    age out of the velocity window and a replay would publish nothing.
+
+    **Live mode uses the real clock**, which is what the fixture rationale implies and
+    what the README has always said live runs should do. Anchoring a live run to its
+    own newest signal lets one bad timestamp decide the window for everything else,
+    and that is not hypothetical: a single WA PDC record dated nine days in the future
+    pulled the anchor forward and the velocity gate dropped 51,028 of 51,029 harvested
+    signals. The cycle still "succeeded" -- it wrote a record and published a brief of
+    one section -- which is the failure mode worth fearing, because nothing in the run
+    log says the morning's brief is empty for a reason that has nothing to do with the
+    news.
+
+    An explicit `now` (from `--as-of`) still wins over both.
+    """
+    if settings.live_fetch:
+        return datetime.now(timezone.utc)
+    return max((s.published_at for s in signals), default=datetime.now(timezone.utc))
+
+
 def run_cycle(
     settings: Settings | None = None,
     adapters: list[SourceAdapter] | None = None,
@@ -419,7 +444,7 @@ def run_cycle(
         errors.extend(f"{fetch_result.source}: {e}" for e in fetch_result.errors)
 
     if now is None:
-        now = max((s.published_at for s in signals), default=datetime.now(timezone.utc))
+        now = _anchor(settings, signals)
 
     run_id = make_run_id(now)
     outcomes = [_outcome(run_id, f) for f in fetched]
