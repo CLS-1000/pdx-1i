@@ -281,13 +281,6 @@ STEPS = [
     ("List note updated", update_note_text),
 ]
 
-#: Steps that clean up cruft rather than inject a block, and so report "applied"
-#: only when that cruft is present. Every other step must fire on every run: if one
-#: of those goes quiet, its anchor has drifted and the patcher is silently doing
-#: less than it claims. Distinguishing the two is what lets a test assert the
-#: unconditional anchors still resolve without demanding that a no-op fire.
-CONDITIONAL_STEPS = frozenset({"Legacy v2 block removed"})
-
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
