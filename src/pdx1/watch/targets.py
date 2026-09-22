@@ -8,18 +8,28 @@ that belong to Watch monitoring.
 Endpoints are public feeds or press-release RSS channels. They are read-only polling;
 nothing is written to these services.
 
-Status from a live run on 2026-08-06 -- one of six answered:
+Status re-probed 2026-09-22 -- five of six answer, up from one. Each replacement was
+confirmed by fetching it and parsing the body, not by the status code alone: a
+newsroom that serves an HTML page on an /rss path returns 200 and yields zero entries,
+which is indistinguishable from a healthy feed if you only read the code.
 
-    TriMet                  200
-    OHSU                    404  -- URL needs correcting
-    PPB                     404  -- URL needs correcting
-    PGE                     DNS failure (host does not resolve)
-    NW Natural              404  -- URL needs correcting
-    Portland Water Bureau   404  -- URL needs correcting
+    TriMet                  200, 10 signals  unchanged
+    OHSU                    200, 20 signals  news.ohsu.edu/rss.xml (host moved)
+    PPB                     200, 25 signals  .../news/rss (the .xml suffix went away)
+    Portland Water Bureau   200, 25 signals  .../news/rss (same suffix change)
+    PGE                     200, 10 signals  investors. replaces newsroom. (unroutable)
+    NW Natural              404              no discoverable feed -- see below
+
+NW Natural is the one left dead, and deliberately so. Its homepage declares no
+`application/rss+xml` link and three plausible paths 404, so there is no endpoint to
+register. A documented absence is worth more than a plausible-looking guess, because
+the guess reads as verified.
+
+`news.ohsu.edu/rss` is a near-miss worth recording: it answers 200 and parses to zero
+entries. It is not a feed. The working path is `/rss.xml` on the same host.
 
 A dead target costs that target only: `safe_fetch` records the failure and the cycle
-completes. Correcting these is data entry against each body's newsroom page, not a
-code change.
+completes.
 """
 
 from __future__ import annotations
@@ -30,11 +40,11 @@ from . import WatchTarget
 WATCH_TARGETS: tuple[WatchTarget, ...] = (
     WatchTarget(
         name="OHSU",
-        endpoint="https://www.ohsu.edu/news/rss.xml",
+        endpoint="https://news.ohsu.edu/rss.xml",
     ),
     WatchTarget(
         name="PPB",
-        endpoint="https://www.portland.gov/police/news/rss.xml",
+        endpoint="https://www.portland.gov/police/news/rss",
     ),
     WatchTarget(
         name="TriMet",
@@ -42,7 +52,7 @@ WATCH_TARGETS: tuple[WatchTarget, ...] = (
     ),
     WatchTarget(
         name="PGE",
-        endpoint="https://newsroom.portlandgeneral.com/rss/news_releases.rss",
+        endpoint="https://investors.portlandgeneral.com/rss/news-releases.xml",
     ),
     WatchTarget(
         name="NW Natural",
@@ -50,6 +60,6 @@ WATCH_TARGETS: tuple[WatchTarget, ...] = (
     ),
     WatchTarget(
         name="Portland Water Bureau",
-        endpoint="https://www.portland.gov/water/news/rss.xml",
+        endpoint="https://www.portland.gov/water/news/rss",
     ),
 )

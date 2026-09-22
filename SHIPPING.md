@@ -312,8 +312,60 @@ now return usable data, and one of them needed a code fix rather than a URL.
 |---|---|---|---|
 | OLIS | 200, unparseable | **307 measures + 1,283 transitions** | main's `$format=json` fix; first live measurement of it |
 | WA_PDC | 404 | **49,367 rows, 23,244 from 2026** | new dataset id + a Socrata `url`-object fix |
-| ORESTAR | 404 | **still 404** | four URL variants probed; no verified replacement |
+| ORESTAR | 404 | **still 404** | four URL variants probed; superseded by the 2026-09-22 pass below |
 | SEI | HTML | **unchanged** | OGEC publishes no API, by design |
+
+## Endpoints re-probed — 2026-09-22 (second pass)
+
+`--check-endpoints` now reports **10 of 15**, up from 5. Every replacement below was
+confirmed by fetching it and parsing the body, never by the status code alone — a
+newsroom serving HTML on an `/rss` path answers 200 and yields zero entries, which
+reads identically to a healthy feed if you only check the code. `news.ohsu.edu/rss`
+is exactly that trap; the feed is at `/rss.xml` on the same host.
+
+| endpoint | before | now | change |
+|---|---|---|---|
+| WA_PDC | 404 (`tijg-9uu3` still registered) | **6,375,722 rows; adapter parses 49,350 signals, 3,907 distinct dates** | registered `kv7h-kjye` |
+| WATCH/OHSU | 404 | **20 signals** | host moved to `news.ohsu.edu` |
+| WATCH/PPB | 404 | **25 signals** | `/news/rss` — the `.xml` suffix went away |
+| WATCH/Portland Water Bureau | 404 | **25 signals** | same suffix change |
+| WATCH/PGE | unroutable | **10 signals** | `investors.` replaces `newsroom.` |
+| WATCH/NW Natural | 404 | **still 404** | no discoverable feed; see below |
+| ORESTAR | 404 | **still 404, and now known why** | see below |
+
+The WA_PDC line is the one worth pausing on. The working dataset id had already been
+found on 2026-08-21 and recorded here, but it lived only as a `PDX1_WA_PDC_URL`
+override — the adapter still shipped `tijg-9uu3`, so a default run kept hitting a dead
+dataset while the docs said the feed worked. Finding a URL and registering it are two
+different acts, and only the second one reaches a cron job.
+
+### ORESTAR has no public bulk endpoint, and that is now established
+
+Not "four variants 404'd" — the absence itself is the finding:
+
+- the registered URL 404s (re-confirmed);
+- the SOS campaign-finance page and its historical-data page link to exactly three
+  things — the ORESTAR web app, a `data.oregon.gov` catalogue query, and a support
+  mailbox — and offer no bulk file;
+- `data.oregon.gov` holds **no** ORESTAR transaction dataset. Its only campaign-finance
+  datasets are Penalty Notices (`fku5-vh2b`, 844 rows, reachable; `t6qa-n2ph`, 403
+  non-tabular). Those are enforcement actions, not contributions, so they are a
+  different record type rather than a substitute;
+- transactions are served only by the interactive app
+  (`secure.sos.state.or.us/orestar/gotoPublicTransactionSearch.do`), a session-scoped
+  JSP search whose results POST redirect-loops without the full hidden form state and
+  which exposes no export link.
+
+So the data sits behind an interactive search, not a public file. Harvesting it means
+emulating that session and scraping paginated HTML — a different shape from an adapter
+whose `parse` is pure and whose fetch expects one document. That is a design decision
+to take deliberately, not a URL to correct.
+
+### Willamette Week, OPB and NW Natural declare no feed
+
+All three homepages were fetched and contain no `application/rss+xml` link, and the
+plausible paths 404. Nothing is registered for them, and a documented absence beats a
+guess that reads as verified.
 
 ### OLIS is verified, not merely reachable
 

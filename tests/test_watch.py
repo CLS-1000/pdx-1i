@@ -32,6 +32,29 @@ def test_watch_targets_have_https_endpoints():
         assert t.endpoint.startswith("https://"), f"{t.name} endpoint must be HTTPS"
 
 
+#: Endpoints measured dead, with the date they were last confirmed dead. Re-registering
+#: one costs a whole target silently -- `safe_fetch` turns the 404 into an error on the
+#: result and the cycle completes, so nothing fails loudly at run time.
+#:
+#: This does not reach the network. It pins the *registry* against regressing to a URL
+#: somebody already proved does not work.
+KNOWN_DEAD_ENDPOINTS = {
+    "https://www.ohsu.edu/news/rss.xml": "404, 2026-09-22 (host moved to news.ohsu.edu)",
+    "https://www.portland.gov/police/news/rss.xml": "404, 2026-09-22 (drop the .xml)",
+    "https://www.portland.gov/water/news/rss.xml": "404, 2026-09-22 (drop the .xml)",
+    "https://newsroom.portlandgeneral.com/rss/news_releases.rss": "unroutable, 2026-09-22",
+    "https://news.ohsu.edu/rss": "200 but zero entries, 2026-09-22 -- not a feed",
+}
+
+
+def test_no_target_uses_a_known_dead_endpoint():
+    for t in WATCH_TARGETS:
+        assert t.endpoint not in KNOWN_DEAD_ENDPOINTS, (
+            f"{t.name} points at {t.endpoint}, recorded dead: "
+            f"{KNOWN_DEAD_ENDPOINTS[t.endpoint]}"
+        )
+
+
 # ── WatchAdapter construction ─────────────────────────────────────────────────
 
 
