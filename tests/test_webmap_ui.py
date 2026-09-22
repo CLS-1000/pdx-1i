@@ -141,8 +141,25 @@ def test_declared_interests_render_dashed(source):
 def test_the_vacancy_flag_is_the_only_hue(source):
     """
     SPEC-1 is monochrome: hierarchy by white opacity, one hue for live status.
+
+    The allowlist is the SPEC-1 palette itself, not a record of what the file
+    happens to contain. Greyscale plus the two status hues SPEC-1 names --
+    `#00FF00` for PASS, `#FF0000` for CAUTION. It previously also admitted
+    `#f66`, a softened red, which reads as a third colour: SPEC-1 carries
+    severity by brightness and never by shifting the hue.
     """
     hexes = set(re.findall(r"#[0-9a-fA-F]{3,6}\b", source))
-    allowed = {"#000", "#fff", "#ccc", "#999", "#666", "#00ff00", "#f66"}
+    allowed = {"#000", "#fff", "#ccc", "#999", "#666", "#00ff00", "#ff0000"}
     unexpected = {h for h in hexes if h.lower() not in allowed}
     assert not unexpected, f"non-monochrome colours introduced: {unexpected}"
+
+
+def test_status_hues_are_declared_as_tokens_not_inlined(source):
+    """
+    Both status hues resolve through a custom property, so the one place that
+    defines CAUTION is the one place to change it. An inlined `rgba(255,0,0,…)`
+    is the same colour wearing a disguise, and would slip past the hex scan above.
+    """
+    assert "--vacant: #00ff00;" in source
+    assert "--alert: #ff0000;" in source
+    assert "rgba(255,0,0" not in source, "red inlined as rgba, bypassing the token"
