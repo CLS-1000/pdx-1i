@@ -84,11 +84,39 @@ def test_always_applied_labels_match_the_step_table():
 
 
 def test_real_ui_file_is_patchable(target, capsys):
-    """Every anchor resolves against the UI file as it stands on this commit."""
+    """Every unconditional anchor resolves against the UI file as it stands."""
     assert _run(target) == 0
     out = capsys.readouterr().out
     for step_label in ALWAYS_APPLIED:
+    for step_label, _ in patcher.STEPS:
+        if step_label in patcher.CONDITIONAL_STEPS:
+            continue
+    """Every anchor resolves against the UI file as it stands on this commit."""
+    baseline = target.read_text(encoding="utf-8")
+    assert _run(target) == 0
+    out = capsys.readouterr().out
+    expected_steps = [
+        step_label
+        for step_label, _ in patcher.STEPS
+        if step_label != "Legacy v2 block removed" or patcher._V2_SENTINEL in baseline
+    ]
+    for step_label in expected_steps:
         assert step_label in out
+
+
+def test_conditional_steps_stay_quiet_on_the_committed_file(target, capsys):
+    """
+    A cleanup step reports nothing when there is nothing to clean.
+
+    The committed UI file carries no legacy v2 block, so `strip_v2_block` is a
+    no-op here. Asserting that explicitly is what keeps the test above honest:
+    the label is skipped because the step is conditional, not because the
+    assertion was loosened until it passed.
+    """
+    assert _run(target) == 0
+    out = capsys.readouterr().out
+    for step_label in patcher.CONDITIONAL_STEPS:
+        assert step_label not in out
 
 
 @pytest.mark.parametrize(
@@ -225,6 +253,64 @@ def test_repeated_runs_do_not_stack_blocks(target):
     assert html.count(patcher.HTML_SENTINEL) == 1
     assert html.count(patcher.JS_SENTINEL) == 1
     assert html.count(patcher.SORT_SENTINEL) == 1
+
+
+def test_strip_v2_block_removes_only_legacy_source():
+    html = (
+        "<script>\n"
+        "const keepBefore = 1;\n"
+        "// ── Topic Weights & Signals v2 ─────────────────────────────────────────\n"
+        "const TOPIC_WEIGHTS = { housing: 1.0 };\n"
+        "function topicScore() { return 1; }\n"
+        "});\n"
+        "\n"
+        "// (signals index fetch already defined above)\n"
+        "const keepAfter = 2;\n"
+        "</script>\n"
+    )
+
+    stripped, did_strip = patcher.strip_v2_block(html)
+
+    assert did_strip
+    assert patcher._V2_SENTINEL not in stripped
+    assert "const TOPIC_WEIGHTS = { housing: 1.0 };" not in stripped
+    assert "const keepBefore = 1;" in stripped
+    assert "const keepAfter = 2;" in stripped
+
+
+def test_legacy_v2_input_is_stripped_before_js_injection(tmp_path):
+    target = tmp_path / "legacy-v2.html"
+    target.write_text(
+        """<html><head><style></style></head><body>
+<section class="controls" aria-label="Map filters"></section>
+<script>
+const host = document.getElementById('list');
+const visible = NODES.filter(passesFilter).sort((a, b) => {
+  return 0;
+});
+document.getElementById('list-note').textContent = visible.length + ': '
+  + (sortSel.value === 'centrality' ? 'Ranked by network centrality' : 'Ranked by signal freshness');
+// ── Topic Weights & Signals v2 ─────────────────────────────────────────
+const TOPIC_WEIGHTS = { housing: 1.0, state_politics: 1.0 };
+function topicScore() { return 1; }
+});
+
+// (signals index fetch already defined above)
+const keepAfter = 2;
+function renderList() { return visible; }
+</script>
+</body></html>
+""",
+        encoding="utf-8",
+    )
+
+    assert _run(target) == 0
+    html = target.read_text(encoding="utf-8")
+
+    assert patcher._V2_SENTINEL not in html
+    assert "const TOPIC_WEIGHTS = { housing: 1.0, state_politics: 1.0 };" not in html
+    assert html.count("if (!globalThis.TOPIC_WEIGHTS)") == 1
+    assert "const keepAfter = 2;" in html
 
 
 def test_second_run_makes_no_second_backup(target):
@@ -446,3 +532,68 @@ def test_committed_ui_file_calls_no_function_the_patcher_would_define():
             "introduced by the patcher's JS block, so a reference without a definition "
             "means patcher output was partially committed."
         )
+
+
+# ── The legacy-v2 strip ──────────────────────────────────────────────────────
+#
+# `strip_v2_block` exists for a file shape that no longer exists in the repo, so
+# nothing in the suite exercised it: the only test that touched it was asserting
+# its label appeared, which it never does on a clean file. These construct the
+# shape it was written for.
+
+V2_BLOCK = (
+    "\n// ── Topic Weights & Signals v2 ─────────────────────────────\n"
+    "const TOPIC_WEIGHTS = { legacy: 1 };\n"
+    "document.addEventListener('DOMContentLoaded', function () {\n"
+    "  renderList();\n"
+    "});\n"
+)
+V2_LANDMARK = "\n// (signals index fetch already defined above)\n"
+
+
+def _with_v2_block(target: Path, *, landmark: bool = True) -> Path:
+    """Re-insert the legacy v2 block the strip step was written to remove."""
+    html = target.read_text(encoding="utf-8")
+    marker = "function renderList() {"
+    assert marker in html, "renderList anchor moved; update this fixture"
+    tail = V2_LANDMARK if landmark else "\n// (some other trailing comment)\n"
+    target.write_text(
+        html.replace(marker, V2_BLOCK + tail + "\n" + marker, 1), encoding="utf-8"
+    )
+    return target
+
+
+def test_legacy_v2_block_is_stripped(target, capsys):
+    """
+    With the block present the step fires and the legacy declaration is gone.
+
+    The duplicate-`const` crash this step was written for is now also prevented
+    upstream -- `JS_BLOCK` assigns `globalThis.TOPIC_WEIGHTS` behind an
+    existence guard rather than declaring a `const`. The two fixes landed from
+    separate branches and are redundant, not conflicting: this asserts the strip
+    still does its own job, so removing either one fails here.
+    """
+    _with_v2_block(target)
+    assert _run(target) == 0
+    assert "Legacy v2 block removed" in capsys.readouterr().out
+
+    html = target.read_text(encoding="utf-8")
+    assert patcher._V2_SENTINEL not in html
+    assert "const TOPIC_WEIGHTS" not in html
+    assert patcher.JS_SENTINEL in html
+    assert "globalThis.TOPIC_WEIGHTS" in html
+
+
+def test_legacy_v2_strip_aborts_when_its_landmark_moved(target):
+    """
+    Sentinel present, closing landmark gone: refuse rather than mis-strip.
+
+    The regex ends on a lookahead at a trailing comment. If that comment moves,
+    a greedy `.*?` could swallow an arbitrary amount of live code, so the step
+    raises and the patcher leaves the file exactly as it found it.
+    """
+    _with_v2_block(target, landmark=False)
+    before = target.read_text(encoding="utf-8")
+    assert _run(target) == 2
+    assert target.read_text(encoding="utf-8") == before
+    assert not _backups(target)
