@@ -200,7 +200,7 @@ def test_page_with_legacy_block_still_parses_after_patching(tmp_path, target):
     SyntaxError that took the whole `<script>` block down on main.
     """
     _with_legacy_block(target)
-    _run(target)
+    assert _run(target) == 0
 
     html = target.read_text(encoding="utf-8")
     start = html.index("<script>", html.index("</script>")) + len("<script>")
