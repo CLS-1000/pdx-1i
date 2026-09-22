@@ -12,13 +12,29 @@ infrastructure, covering the bi-state metro: Multnomah, Washington and Clackamas
 counties in Oregon, and Clark County in Washington.
 
 PDX-1i is the regional module of the SPEC-1 architecture. It harvests public records,
-scores them through a four-gate deterministic filter, resolves the entities they name,
+scored through a four-gate deterministic filter, resolves the entities they name,
 measures them against a rolling baseline, and writes structured intelligence records —
 then assembles a neutrality-gated brief when publication triggers.
 
 Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily cycle,
 a PDF renderer for the brief, and two single-page viewers — the daily brief and the
-force-directed political web. What is *not* built is listed at the bottom.
+force-directed political web. What is not built is listed at the bottom.
+
+## At a glance
+
+PDX-1i is a deterministic OSINT pipeline for the Portland metro. It harvests public
+records, resolves the offices and institutions they mention, applies a strict four-gate
+filter, measures each surviving signal against a rolling baseline, and publishes only
+what can be traced to a stored record.
+
+The system is built to do three things well:
+
+- collect and normalize public records from the metro footprint
+- identify the institutions, jurisdictions, and seats those records reference
+- report whether a pattern is materially new, materially large, and materially time-sensitive
+
+It is not built to speculate, attribute motive, or present anonymous conclusions as fact.
+The neutrality layer is a real editorial constraint, not a decorative one.
 
 ---
 
@@ -241,11 +257,11 @@ different:
 
 | Adapter | Live shape |
 |---|---|
-| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
+| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves. |
 | **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
 | **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
-| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object, and rejects HTML loudly rather than returning nothing. |
-| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled only OregonLive. |
+| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object. |
+| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled fewer. |
 
 The four record feeds map field names through an alias table, so correcting a name is a
 one-line change in one place, and a name matching nothing leaves its field empty and
