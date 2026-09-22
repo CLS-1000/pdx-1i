@@ -71,28 +71,32 @@ force-directed political web. A daily cron cycle drives the whole thing. Six
 infrastructure-watch monitors run alongside the record feeds and feed the same pipeline.
 
 As of the current build, the transport, scoring, storage, and publication machinery
-are fully exercised. Live connectivity is partial: OLIS, two press feeds, and one watch
-target answer; the remaining feed URLs are documented 404s, and no record feed has yet
-returned a row that confirmed its field-alias table against real data.
+are fully exercised. Live connectivity is partial but no longer marginal: **10 of 15
+registered endpoints answer**, measured 2026-09-22. Two of the four record feeds return
+real rows — OLIS gives 307 measures plus 1,283 procedural transitions with its field
+mapping verified against a real payload, and WA PDC gives 6.37M rows, of which the
+adapter parses 49,350 signals across 3,907 distinct dates. ORESTAR publishes no bulk
+endpoint at all (see *Not built yet*), and SEI has no API by design.
 
 ### What it will be
 
-Three bodies of work remain, in priority order:
+Two bodies of work remain, in priority order. A third — network diagrams in the PDF
+brief — is built; see *Not built yet* for what it does and refuses to do.
 
-1. **Feed verification.** Correct the dead endpoint URLs and confirm each adapter's
-   field-alias table against a real payload. This is data entry and one alias-table
-   pass per feed — no new machinery required. Until it is done, the engine publishes
-   only press records and watch events.
+1. **The two feeds that remain unverified.** ORESTAR and SEI. Neither is a dead URL
+   to correct: ORESTAR serves transactions only through an interactive session-scoped
+   search with no bulk export, and SEI has no API by design. Both need a decision about
+   shape — scrape a session, or fetch a download by hand — not a data-entry pass. The
+   alias tables for the feeds that *do* answer are confirmed only as far as their
+   comments say.
 
 2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
    GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
    endpoints they depend on exist; the work is front-end. The visual language also
    needs to converge on the SPEC-1 monochrome design system (black canvas, white
-   opacity hierarchy, hue reserved for live-status only).
-
-3. **Network diagrams in the PDF brief.** The renderer currently emits text only —
-   headings, paragraphs, tables. Structural diagrams of the political web are the
-   natural next addition once the data layer is verified.
+   opacity hierarchy, hue reserved for live-status only) — which surface that applies
+   to is an open question, since `citizen-cognisance.html` is deliberately MCM
+   Editorial rather than phosphor.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
@@ -257,7 +261,7 @@ different:
 
 | Adapter | Live shape |
 |---|---|
-| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves. |
+| **ORESTAR** | a ZIP containing one CSV, unwrapped by `_decode`, with `feed_url` carrying a `{year}` the adapter resolves. That is the shape the adapter implements — but **no published export of that shape was found**, and the registered URL 404s. See *Not built yet*. The ZIP and CSV handling is independent of the URL and stays valid if a bulk file appears. |
 | **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
 | **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
 | **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object. |
@@ -288,6 +292,12 @@ re-derives it:
 | Pamplin Media | SSL handshake failure |
 | OHSU · PPB · NW Natural · Water Bureau | 404 |
 | PGE watch | DNS failure |
+
+That table is a record of one dated run, not current status. Several of its rows have
+since been corrected and the fixes are registered: WA PDC now answers on a working
+dataset id, and four of the five dead watch feeds were re-pointed on **2026-09-22**.
+ORESTAR is the one confirmed to have no replacement. Current per-endpoint status lives
+in [`SHIPPING.md`](SHIPPING.md); `pdx1 --check-endpoints` measures it directly.
 
 Two things follow from that run, both aimed at making the next correction cheap:
 
@@ -523,7 +533,7 @@ pdx-1i/
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
 ├── scripts/                   patch_citizen_weights.py — topic weight sliders
-├── tests/                     37 test files, 651 tests
+├── tests/                     38 test files, 670 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -619,7 +629,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-651 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+670 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -704,8 +714,10 @@ and nothing much changes. Worth confirming against a real payload before relying
 
 ## Not built yet
 
-Each of these is a clean follow-on. What is listed here is genuinely absent — if a
-capability is described anywhere above, it exists and has tests.
+Each of these is a clean follow-on. Every entry not struck through is genuinely absent —
+if a capability is described anywhere above, it exists and has tests. A struck-through
+entry has since been built and is kept here, marked, so the record of what was promised
+does not quietly disappear.
 
 - **Working endpoints for the remaining feeds.** The transport, mapping and fault
   tolerance are done and exercised against the real internet — a live run completes and
@@ -713,12 +725,21 @@ capability is described anywhere above, it exists and has tests.
   **2026-09-22** by running the adapters rather than by reading a catalog: OLIS gives
   307 measures plus 1,283 procedural transitions with its field mapping verified against
   a real payload, and WA PDC gives 49,367 parseable rows via `PDX1_WA_PDC_URL`. What is
-  still missing is ORESTAR, which 404s on every path tried, and SEI, which has no API by
-  design. Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and
-  beside the URL in the source. This is data entry plus one alias-table pass, not new
-  machinery.
-- **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
-  and tables. No diagram is drawn.
+  still missing is ORESTAR and SEI, and neither is a URL correction. ORESTAR 404s on
+  every path tried, and the 2026-09-22 search found no public bulk endpoint to replace
+  it: transactions are served only by a session-scoped interactive search that exposes
+  no export. Harvesting it means emulating that session and scraping paginated HTML — a
+  different shape from this adapter, whose `parse` is pure and whose fetch expects one
+  document. SEI has no API by design. Both need a decision about shape before any
+  mapping work; what remains for the feeds that *do* answer is an alias-table pass.
+  Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and beside the
+  URL in the source.
+- ~~**Network diagrams in the PDF.**~~ **Built.** `render_brief_pdf` takes an optional
+  `entity_ids` and appends a diagram of the registry ties among them, drawn from the
+  role-based registry with shape carrying `group` and a disclosure tie dashed. It draws
+  nothing for fewer than two known nodes or when those nodes share no tie, because an
+  empty frame would read as "these bodies are unconnected" — a claim the data does not
+  make. See `src/pdx1/publication/network_diagram.py`.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
   with per-record four-gate expansion, Statistics. All depend on graph and record
   endpoints that mostly exist; the work is front-end.
