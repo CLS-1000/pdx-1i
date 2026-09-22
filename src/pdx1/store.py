@@ -244,6 +244,46 @@ class DualWriteStore:
                 conn.execute("SELECT count(*) FROM intelligence_records").fetchone()[0]
             )
 
+    def entity_ids_for_records(self, record_ids: Iterable[str]) -> list[str]:
+        """
+        Entity ids mentioned by the given records, de-duplicated and sorted.
+
+        A `Brief` section carries `source_record_ids`, not entity ids, so anything
+        wanting to draw the bodies behind a brief -- the PDF network diagram -- has to
+        resolve one to the other, and that needs the store. `render_brief_pdf` takes
+        `entity_ids` as a parameter for exactly this reason.
+
+        A record id that is not in the store contributes nothing rather than raising.
+        The brief is ground truth for what was published; if the query layer has fallen
+        behind it, the diagram should be the part that goes thin, not the document that
+        fails to render. `rebuild_from_jsonl()` is the fix for that state.
+
+        Sorted so the same brief renders the same diagram on every call --
+        `build_network_drawing` lays out on sorted ids, and an unstable order here
+        would put a stable layout behind an unstable input.
+
+        Matched in Python rather than through a generated `IN (?,?,...)` clause, for
+        the same two reasons `entity_record_counts` tallies this column in Python: the
+        SQL stays a fixed string that no future edit can make injectable, and it does
+        not run into SQLite's cap on host parameters when a brief cites more records
+        than the driver will bind at once. The record set is one metro's public
+        filings, not a firehose; if that stops being true this wants a join table.
+        """
+        wanted = set(record_ids)
+        if not wanted:
+            return []
+
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT record_id, entity_ids FROM intelligence_records"
+            ).fetchall()
+
+        found: set[str] = set()
+        for row in rows:
+            if row["record_id"] in wanted:
+                found.update(json.loads(row["entity_ids"]))
+        return sorted(found)
+
     def count_query(
         self,
         outcome: str | None = None,

@@ -227,3 +227,63 @@ def test_records_for_entity_is_empty_for_an_unknown_id(store):
 def test_records_for_entity_honours_the_limit(store):
     store.write([make_record(i) for i in range(10)])
     assert len(store.records_for_entity("pge", limit=3)) == 3
+
+
+# ── Resolving a brief's records to the bodies they name ──────────────────────
+
+
+def _with_entities(n: int, entity_ids: list[str]) -> IntelligenceRecord:
+    rec = make_record(n)
+    return rec.model_copy(update={"entity_ids": entity_ids})
+
+
+def test_entity_ids_for_records_collects_across_records(store):
+    store.write([_with_entities(1, ["pge"]), _with_entities(2, ["metro"])])
+    assert store.entity_ids_for_records(["rec_test_0001", "rec_test_0002"]) == [
+        "metro",
+        "pge",
+    ]
+
+
+def test_entity_ids_for_records_deduplicates(store):
+    """Two records naming the same body is one body, not two."""
+    store.write([_with_entities(1, ["pge"]), _with_entities(2, ["pge", "metro"])])
+    assert store.entity_ids_for_records(["rec_test_0001", "rec_test_0002"]) == [
+        "metro",
+        "pge",
+    ]
+
+
+def test_entity_ids_for_records_is_sorted(store):
+    """
+    The diagram lays out on sorted ids, so an unstable order here would put a
+    stable layout behind an unstable input — the same brief drawn two ways.
+    """
+    store.write([_with_entities(1, ["pge", "metro", "mcp"])])
+    ids = store.entity_ids_for_records(["rec_test_0001"])
+    assert ids == sorted(ids)
+
+
+def test_entity_ids_for_records_ignores_ids_the_store_does_not_hold(store):
+    """
+    The brief is ground truth for what was published. If the query layer has fallen
+    behind it, the diagram goes thin rather than the render failing.
+    """
+    store.write([_with_entities(1, ["pge"])])
+    assert store.entity_ids_for_records(["rec_test_0001", "rec_missing"]) == ["pge"]
+
+
+def test_entity_ids_for_records_is_empty_for_no_records(store):
+    store.write([_with_entities(1, ["pge"])])
+    assert store.entity_ids_for_records([]) == []
+
+
+def test_entity_ids_for_records_handles_more_records_than_sqlite_would_bind(store):
+    """
+    SQLite caps host parameters at 999 by default, so a generated `IN (?,?,...)` over
+    a brief citing more records than that would fail at the driver. Matching in Python
+    sidesteps the cap; this pins that a brief that large still resolves.
+    """
+    store.write([_with_entities(i, ["pge"]) for i in range(1200)])
+    wanted = [f"rec_test_{i:04d}" for i in range(1200)]
+    assert store.entity_ids_for_records(wanted) == ["pge"]
