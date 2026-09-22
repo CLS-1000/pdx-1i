@@ -263,12 +263,13 @@ Resolved on `9c8d6c6`: one function body, asserting over an explicit `ALWAYS_APP
 list, with a separate test holding conditional steps silent on the committed file.
 651 passed.
 
-**Still open on `main`.** `test_always_applied_labels_match_the_step_table` guards
-that list with a subset check, which fails on a renamed step but passes when a new
-unconditional step is added to `STEPS` and left out of the list -- at which point
-`test_real_ui_file_is_patchable` silently stops checking that anchor, the same class
-of gap that started this. PR #41 changes it to assert equality against
-`STEPS - CONDITIONAL_STEPS`; until that merges, the gap is real.
+One gap outlived that fix by a few minutes. `test_always_applied_labels_match_the_step_table`
+guarded the list with a subset check, which fails on a renamed step but passes when a
+new unconditional step is added to `STEPS` and left out of the list -- at which point
+`test_real_ui_file_is_patchable` silently stops checking that anchor, the same class of
+gap that started this. Copilot caught it on review; the fix missed #39's merge by about
+a minute and landed separately as #41 (`913c522`). It now asserts equality against
+`STEPS - CONDITIONAL_STEPS`, so an added step fails as loudly as a renamed one.
 
 Worth recording as a pattern rather than an incident. Five separate breakages in this
 sequence came from two individually-correct changes to the same file merging cleanly,
