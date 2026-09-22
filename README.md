@@ -261,7 +261,7 @@ different:
 
 | Adapter | Live shape |
 |---|---|
-| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves. |
+| **ORESTAR** | a ZIP containing one CSV, unwrapped by `_decode`, with `feed_url` carrying a `{year}` the adapter resolves. That is the shape the adapter implements — but **no published export of that shape was found**, and the registered URL 404s. See *Not built yet*. The ZIP and CSV handling is independent of the URL and stays valid if a bulk file appears. |
 | **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
 | **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
 | **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object. |
@@ -292,6 +292,12 @@ re-derives it:
 | Pamplin Media | SSL handshake failure |
 | OHSU · PPB · NW Natural · Water Bureau | 404 |
 | PGE watch | DNS failure |
+
+That table is a record of one dated run, not current status. Several of its rows have
+since been corrected and the fixes are registered: WA PDC now answers on a working
+dataset id, and four of the five dead watch feeds were re-pointed on **2026-09-22**.
+ORESTAR is the one confirmed to have no replacement. Current per-endpoint status lives
+in [`SHIPPING.md`](SHIPPING.md); `pdx1 --check-endpoints` measures it directly.
 
 Two things follow from that run, both aimed at making the next correction cheap:
 
@@ -708,8 +714,10 @@ and nothing much changes. Worth confirming against a real payload before relying
 
 ## Not built yet
 
-Each of these is a clean follow-on. What is listed here is genuinely absent — if a
-capability is described anywhere above, it exists and has tests.
+Each of these is a clean follow-on. Every entry not struck through is genuinely absent —
+if a capability is described anywhere above, it exists and has tests. A struck-through
+entry has since been built and is kept here, marked, so the record of what was promised
+does not quietly disappear.
 
 - **Working endpoints for the remaining feeds.** The transport, mapping and fault
   tolerance are done and exercised against the real internet — a live run completes and
@@ -717,10 +725,15 @@ capability is described anywhere above, it exists and has tests.
   **2026-09-22** by running the adapters rather than by reading a catalog: OLIS gives
   307 measures plus 1,283 procedural transitions with its field mapping verified against
   a real payload, and WA PDC gives 49,367 parseable rows via `PDX1_WA_PDC_URL`. What is
-  still missing is ORESTAR, which 404s on every path tried, and SEI, which has no API by
-  design. Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and
-  beside the URL in the source. This is data entry plus one alias-table pass, not new
-  machinery.
+  still missing is ORESTAR and SEI, and neither is a URL correction. ORESTAR 404s on
+  every path tried, and the 2026-09-22 search found no public bulk endpoint to replace
+  it: transactions are served only by a session-scoped interactive search that exposes
+  no export. Harvesting it means emulating that session and scraping paginated HTML — a
+  different shape from this adapter, whose `parse` is pure and whose fetch expects one
+  document. SEI has no API by design. Both need a decision about shape before any
+  mapping work; what remains for the feeds that *do* answer is an alias-table pass.
+  Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and beside the
+  URL in the source.
 - ~~**Network diagrams in the PDF.**~~ **Built.** `render_brief_pdf` takes an optional
   `entity_ids` and appends a diagram of the registry ties among them, drawn from the
   role-based registry with shape carrying `group` and a disclosure tie dashed. It draws
