@@ -61,6 +61,25 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _socrata_url(value: object) -> str | None:
+    """
+    Unwrap Socrata's URL column type.
+
+    A Socrata column of type `url` serialises as an object -- `{"url": "...",
+    "description": "..."}` -- not as a string, so handing it straight to `Signal.url`
+    fails validation and takes the whole feed down with it: `parse` raises, and one
+    bad column reads downstream as "Washington filed no contributions today".
+
+    Accepts the plain-string form too, because not every Socrata dataset declares the
+    column that way and the adapter should not care which it gets.
+    """
+    if isinstance(value, dict):
+        value = value.get("url")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 class WaPdcAdapter(LiveSourceAdapter):
     """Parses WA PDC contribution filings."""
 
@@ -168,7 +187,7 @@ class WaPdcAdapter(LiveSourceAdapter):
             source=self.name,
             source_type=self.source_type,
             text=text,
-            url=rec.get("url") or None,
+            url=_socrata_url(rec.get("url")),
             author=rec.get("recipient") or None,
             published_at=filed_at,
             credibility=self.credibility,

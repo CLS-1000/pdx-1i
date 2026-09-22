@@ -89,9 +89,9 @@ and a test, not a redesign.
 |------|------------------|-------|
 | D0 | Freeze scope — SHIPPING.md, PARKED.md, notes in other repos | this file; PARKED notes in other repos **not yet written** |
 | D1 | Go live — explicit live/fixture config, no fixture default in production, per-adapter isolation, timeouts, bounded retry | code done; **9 of 11 live endpoints are dead** — see below |
-| D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | not started |
+| D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | **done** (code); DEPLOY.md deferred to D4, which must write it from a real deploy |
 | D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | not started |
-| D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | not started |
+| D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | **blocked** — see below |
 | D5 | The clock — health-check line, one alert path, start the count | not started |
 | D6 | When it breaks — fix, test, log, reset | standing |
 
@@ -203,6 +203,165 @@ to every paged URL, which is aimed squarely at the failure measured above — OL
 usable data is open until someone runs it live and writes the number down. The other three
 record feeds — ORESTAR, SEI, WA_PDC — are untouched by that work and still stand as
 measured.
+
+---
+
+## D4 is blocked — 2026-09-22
+
+Two blockers remain; the third is fixed.
+
+**1. No VM exists yet.** D4 targets a Compute Engine instance with an attached
+persistent SSD. Nothing has been provisioned, and the development sandbox has no
+`gcloud`, no GCP credentials and no SSH keys, so it cannot provision one. D4's
+acceptance — "reboot the VM, both services come back, the next run fires at 06:00
+Pacific" — can only be executed and measured on the real host.
+
+**2. ~~`main` is red.~~ Fixed 2026-09-22 — and it was a shipped UI bug, not just red
+tests.**
+
+`tests/test_patch_citizen_weights.py` was 16 failed / 11 passed on `a159af4`, having
+been 26 passed at `85bba3e`. The cause was not what it first looked like. `1072ac6
+fix: restore clean citizen UI baseline` set out to remove patcher output from the
+committed UI file and removed **most** of it: the sliders' CSS, the slider HTML, and
+the JS block. It left the patched sort comparator and note text behind.
+
+That comparator calls `topicScore()`, which the deleted JS block was the only thing
+defining. So `ui/citizen-cognisance.html` on `main` called an undefined function from
+`renderList`, throwing a `ReferenceError` on every render of the list. No Python test
+executes that file, so nothing caught it except the patcher's anchors drifting.
+
+The fix completes the restore: the sort comparator and note text go back to their
+pristine forms, and the dangling `topicScore()` call disappears with them. PR #26's
+unrelated accessibility work on the signal filter is untouched.
+
+Two regression tests were added, with deliberately different reach. One forbids
+committing verbatim patcher output. The other forbids referencing a helper the
+patcher defines without defining it -- that is the one that actually catches this,
+since the committed output here had been hand-edited away from what the patcher
+generates, so no sentinel matched.
+
+**3. DEPLOY.md cannot be written yet, and must not be faked.** D4 step 5 says to write
+it "from what you actually did, with measured times — not from what you intended."
+Writing it before deploying would produce the one artifact whose whole value is that
+it was measured. It is deliberately absent until there is a deploy to describe.
+
+### What D2 delivered toward it
+
+The port collision is fixed, which was the reason D4 step 3 could not have worked:
+
+- `PDX1_SCHEDULER_EMBEDDED_API` defaults to false, so the scheduler runs headless and
+  `pdx1-api` owns 8000 as its own unit. Previously the scheduler bound 8000
+  unconditionally; under `Restart=on-failure` two units on one port is a crash loop.
+- The scheduler refuses to start (exit 2) when `PDX1_ENVIRONMENT` is unset, because an
+  unset value is indistinguishable from a unit file that dropped it.
+- The API binds `127.0.0.1` by default rather than `0.0.0.0`. **Chosen deliberately:**
+  the API exposes the store behind only an API key, and an instance with `0.0.0.0:8000`
+  open is reachable by whatever finds the external IP. Public is now an explicit
+  `.env` line.
+- `pdx1 --init-store` makes schema creation an explicit command. It was implicit in
+  `DualWriteStore.__init__`, which works but gives a deploy document nothing to cite.
+  It prints the resolved paths, which is how the VM confirms the store landed on the
+  SSD rather than the boot disk *before* a reboot proves otherwise.
+
+---
+
+## Feed status — measured 2026-09-22
+
+Re-probed after the OLIS work landed on `main`. `--check-endpoints` still reports
+**5 of 15**, but that count is misleading on its own: two of the four record feeds
+now return usable data, and one of them needed a code fix rather than a URL.
+
+| feed | before | now | how |
+|---|---|---|---|
+| OLIS | 200, unparseable | **307 measures + 1,283 transitions** | main's `$format=json` fix; first live measurement of it |
+| WA_PDC | 404 | **49,367 rows, 23,244 from 2026** | new dataset id + a Socrata `url`-object fix |
+| ORESTAR | 404 | **still 404** | four URL variants probed; no verified replacement |
+| SEI | HTML | **unchanged** | OGEC publishes no API, by design |
+
+### OLIS is verified, not merely reachable
+
+307 measures with real URLs and dates, no epoch-defaulted timestamps, 39 distinct
+dates. `title` is `None` on all of them, which is correct: `Signal.title` is optional
+and publication falls back to the opening of `text`.
+
+Procedural state works: 1,283 of 1,590 signals carry it, across 7 distinct states
+(`introduced` 476, `passed` 326, `signed_by_presiding` 312, `enacted` 144, `adopted`
+22, `failed` 2, `vetoed` 1), each stamped `rules_version=5d6c1b8bf766`. The whole
+fetch takes 5.7s.
+
+One trap: `_harvest_transitions` opens with `if not (self._live and self.store is not
+None): return []`. Without a store it emits **zero** transitions and reports success.
+The pipeline passes one, so production is fine, but a bare adapter in a script looks
+healthy while producing nothing.
+
+### WA_PDC needed a real fix, not just a URL
+
+`tijg-9uu3` is gone. `kv7h-kjye` is the live dataset, recorded in `.env.example`.
+
+Pointing at it was not enough. Socrata serialises a `url` column as an object --
+`{"url": "...", "description": "..."}` -- and handing that to `Signal.url` raised out
+of `parse`, taking the **entire feed** down rather than one row. Downstream that reads
+as "Washington filed no contributions today", which is a false statement about public
+records. Fixed in `_socrata_url`, with a regression test verified against the unfixed
+mapping.
+
+**Two known issues, deliberately not fixed:** `wa_pdc` pages with `$limit`/`$offset`
+and no `$order`, which Socrata does not guarantee is stable across pages; and it hits
+the 50-page ceiling at ~42s per run, pulling the whole historical dataset every cycle
+rather than the day's filings. Neither blocks a brief, both are worth a session.
+
+### ORESTAR: what was ruled out
+
+Four paths tried (2024/2025/2026 `_report_transactions.zip` and bare
+`transactions.zip`), all 404. The ORESTAR and campaign-finance landing pages answer
+200, so the host is alive and the document path is what moved.
+
+Oregon's Socrata catalog search returns hits for "campaign finance" -- but they are
+**federated results from other Socrata domains**, not Oregon datasets. `3kfv-biw6`
+appears under both `data.oregon.gov` and `data.wa.gov` searches, and none of the ids
+resolve against `data.oregon.gov/resource/`. Registering one would have produced a
+plausible-looking override that silently serves another state's data.
+
+No replacement is recorded, because none was verified.
+
+---
+
+## The velocity anchor would have broken the count on day one — found 2026-09-22
+
+The first full live cycle with the recovered feeds harvested **51,029 signals and
+published a brief containing one record**. Velocity dropped 51,028 of them.
+
+Cause: `run_cycle` anchored the velocity gate to the newest harvested signal rather
+than to the clock. Exactly one WA PDC record was dated 2026-10-01, nine days in the
+future. That record became the anchor, the 48-hour window moved with it, and every
+genuinely recent signal fell outside it. The one record that survived was the
+future-dated one — it was measuring itself.
+
+The part that matters for the count: **the cycle reported success.** Exit 0, a brief
+written, a section published, nothing in the run log saying the morning's output was
+empty for a reason unrelated to the news. Thirty of those in a row would have counted
+as thirty clean runs.
+
+`run_cycle` now uses the real clock when `settings.live_fetch` is true and keeps the
+newest-signal anchor for fixture replay, which is what the fixture rationale always
+implied and what the README already said live runs should do. An explicit `--as-of`
+still wins over both.
+
+Measured on the scheduler's exact call path, with no `--as-of`:
+
+| | before | after |
+|---|---|---|
+| harvested | 51,029 | 51,018 |
+| dropped on velocity | 51,028 | 50,881 |
+| written | **1** | **75** |
+| brief | 1 section, 1 feed | **2 sections, 3 feeds, 1 elevated** |
+
+Fixture baseline unchanged: 12 harvested, 10 written, 2 sections.
+
+**Still open, and not fixed here:** one WA PDC record really is dated in the future.
+A future timestamp no longer decides the window, but it still passes the velocity gate
+as "fresh". That is a data-quality question about the source rather than a gate bug,
+and it is worth a look before the count starts.
 
 ---
 
