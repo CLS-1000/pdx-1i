@@ -63,9 +63,15 @@ def _backups(target: Path) -> list[Path]:
 
 def test_real_ui_file_is_patchable(target, capsys):
     """Every anchor resolves against the UI file as it stands on this commit."""
+    baseline = target.read_text(encoding="utf-8")
     assert _run(target) == 0
     out = capsys.readouterr().out
-    for step_label, _ in patcher.STEPS:
+    expected_steps = [
+        step_label
+        for step_label, _ in patcher.STEPS
+        if step_label != "Legacy v2 block removed" or patcher._V2_SENTINEL in baseline
+    ]
+    for step_label in expected_steps:
         assert step_label in out
 
 
@@ -119,6 +125,64 @@ def test_repeated_runs_do_not_stack_blocks(target):
     assert html.count(patcher.HTML_SENTINEL) == 1
     assert html.count(patcher.JS_SENTINEL) == 1
     assert html.count(patcher.SORT_SENTINEL) == 1
+
+
+def test_strip_v2_block_removes_only_legacy_source():
+    html = (
+        "<script>\n"
+        "const keepBefore = 1;\n"
+        "// ── Topic Weights & Signals v2 ─────────────────────────────────────────\n"
+        "const TOPIC_WEIGHTS = { housing: 1.0 };\n"
+        "function topicScore() { return 1; }\n"
+        "});\n"
+        "\n"
+        "// (signals index fetch already defined above)\n"
+        "const keepAfter = 2;\n"
+        "</script>\n"
+    )
+
+    stripped, did_strip = patcher.strip_v2_block(html)
+
+    assert did_strip
+    assert patcher._V2_SENTINEL not in stripped
+    assert "const TOPIC_WEIGHTS = { housing: 1.0 };" not in stripped
+    assert "const keepBefore = 1;" in stripped
+    assert "const keepAfter = 2;" in stripped
+
+
+def test_legacy_v2_input_is_stripped_before_js_injection(tmp_path):
+    target = tmp_path / "legacy-v2.html"
+    target.write_text(
+        """<html><head><style></style></head><body>
+<section class="controls" aria-label="Map filters"></section>
+<script>
+const host = document.getElementById('list');
+const visible = NODES.filter(passesFilter).sort((a, b) => {
+  return 0;
+});
+document.getElementById('list-note').textContent = visible.length + ': '
+  + (sortSel.value === 'centrality' ? 'Ranked by network centrality' : 'Ranked by signal freshness');
+// ── Topic Weights & Signals v2 ─────────────────────────────────────────
+const TOPIC_WEIGHTS = { housing: 1.0, state_politics: 1.0 };
+function topicScore() { return 1; }
+});
+
+// (signals index fetch already defined above)
+const keepAfter = 2;
+function renderList() { return visible; }
+</script>
+</body></html>
+""",
+        encoding="utf-8",
+    )
+
+    assert _run(target) == 0
+    html = target.read_text(encoding="utf-8")
+
+    assert patcher._V2_SENTINEL not in html
+    assert "const TOPIC_WEIGHTS = { housing: 1.0, state_politics: 1.0 };" not in html
+    assert html.count("if (!globalThis.TOPIC_WEIGHTS)") == 1
+    assert "const keepAfter = 2;" in html
 
 
 def test_second_run_makes_no_second_backup(target):
