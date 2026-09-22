@@ -26,17 +26,58 @@ attribution gates. The PDF is a faithful rendering of that content.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from ..models import Brief
 
+#: Masthead. Paired with the date as "title · date", per the SPEC-1 brief format.
+BRIEF_TITLE = "Metro Citizens Brief"
 
-def render_brief_pdf(brief: Brief, path: Path | str) -> Path:
+#: Trailing footer line, matching SPEC-1's "methodology + archive" pointer.
+#:
+#: Empty, and the line is omitted while it stays empty. SPEC-1 publishes to a
+#: known archive; this project has no equivalent published URL, and inventing a
+#: plausible one would put an address into every brief that nobody has checked
+#: resolves. Set it when there is a real page to point at.
+ARCHIVE_URL = ""
+
+
+def esc(text: object) -> str:
+    """
+    Escape *text* for reportlab's `Paragraph`, which parses a mini-HTML markup.
+
+    Brief content is drawn from public records, so an ampersand in an agency name
+    or a `<` in quoted text is ordinary and must not be read as markup. The
+    renderer escaped nothing before the brief format landed; a record containing
+    one would have raised out of `doc.build` or silently dropped the rest of the
+    line.
+    """
+    return escape(str(text))
+
+
+def render_brief_pdf(
+    brief: Brief,
+    path: Path | str,
+    *,
+    entity_ids: Sequence[str] | None = None,
+) -> Path:
     """
     Render *brief* to *path* as a letter-format PDF.
 
     Returns the resolved output path. Creates parent directories if needed.
     Raises `ImportError` if reportlab is not installed.
+
+    Pass *entity_ids* -- the `entity_ids` of the records backing the brief -- to
+    append a network diagram of the registry ties among them. Omitted, the PDF is
+    byte-for-byte what it was before the diagram existed. It is a parameter rather
+    than something derived from the brief because `Brief` carries record ids, not
+    entity ids, and resolving one to the other needs the store the renderer
+    deliberately does not hold.
+
+    The diagram is skipped silently when it would claim nothing -- fewer than two
+    known nodes, or no tie between them. See `network_diagram.build_network_drawing`.
     """
     try:
         from reportlab.lib import colors
@@ -74,49 +115,84 @@ def render_brief_pdf(brief: Brief, path: Path | str) -> Path:
         subject=brief.headline,
     )
 
-    story = _build_story(brief, styles, Paragraph, Spacer, Table, TableStyle, colors, inch)
+    story = _build_story(
+        brief, styles, Paragraph, Spacer, Table, TableStyle, colors, inch, entity_ids
+    )
     doc.build(story)
     return out
+
+
+def _append_network_diagram(story, entity_ids, styles, Paragraph, Spacer) -> None:
+    """Append the diagram and its caption, or leave *story* untouched."""
+    if not entity_ids:
+        return
+
+    from .network_diagram import CAPTION, build_network_drawing
+
+    drawing = build_network_drawing(entity_ids)
+    if drawing is None:
+        return
+
+    story.append(Spacer(1, 14))
+    story.append(Paragraph("Relationship map", styles["section_title"]))
+    story.append(Spacer(1, 6))
+    story.append(drawing)
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(CAPTION, styles["footer"]))
 
 
 # ── Story builders ────────────────────────────────────────────────────────────
 
 
-def _build_story(brief, styles, Paragraph, Spacer, Table, TableStyle, colors, inch):
+def _build_story(
+    brief, styles, Paragraph, Spacer, Table, TableStyle, colors, inch, entity_ids=None
+):
     story = []
+    n = len(brief.sections)
+    #: Sections plus the footer. The header is unnumbered, matching SPEC-1.
+    total = n + 1
 
     # ── Header ────────────────────────────────────────────────────────────────
-    story.append(Paragraph("Metro Citizens Brief", styles["title"]))
-    story.append(Paragraph(brief.date, styles["subtitle"]))
+    story.append(Paragraph(f"{BRIEF_TITLE} · {esc(brief.date)}", styles["title"]))
     story.append(Spacer(1, 6))
-    story.append(Paragraph(brief.headline, styles["headline"]))
+    story.append(Paragraph(esc(brief.headline), styles["headline"]))
     story.append(Spacer(1, 4))
-    story.append(Paragraph(brief.summary, styles["body"]))
+    story.append(Paragraph(esc(brief.summary), styles["body"]))
+    story.append(Spacer(1, 6))
+    story.append(
+        Paragraph(
+            f"↓ {n} verified signal{'s' if n != 1 else ''}",
+            styles["subtitle"],
+        )
+    )
     story.append(Spacer(1, 12))
 
     # ── Sections ──────────────────────────────────────────────────────────────
-    for section in brief.sections:
-        story.append(Paragraph(section.title, styles["section_title"]))
+    for i, section in enumerate(brief.sections, start=1):
+        story.append(
+            Paragraph(f"[{i}/{total}] {esc(section.title).upper()}", styles["section_title"])
+        )
         story.append(Spacer(1, 4))
         for line in section.body.splitlines():
             line = line.strip()
             if line:
-                story.append(Paragraph(line, styles["bullet"]))
+                story.append(Paragraph(esc(line), styles["bullet"]))
         story.append(Spacer(1, 10))
+
+    _append_network_diagram(story, entity_ids, styles, Paragraph, Spacer)
 
     # ── Footer ────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 12))
-    footer_data = [
-        [
-            Paragraph(f"Sources: {', '.join(brief.sources)}", styles["footer"]),
-            Paragraph(
-                f"Run: {brief.run_id} | {brief.produced_at.strftime('%Y-%m-%dT%H:%M:%SZ')}",
-                styles["footer_right"],
-            ),
-        ]
+    footer_lines = [
+        f"[{total}/{total}] run_id: {esc(brief.run_id[:8])}",
+        f"cycle: {brief.produced_at.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        f"sources: {esc(', '.join(brief.sources))}",
     ]
-    col = 3.5 * inch
-    footer_table = Table(footer_data, colWidths=[col, col])
+    if ARCHIVE_URL:
+        footer_lines.append(f"methodology + archive: {esc(ARCHIVE_URL)}")
+
+    footer_data = [[Paragraph("<br/>".join(footer_lines), styles["footer"])]]
+    footer_table = Table(footer_data, colWidths=[7.0 * inch])
     footer_table.setStyle(
         TableStyle(
             [
