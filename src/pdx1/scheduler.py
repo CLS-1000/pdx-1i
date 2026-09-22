@@ -110,28 +110,49 @@ def main() -> None:
         logger.error("refusing to start -- %s", exc)
         raise SystemExit(2) from exc
 
+    # A warning here was not enough. The scheduler is the unattended process, so an
+    # environment nobody declared is an environment nobody checked -- and an unset
+    # variable is indistinguishable from a systemd unit that dropped it. Refuse.
+    if not settings.environment_declared:
+        logger.error(
+            "refusing to start -- PDX1_ENVIRONMENT is unset. Set it explicitly: "
+            "'production' on the VM, 'development' locally. A scheduler running with "
+            "an undeclared environment is not visibly wrong, which is the problem."
+        )
+        raise SystemExit(2)
+
     if not _is_production():
         logger.warning(
-            "PDX1_ENVIRONMENT is not 'production' -- scheduler will run but this "
-            "is intended for production deployments. Set PDX1_ENVIRONMENT=production "
-            "to suppress this warning."
+            "PDX1_ENVIRONMENT=%s -- the scheduler is intended for production "
+            "deployments. Running anyway because the environment was declared.",
+            settings.environment,
         )
 
-    # Start the FastAPI server in a daemon thread.
-    try:
-        import uvicorn
+    # The embedded API is opt-in and off by default. On the VM `pdx1-api` owns port
+    # 8000 as its own systemd unit; a scheduler that also bound 8000 would lose the
+    # race and, under Restart=on-failure, crash-loop rather than fail visibly.
+    if settings.scheduler_embedded_api:
+        try:
+            import uvicorn
 
-        host = os.environ.get("PDX1_API_HOST", "0.0.0.0")  # nosec B104
-        port = int(os.environ.get("PDX1_API_PORT", "8000"))
+            host = settings.api_host
+            port = settings.api_port
 
-        def _serve() -> None:
-            uvicorn.run("pdx1.api.app:app", host=host, port=port, reload=False, log_level="info")
+            def _serve() -> None:
+                uvicorn.run(
+                    "pdx1.api.app:app", host=host, port=port, reload=False, log_level="info"
+                )
 
-        api_thread = threading.Thread(target=_serve, daemon=True, name="api-server")
-        api_thread.start()
-        logger.info("API server thread started on %s:%d", host, port)
-    except ImportError:
-        logger.warning("uvicorn not installed; starting scheduler without API server")
+            api_thread = threading.Thread(target=_serve, daemon=True, name="api-server")
+            api_thread.start()
+            logger.info("API server thread started on %s:%d", host, port)
+        except ImportError:
+            logger.warning("uvicorn not installed; starting scheduler without API server")
+    else:
+        logger.info(
+            "running headless -- embedded API off (set PDX1_SCHEDULER_EMBEDDED_API=true "
+            "to serve the API from this process instead of a separate pdx1-api unit)"
+        )
 
     # Block on the scheduler.
     scheduler = build_scheduler(settings)

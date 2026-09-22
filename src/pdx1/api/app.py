@@ -104,10 +104,18 @@ def main() -> None:
     """Console-script entry point: ``pdx1-api``."""
     import uvicorn
 
-    host = os.environ.get("PDX1_API_HOST", "0.0.0.0")  # nosec B104
-    port = int(os.environ.get("PDX1_API_PORT", "8000"))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s :: %(message)s")
-    uvicorn.run("pdx1.api.app:app", host=host, port=port, reload=False)
+
+    # Loopback by default, resolved through Settings so the bind address is decided in
+    # one place. PDX1_API_HOST=0.0.0.0 is still available where the service genuinely
+    # has to be reachable, but that is now a deliberate .env line rather than the
+    # default nobody picked -- a VM with 0.0.0.0:8000 is reachable by whatever finds
+    # the external IP, and the API is guarded only by an API key.
+    settings = Settings.from_env()
+    logger.info("pdx1-api binding %s:%d", settings.api_host, settings.api_port)
+    uvicorn.run(
+        "pdx1.api.app:app", host=settings.api_host, port=settings.api_port, reload=False
+    )
 
 
 if __name__ == "__main__":

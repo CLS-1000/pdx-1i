@@ -89,9 +89,9 @@ and a test, not a redesign.
 |------|------------------|-------|
 | D0 | Freeze scope — SHIPPING.md, PARKED.md, notes in other repos | this file; PARKED notes in other repos **not yet written** |
 | D1 | Go live — explicit live/fixture config, no fixture default in production, per-adapter isolation, timeouts, bounded retry | code done; **9 of 11 live endpoints are dead** — see below |
-| D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | not started |
+| D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | **done** (code); DEPLOY.md deferred to D4, which must write it from a real deploy |
 | D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | not started |
-| D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | not started |
+| D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | **blocked** — see below |
 | D5 | The clock — health-check line, one alert path, start the count | not started |
 | D6 | When it breaks — fix, test, log, reset | standing |
 
@@ -203,6 +203,53 @@ to every paged URL, which is aimed squarely at the failure measured above — OL
 usable data is open until someone runs it live and writes the number down. The other three
 record feeds — ORESTAR, SEI, WA_PDC — are untouched by that work and still stand as
 measured.
+
+---
+
+## D4 is blocked — 2026-09-22
+
+Three blockers, in the order they have to clear.
+
+**1. No VM exists yet.** D4 targets a Compute Engine instance with an attached
+persistent SSD. Nothing has been provisioned, and the development sandbox has no
+`gcloud`, no GCP credentials and no SSH keys, so it cannot provision one. D4's
+acceptance — "reboot the VM, both services come back, the next run fires at 06:00
+Pacific" — can only be executed and measured on the real host.
+
+**2. `main` is red.** `tests/test_patch_citizen_weights.py` is **16 failed, 11 passed**
+on `a159af4`. It was 26 passed at `85bba3e`, so the regression arrived with PR #26.
+Cause: that PR hand-applied what its own patcher script exists to apply, changing the
+note text in `ui/citizen-cognisance.html` from `'Ranked by signal freshness'` to
+`'Ranked by topic score'`. The patcher's `OLD_NOTE` anchor no longer matches, so it
+exits 2 and every test asserting the real UI file is patchable fails.
+
+This blocks D4 step 2 specifically, which says to run the full suite on the VM and
+record the exact count. That count would be 16 failures inherited from `main`, which
+is not a baseline worth writing down. Whether the patcher should be updated to the new
+anchors or retired as vestigial is a question about PR #26's intent, not this script's.
+
+**3. DEPLOY.md cannot be written yet, and must not be faked.** D4 step 5 says to write
+it "from what you actually did, with measured times — not from what you intended."
+Writing it before deploying would produce the one artifact whose whole value is that
+it was measured. It is deliberately absent until there is a deploy to describe.
+
+### What D2 delivered toward it
+
+The port collision is fixed, which was the reason D4 step 3 could not have worked:
+
+- `PDX1_SCHEDULER_EMBEDDED_API` defaults to false, so the scheduler runs headless and
+  `pdx1-api` owns 8000 as its own unit. Previously the scheduler bound 8000
+  unconditionally; under `Restart=on-failure` two units on one port is a crash loop.
+- The scheduler refuses to start (exit 2) when `PDX1_ENVIRONMENT` is unset, because an
+  unset value is indistinguishable from a unit file that dropped it.
+- The API binds `127.0.0.1` by default rather than `0.0.0.0`. **Chosen deliberately:**
+  the API exposes the store behind only an API key, and an instance with `0.0.0.0:8000`
+  open is reachable by whatever finds the external IP. Public is now an explicit
+  `.env` line.
+- `pdx1 --init-store` makes schema creation an explicit command. It was implicit in
+  `DualWriteStore.__init__`, which works but gives a deploy document nothing to cite.
+  It prints the resolved paths, which is how the VM confirms the store landed on the
+  SSD rather than the boot disk *before* a reboot proves otherwise.
 
 ---
 
