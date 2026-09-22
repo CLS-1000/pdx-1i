@@ -291,3 +291,52 @@ def test_runs_as_a_subprocess(target):
     )
     assert result.returncode == 0, result.stderr
     assert "Nothing written" in result.stdout
+
+
+# ── The committed baseline stays unpatched ───────────────────────────────────
+
+
+def test_committed_ui_file_contains_no_patcher_output():
+    """
+    The checked-in UI file is the *input* to the patcher, never its output.
+
+    Scope, stated precisely because it is narrower than it looks: this catches
+    *verbatim* patcher output being committed. It did NOT catch the regression that
+    prompted it -- there the committed output had been hand-edited away from what the
+    patcher generates, so none of these sentinels matched even though the file was
+    plainly half-patched. `test_committed_ui_file_calls_no_function_the_patcher_would_define`
+    is the one that catches that, and the two are kept separate for that reason.
+
+    Worth having anyway: committing the patcher's real output is the simpler and more
+    likely version of the same mistake, and nothing else asserts against it.
+    """
+    html = REAL_UI.read_text(encoding="utf-8")
+
+    present = [
+        name
+        for name in ("CSS_SENTINEL", "HTML_SENTINEL", "JS_SENTINEL", "SORT_SENTINEL", "NEW_NOTE")
+        if (marker := getattr(patcher, name, None)) and marker in html
+    ]
+    assert not present, (
+        f"{REAL_UI.name} contains patcher output: {present}. The committed file must be "
+        "the unpatched baseline -- run the patcher on a copy, do not commit its result."
+    )
+
+
+def test_committed_ui_file_calls_no_function_the_patcher_would_define():
+    """
+    No dangling references to helpers that only exist after patching.
+
+    Independent of the sentinels above: a partial restore can strip a sentinel while
+    leaving a call site, which is exactly what happened to `topicScore`.
+    """
+    html = REAL_UI.read_text(encoding="utf-8")
+
+    for helper in ("topicScore", "weightsActive"):
+        called = helper in html
+        defined = f"function {helper}" in html
+        assert not (called and not defined), (
+            f"{helper}() is referenced in {REAL_UI.name} but never defined. It is "
+            "introduced by the patcher's JS block, so a reference without a definition "
+            "means patcher output was partially committed."
+        )

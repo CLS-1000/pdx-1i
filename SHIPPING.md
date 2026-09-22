@@ -208,7 +208,7 @@ measured.
 
 ## D4 is blocked — 2026-09-22
 
-Three blockers, in the order they have to clear.
+Two blockers remain; the third is fixed.
 
 **1. No VM exists yet.** D4 targets a Compute Engine instance with an attached
 persistent SSD. Nothing has been provisioned, and the development sandbox has no
@@ -216,17 +216,29 @@ persistent SSD. Nothing has been provisioned, and the development sandbox has no
 acceptance — "reboot the VM, both services come back, the next run fires at 06:00
 Pacific" — can only be executed and measured on the real host.
 
-**2. `main` is red.** `tests/test_patch_citizen_weights.py` is **16 failed, 11 passed**
-on `a159af4`. It was 26 passed at `85bba3e`, so the regression arrived with PR #26.
-Cause: that PR hand-applied what its own patcher script exists to apply, changing the
-note text in `ui/citizen-cognisance.html` from `'Ranked by signal freshness'` to
-`'Ranked by topic score'`. The patcher's `OLD_NOTE` anchor no longer matches, so it
-exits 2 and every test asserting the real UI file is patchable fails.
+**2. ~~`main` is red.~~ Fixed 2026-09-22 — and it was a shipped UI bug, not just red
+tests.**
 
-This blocks D4 step 2 specifically, which says to run the full suite on the VM and
-record the exact count. That count would be 16 failures inherited from `main`, which
-is not a baseline worth writing down. Whether the patcher should be updated to the new
-anchors or retired as vestigial is a question about PR #26's intent, not this script's.
+`tests/test_patch_citizen_weights.py` was 16 failed / 11 passed on `a159af4`, having
+been 26 passed at `85bba3e`. The cause was not what it first looked like. `1072ac6
+fix: restore clean citizen UI baseline` set out to remove patcher output from the
+committed UI file and removed **most** of it: the sliders' CSS, the slider HTML, and
+the JS block. It left the patched sort comparator and note text behind.
+
+That comparator calls `topicScore()`, which the deleted JS block was the only thing
+defining. So `ui/citizen-cognisance.html` on `main` called an undefined function from
+`renderList`, throwing a `ReferenceError` on every render of the list. No Python test
+executes that file, so nothing caught it except the patcher's anchors drifting.
+
+The fix completes the restore: the sort comparator and note text go back to their
+pristine forms, and the dangling `topicScore()` call disappears with them. PR #26's
+unrelated accessibility work on the signal filter is untouched.
+
+Two regression tests were added, with deliberately different reach. One forbids
+committing verbatim patcher output. The other forbids referencing a helper the
+patcher defines without defining it -- that is the one that actually catches this,
+since the committed output here had been hand-edited away from what the patcher
+generates, so no sentinel matched.
 
 **3. DEPLOY.md cannot be written yet, and must not be faked.** D4 step 5 says to write
 it "from what you actually did, with measured times — not from what you intended."
