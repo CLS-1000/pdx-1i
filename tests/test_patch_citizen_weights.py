@@ -62,22 +62,23 @@ def _backups(target: Path) -> list[Path]:
 
 
 def test_real_ui_file_is_patchable(target, capsys):
-    """Every unconditional anchor resolves against the UI file as it stands."""
+    """
+    Every unconditional anchor resolves against the UI file as it stands.
+
+    Conditional steps are skipped rather than asserted: they report "applied"
+    only when their cruft is present, so demanding one fire on a clean file
+    fails for the wrong reason. Every other step must still appear -- a quiet
+    unconditional step means its anchor has drifted and the patcher is silently
+    doing less than it claims.
+
+    The patcher is run exactly once. A second run would print "No changes
+    needed (already patched)" and none of these labels would be in `out`.
+    """
     assert _run(target) == 0
     out = capsys.readouterr().out
     for step_label, _ in patcher.STEPS:
         if step_label in patcher.CONDITIONAL_STEPS:
             continue
-    """Every anchor resolves against the UI file as it stands on this commit."""
-    baseline = target.read_text(encoding="utf-8")
-    assert _run(target) == 0
-    out = capsys.readouterr().out
-    expected_steps = [
-        step_label
-        for step_label, _ in patcher.STEPS
-        if step_label != "Legacy v2 block removed" or patcher._V2_SENTINEL in baseline
-    ]
-    for step_label in expected_steps:
         assert step_label in out
 
 
