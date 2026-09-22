@@ -187,12 +187,43 @@ SORT_RE = re.compile(
 OLD_NOTE = ": 'Ranked by signal freshness');"
 NEW_NOTE = ": weightsActive() ? 'Ranked by topic weight score' : 'Ranked by signal freshness');"
 
+#: Matches the legacy "v2" TOPIC_WEIGHTS block that an earlier iteration embedded
+#: directly in the HTML.  If found, the whole block is removed so that inject_js
+#: can insert the canonical version without producing a duplicate ``const``
+#: declaration.
+#:
+#: The lookahead ``(?=\n+// \(signals index fetch already defined above\))``
+#: anchors the match at the outermost ``});`` that immediately precedes the
+#: trailing bookkeeping comment in the original v2 source.  That comment is a
+#: stable landmark in the file; if it changes, the sentinel check in
+#: ``strip_v2_block`` will raise rather than silently mis-strip.
+_V2_SENTINEL = "// ── Topic Weights & Signals v2"
+_V2_BLOCK_RE = re.compile(
+    r"\n// ── Topic Weights & Signals v2[ \u2500]+\n"
+    r".*?"
+    r"\}\);\n(?=\n+// \(signals index fetch already defined above\))",
+    re.DOTALL,
+)
+
 
 def backup_file(path: pathlib.Path) -> pathlib.Path:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     bak = path.with_suffix(f".pre-weights-{ts}.html")
     shutil.copy(path, bak)
     return bak
+
+
+def strip_v2_block(html: str) -> tuple[str, bool]:
+    if _V2_SENTINEL not in html:
+        return html, False
+    m = _V2_BLOCK_RE.search(html)
+    if not m:
+        raise RuntimeError(
+            "Found v2 TOPIC_WEIGHTS sentinel but could not match the closing });"
+            " — check that the trailing '// (signals index fetch already defined above)'"
+            " comment is still present"
+        )
+    return html[: m.start()] + html[m.end():], True
 
 
 def inject_css(html: str) -> tuple[str, bool]:
@@ -244,6 +275,7 @@ def update_note_text(html: str) -> tuple[str, bool]:
 STEPS = [
     ("CSS injected", inject_css),
     ("Slider HTML injected", inject_slider_html),
+    ("Legacy v2 block removed", strip_v2_block),
     ("JS injected", inject_js),
     ("Sort replaced", replace_sort_block),
     ("List note updated", update_note_text),
