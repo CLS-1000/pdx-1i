@@ -265,6 +265,67 @@ The port collision is fixed, which was the reason D4 step 3 could not have worke
 
 ---
 
+## Feed status — measured 2026-09-22
+
+Re-probed after the OLIS work landed on `main`. `--check-endpoints` still reports
+**5 of 15**, but that count is misleading on its own: two of the four record feeds
+now return usable data, and one of them needed a code fix rather than a URL.
+
+| feed | before | now | how |
+|---|---|---|---|
+| OLIS | 200, unparseable | **307 measures + 1,283 transitions** | main's `$format=json` fix; first live measurement of it |
+| WA_PDC | 404 | **49,367 rows, 23,244 from 2026** | new dataset id + a Socrata `url`-object fix |
+| ORESTAR | 404 | **still 404** | four URL variants probed; no verified replacement |
+| SEI | HTML | **unchanged** | OGEC publishes no API, by design |
+
+### OLIS is verified, not merely reachable
+
+307 measures with real URLs and dates, no epoch-defaulted timestamps, 39 distinct
+dates. `title` is `None` on all of them, which is correct: `Signal.title` is optional
+and publication falls back to the opening of `text`.
+
+Procedural state works: 1,283 of 1,590 signals carry it, across 7 distinct states
+(`introduced` 476, `passed` 326, `signed_by_presiding` 312, `enacted` 144, `adopted`
+22, `failed` 2, `vetoed` 1), each stamped `rules_version=5d6c1b8bf766`. The whole
+fetch takes 5.7s.
+
+One trap: `_harvest_transitions` opens with `if not (self._live and self.store is not
+None): return []`. Without a store it emits **zero** transitions and reports success.
+The pipeline passes one, so production is fine, but a bare adapter in a script looks
+healthy while producing nothing.
+
+### WA_PDC needed a real fix, not just a URL
+
+`tijg-9uu3` is gone. `kv7h-kjye` is the live dataset, recorded in `.env.example`.
+
+Pointing at it was not enough. Socrata serialises a `url` column as an object --
+`{"url": "...", "description": "..."}` -- and handing that to `Signal.url` raised out
+of `parse`, taking the **entire feed** down rather than one row. Downstream that reads
+as "Washington filed no contributions today", which is a false statement about public
+records. Fixed in `_socrata_url`, with a regression test verified against the unfixed
+mapping.
+
+**Two known issues, deliberately not fixed:** `wa_pdc` pages with `$limit`/`$offset`
+and no `$order`, which Socrata does not guarantee is stable across pages; and it hits
+the 50-page ceiling at ~42s per run, pulling the whole historical dataset every cycle
+rather than the day's filings. Neither blocks a brief, both are worth a session.
+
+### ORESTAR: what was ruled out
+
+Four paths tried (2024/2025/2026 `_report_transactions.zip` and bare
+`transactions.zip`), all 404. The ORESTAR and campaign-finance landing pages answer
+200, so the host is alive and the document path is what moved.
+
+Oregon's Socrata catalog search returns hits for "campaign finance" -- but they are
+**federated results from other Socrata domains**, not Oregon datasets. `3kfv-biw6`
+appears under both `data.oregon.gov` and `data.wa.gov` searches, and none of the ids
+resolve against `data.oregon.gov/resource/`. Registering one would have produced a
+plausible-looking override that silently serves another state's data.
+
+No replacement is recorded, because none was verified.
+
+---
+
 ## Day 30 is the decision point
 
 Only after thirty clean runs is it worth asking who this brief is for and

@@ -93,13 +93,33 @@ shapes through alias tables (`_COLUMN_ALIASES` in `orestar.py`, `_FIELD_ALIASES`
 elsewhere), and each table carries a comment saying how far it has been confirmed. The
 *mapping logic* is tested and the *field names* are mostly not.
 
-A live probe on 2026-08-21 did reach the network -- earlier sandboxes could not -- and
-found **5 of 15 registered endpoints answering**; the measured table is in
-`SHIPPING.md`. Of the four record feeds, ORESTAR and WA_PDC 404, SEI answers HTML
-because OGEC publishes no API, and OLIS answers 200 with something that is not JSON. So
-the field names are still unverified, but for a different reason than before: the
-endpoints are reachable now, and mostly wrong. Verify an alias table against a real
-payload before trusting it, and update the comment on it to say how far you got.
+Live probes reach the network from this sandbox. The measured tables are in
+`SHIPPING.md`; as of **2026-09-22**, of the four record feeds:
+
+- **OLIS works, and its mapping is verified against a real payload.** 307 measures
+  plus 1,283 procedural transitions, real URLs and dates. `title` is `None` on every
+  measure, which is by design -- `Signal.title` is optional and publication falls back
+  to the opening of `text`. Note that transitions need a `store`: `_harvest_transitions`
+  returns `[]` without one, so a bare adapter in a script silently yields no procedural
+  state even though the feed is healthy.
+- **WA_PDC works via `PDX1_WA_PDC_URL`.** The registered `tijg-9uu3` is gone (404);
+  `kv7h-kjye` returns 49,367 parseable rows, 23,244 of them from 2026. Verified by
+  running the adapter, not by reading the catalog.
+- **ORESTAR is still 404** on every path tried. Oregon's Socrata catalog search returns
+  *federated results from other states* -- ids that also appear under `data.wa.gov` --
+  and none resolve on `data.oregon.gov`. Do not register one without running the
+  adapter against it.
+- **SEI has no API**, unchanged and by design.
+
+Two Socrata lessons worth keeping: a `url` column serialises as an object, not a
+string, and feeding that to `Signal.url` raises out of `parse` and costs the whole
+feed rather than one row (see `_socrata_url`). And `wa_pdc` pages with
+`$limit`/`$offset` and **no `$order`**, which Socrata does not guarantee is stable
+across pages; it also hits the 50-page ceiling at ~42s. Both are known, neither is
+fixed.
+
+Verify an alias table against a real payload before trusting it, and update the
+comment on it to say how far you got.
 
 Two feeds are special cases worth knowing before you touch them:
 
