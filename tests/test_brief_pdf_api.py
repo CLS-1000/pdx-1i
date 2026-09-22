@@ -190,18 +190,10 @@ def test_the_diagram_is_drawn_from_the_records_behind_the_brief(populated, tmp_p
     assert CAPTION.split(".")[0] in text
 
 
-def test_no_diagram_when_the_cited_bodies_share_no_tie(client, tmp_path):
-    """
-    A brief whose bodies are unconnected gets a document, not an empty frame.
-
-    An empty frame would read as "these bodies are unrelated" — a claim the registry
-    does not make. `build_network_drawing` refuses it; the endpoint must not paper
-    over the refusal.
-    """
-    from pdx1.publication.network_diagram import CAPTION
-
+def _one_record_brief(client, entity_ids: list[str]):
+    """Store a brief backed by a single record naming *entity_ids*."""
     store = client.app.state.store
-    store.write([_record("rec_one", ["pge"])])
+    store.write([_record("rec_one", entity_ids)])
     store.write_brief(
         _brief(
             sections=[
@@ -213,6 +205,34 @@ def test_no_diagram_when_the_cited_bodies_share_no_tie(client, tmp_path):
             ]
         )
     )
+
+
+def test_no_diagram_when_the_cited_bodies_share_no_tie(client, tmp_path):
+    """
+    A brief whose bodies are unconnected gets a document, not an empty frame.
+
+    An empty frame would read as "these bodies are unrelated" — a claim the registry
+    does not make. `build_network_drawing` refuses it; the endpoint must not paper
+    over the refusal.
+
+    `metro` and `multco` are both in the registry and share no tie, which is the
+    branch this is named for. An earlier version cited one body only and so tripped
+    the *fewer than two nodes* guard instead — passing without ever reaching the
+    no-tie case. That guard now has its own test below.
+    """
+    from pdx1.publication.network_diagram import CAPTION
+
+    _one_record_brief(client, ["metro", "multco"])
+    r = client.get("/brief/pdf")
+    assert r.status_code == 200
+    assert CAPTION.split(".")[0] not in _text(r.content, tmp_path)
+
+
+def test_no_diagram_when_the_brief_cites_a_single_body(client, tmp_path):
+    """The other refusal: one node is not a network, so there is nothing to draw."""
+    from pdx1.publication.network_diagram import CAPTION
+
+    _one_record_brief(client, ["pge"])
     r = client.get("/brief/pdf")
     assert r.status_code == 200
     assert CAPTION.split(".")[0] not in _text(r.content, tmp_path)
@@ -231,10 +251,48 @@ def test_404_for_an_unknown_brief_id(populated):
     assert "brief_nope" in r.json()["detail"]
 
 
+def _block(monkeypatch, top_level: str) -> None:
+    """Make importing *top_level* (and anything under it) raise ImportError."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def refuse(name, *args, **kwargs):
+        if name == top_level or name.startswith(f"{top_level}."):
+            raise ImportError(f"no {top_level}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", refuse)
+
+
 def test_missing_reportlab_reports_unavailable_not_server_error(populated, monkeypatch):
     """
     reportlab is an optional extra. Without it the feature is unconfigured, not
     broken, and a 500 would send a reader looking for a bug that is not there.
+
+    This blocks `reportlab` itself, which is the failure anyone actually hits.
+    An earlier version of this test blocked `pdf_renderer` instead and passed
+    without ever reaching the bug: that module imports reportlab lazily, inside
+    `render_brief_pdf`, so blocking the wrapper exercised a branch that only
+    fires if pdx1's own module is missing. The real ImportError came from the
+    render call, outside the guard, and escaped as a 500.
+    """
+    _block(monkeypatch, "reportlab")
+    r = populated.get("/brief/pdf")
+    assert r.status_code == 503
+    assert "reportlab" in r.json()["detail"]
+
+
+def test_missing_reportlab_is_reported_by_the_archive_route_too(populated, monkeypatch):
+    """Both routes render through the same helper; both must degrade the same way."""
+    _block(monkeypatch, "reportlab")
+    assert populated.get("/brief/brief_api_001/pdf").status_code == 503
+
+
+def test_a_missing_renderer_module_also_reports_unavailable(populated, monkeypatch):
+    """
+    The other way the import can fail. Kept alongside the reportlab case so the
+    guard is not narrowed back to one of the two.
     """
     import builtins
 
@@ -242,13 +300,11 @@ def test_missing_reportlab_reports_unavailable_not_server_error(populated, monke
 
     def refuse(name, *args, **kwargs):
         if "pdf_renderer" in name:
-            raise ImportError("no reportlab")
+            raise ImportError("no renderer module")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", refuse)
-    r = populated.get("/brief/pdf")
-    assert r.status_code == 503
-    assert "reportlab" in r.json()["detail"]
+    assert populated.get("/brief/pdf").status_code == 503
 
 
 def test_both_pdf_routes_require_the_api_key(tmp_path, monkeypatch):

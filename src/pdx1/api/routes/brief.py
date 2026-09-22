@@ -74,8 +74,21 @@ def _pdf_response(request: Request, brief: Brief) -> Response:
     caching, and a stale PDF served beside a correct JSON brief is the kind of
     divergence this codebase spends its effort avoiding.
     """
+    record_ids = [rid for section in brief.sections for rid in section.source_record_ids]
+    entity_ids = request.app.state.store.entity_ids_for_records(record_ids)
+
+    # Both the wrapper import and the render call have to be inside this, because
+    # `pdf_renderer` imports reportlab lazily -- inside `render_brief_pdf`, not at
+    # module scope -- and raises ImportError from there when the extra is absent.
+    # Guarding only the `from ... import` catches the case where pdx1's own module is
+    # missing, which is not the case anyone hits; the one that actually happens,
+    # reportlab not installed, escaped as a 500 while the route advertised 503.
     try:
         from ...publication.pdf_renderer import render_brief_pdf
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = render_brief_pdf(brief, Path(tmp) / "brief.pdf", entity_ids=entity_ids)
+            body = out.read_bytes()
     except ImportError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -84,13 +97,6 @@ def _pdf_response(request: Request, brief: Brief) -> Response:
                 "Install it with: pip install 'pdx-1i[pdf]'"
             ),
         ) from exc
-
-    record_ids = [rid for section in brief.sections for rid in section.source_record_ids]
-    entity_ids = request.app.state.store.entity_ids_for_records(record_ids)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        out = render_brief_pdf(brief, Path(tmp) / "brief.pdf", entity_ids=entity_ids)
-        body = out.read_bytes()
 
     # The id is store-controlled, but it lands in a response header, so anything
     # outside this set is dropped rather than trusted to be harmless there.
