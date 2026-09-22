@@ -78,9 +78,17 @@ ALWAYS_APPLIED = [
 
 
 def test_always_applied_labels_match_the_step_table():
-    """Guard the list above against a step being renamed out from under it."""
-    known = {label for label, _ in patcher.STEPS}
-    assert set(ALWAYS_APPLIED) <= known, set(ALWAYS_APPLIED) - known
+    """
+    Guard ALWAYS_APPLIED against the step table drifting under it.
+
+    Equality, not a subset. A subset check catches a step being renamed, but
+    passes when a new unconditional step is added to `patcher.STEPS` and left
+    out of this list -- and `test_real_ui_file_is_patchable` would then quietly
+    stop checking that anchor, which is the failure mode this file exists to
+    prevent.
+    """
+    unconditional = {label for label, _ in patcher.STEPS} - patcher.CONDITIONAL_STEPS
+    assert set(ALWAYS_APPLIED) == unconditional
 
 
 def test_real_ui_file_is_patchable(target, capsys):
