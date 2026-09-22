@@ -88,19 +88,6 @@ def test_real_ui_file_is_patchable(target, capsys):
     assert _run(target) == 0
     out = capsys.readouterr().out
     for step_label in ALWAYS_APPLIED:
-    for step_label, _ in patcher.STEPS:
-        if step_label in patcher.CONDITIONAL_STEPS:
-            continue
-    """Every anchor resolves against the UI file as it stands on this commit."""
-    baseline = target.read_text(encoding="utf-8")
-    assert _run(target) == 0
-    out = capsys.readouterr().out
-    expected_steps = [
-        step_label
-        for step_label, _ in patcher.STEPS
-        if step_label != "Legacy v2 block removed" or patcher._V2_SENTINEL in baseline
-    ]
-    for step_label in expected_steps:
         assert step_label in out
 
 
@@ -184,7 +171,7 @@ def _with_legacy_block(target: Path) -> Path:
     return target
 
 
-def test_legacy_v2_block_is_stripped(target, capsys):
+def test_legacy_v2_block_is_stripped_v2_fixture(target, capsys):
     """
     #29's block is dead code once the patcher's own implementation is injected,
     and it still wires input handlers onto the same `w-*` slider ids. Leaving it
