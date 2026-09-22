@@ -92,11 +92,13 @@ brief — is built; see *Not built yet* for what it does and refuses to do.
 
 2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
    GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
-   endpoints they depend on exist; the work is front-end. The visual language also
-   needs to converge on the SPEC-1 monochrome design system (black canvas, white
-   opacity hierarchy, hue reserved for live-status only) — which surface that applies
-   to is an open question, since `citizen-cognisance.html` is deliberately MCM
-   Editorial rather than phosphor.
+   endpoints they depend on exist; the work is front-end. The visual language is no
+   longer an open question across the board: `webmap.html` now holds the SPEC-1
+   monochrome system (black canvas, white opacity hierarchy, `#00FF00`/`#FF0000`
+   reserved for live status and declared as tokens), and `citizen-cognisance.html` is
+   a deliberate exception, MCM Editorial rather than phosphor. What is undecided is
+   `index.html`, the brief reader, which still carries a light multi-hue palette and
+   has no recorded decision either way.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
@@ -763,9 +765,16 @@ does not quietly disappear.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
   with per-record four-gate expansion, Statistics. All depend on graph and record
   endpoints that mostly exist; the work is front-end.
-- **SPEC-1 visual language for the UI** — monochrome `#000` canvas, hierarchy by white
-  opacity ramp, severity by brightness rather than hue, `#00FF00`/`#FF0000` reserved for
-  live status only.
+- **SPEC-1 visual language on `index.html`** — monochrome `#000` canvas, hierarchy by
+  white opacity ramp, brightness rather than hue for emphasis, `#00FF00`/`#FF0000`
+  reserved for live status only. This is now scoped to the brief reader alone.
+  `webmap.html` already holds it, enforced by `tests/test_webmap_ui.py`: an allowlist
+  of the SPEC-1 palette, plus a check that both status hues resolve through a custom
+  property so an inlined `rgba(255,0,0,…)` cannot slip a third colour past the hex
+  scan. `citizen-cognisance.html` is out of scope by choice, not omission — it is MCM
+  Editorial, and the exception is documented above. Whether `index.html` should
+  converge at all is undecided; it is listed here as an open question rather than as
+  agreed work.
 
 ## License
 
