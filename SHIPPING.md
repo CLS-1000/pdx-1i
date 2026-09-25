@@ -112,7 +112,7 @@ written       10
 brief         2 sections; 10 records across 5 feeds; 3 at elevated disposition
 ```
 
-Suite on this checkout, Python 3.13: **484 passed**. Run with
+Suite on this checkout, Python 3.12: **701 passed** (2026-09-25). Run with
 `pytest > /tmp/pytest.log 2>&1; echo $?` and read the file — `pyproject.toml`
 already sets `-q` in `addopts`, so passing `-q` again suppresses the summary
 line entirely, and piping through `tail`/`grep` hides that it is missing.
@@ -145,6 +145,32 @@ and the reason is below.
 | WATCH/Portland Water Bureau | 0 | 403 | 1 | 0.18s | forbidden |
 
 `pdx1 --check-endpoints` agrees: **5 of 15 registered URLs answered**, exit 1.
+
+**Addendum, 2026-09-25.** Two rows in that table have since been corrected, and the
+corrections are in `main`, not pending.
+
+- **OLIS** was not an endpoint problem. Its `odata.nextLink` drops `$format`, so page
+  two onwards came back as Atom XML and `response.json()` raised. Re-adding the
+  parameter on every page fixed it; field names verified 2026-09-07.
+- **WA_PDC** was a wrong dataset id, worked in full under "WA_PDC needed a real fix"
+  below. One detail not recorded there: `tijg-9uu3` is not merely gone, it is absent
+  from the `data.wa.gov` catalogue entirely and looks like a corruption of `tijg-9zyp`
+  (*expenditures*) — which is why probing for a moved endpoint never turned it up. Its
+  alias table is verified as of 2026-09-25: 13 of 14 canonical fields resolve against a
+  live 29-column response. The fourteenth is `aggregate`, and Washington publishes no
+  running cycle total on the contribution row, so the adapter now states none instead
+  of restating the single contribution as one. `kv7h-kjye` is the registered default
+  now rather than something reached through an override, so it counts without an
+  `.env` line; measured together with the five endpoints #45 registered,
+  `--check-endpoints` reads **10 of 15** as of 2026-09-25.
+
+`ORESTAR` and `SEI` are not in that category and should stop being counted as URL rot.
+Oregon publishes no machine-readable feed for either. `data.oregon.gov` carries no
+ORESTAR dataset — the only campaign-finance datasets there are penalty notices — and
+the public transaction search is a session-bound POST form behind `JSESSIONID_ORESTAR`,
+which is why the two public tools for it both drive a headless browser. Closing that
+gap is a harvester or a public-records request, and neither belongs inside a cycle.
+That is a D-step decision, not a bug fix.
 
 ### Live vs the fixture baseline
 
