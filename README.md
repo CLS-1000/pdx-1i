@@ -289,7 +289,7 @@ re-derives it:
 | OregonLive · KOIN | **200** |
 | TriMet watch | **200** |
 | ORESTAR bulk export | 404 — path or filename convention is wrong |
-| WA PDC dataset | 404 — right host and shape, wrong dataset id |
+| WA PDC dataset | 404 at the time — wrong dataset id. Corrected to `kv7h-kjye` and **200** since 2026-09-25 |
 | Willamette Week · NW Politics | 404 |
 | Pamplin Media | SSL handshake failure |
 | OHSU · PPB · NW Natural · Water Bureau | 404 |
@@ -331,10 +331,18 @@ every live row), and neither `CurrentStatus` nor `CurrentAction` exists either. 
 found that `MeasureNumber` is served as a *string* by `Measures` and an *int* by
 `MeasureHistoryActions`, which the join now coerces.
 
-ORESTAR, WA PDC and SEI never returned data, so their spellings are still unverified.
-The mapping *logic* is tested offline; those *names* are not. Correcting a wrong URL is
-data entry, and correcting a wrong column is a one-line change in one alias table;
-neither touches the parse logic.
+WA PDC has since been corrected and verified. The dataset id was wrong — `tijg-9uu3`
+is not in the `data.wa.gov` catalogue and appears to be a corruption of `tijg-9zyp`,
+which is *expenditures* — and contributions are `kv7h-kjye`. Against a live response
+(29 columns) 13 of the 14 canonical fields resolve through the existing alias table.
+The exception is `aggregate`: Washington carries no running cycle total on the
+contribution row, so the engine now states no aggregate rather than restating the
+single contribution as one.
+
+ORESTAR and SEI still return nothing, and that is not URL rot. Oregon publishes no
+machine-readable feed for either: `data.oregon.gov` holds no ORESTAR dataset, and the
+public transaction search is a session-bound POST form. Getting Oregon to parity with
+Washington needs a harvester or a records request, not a corrected URL.
 
 Portland Press is the exception to all of this: RSS is a standard format, so there is
 nothing to verify beyond the URLs themselves.

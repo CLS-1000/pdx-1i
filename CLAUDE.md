@@ -102,13 +102,23 @@ Live probes reach the network from this sandbox. The measured tables are in
   to the opening of `text`. Note that transitions need a `store`: `_harvest_transitions`
   returns `[]` without one, so a bare adapter in a script silently yields no procedural
   state even though the feed is healthy.
-- **WA_PDC works via `PDX1_WA_PDC_URL`.** The registered `tijg-9uu3` is gone (404);
-  `kv7h-kjye` returns 49,367 parseable rows, 23,244 of them from 2026. Verified by
-  running the adapter, not by reading the catalog.
-- **ORESTAR is still 404** on every path tried. Oregon's Socrata catalog search returns
-  *federated results from other states* -- ids that also appear under `data.wa.gov` --
-  and none resolve on `data.oregon.gov`. Do not register one without running the
-  adapter against it.
+- **WA_PDC works, and `kv7h-kjye` is now the registered default** -- no override
+  needed. `tijg-9uu3` is not merely gone, it is not in the `data.wa.gov` catalogue at
+  all and looks like a corruption of `tijg-9zyp` (*expenditures*), which is why probing
+  for a moved endpoint never found it. `kv7h-kjye` returns 49,367 parseable rows,
+  23,244 of them from 2026. Its alias table is **verified** against a live response
+  (2026-09-25): 13 of 14 canonical fields resolve. The fourteenth, `aggregate`, has no
+  column -- Washington carries no running cycle total on the contribution row -- so the
+  adapter now states no aggregate rather than restating the single contribution as one.
+  Note that `filed_at` and `contribution_date` both resolve to `receipt_date`.
+- **ORESTAR is still 404**, and it is not URL rot -- there is no endpoint to find.
+  Oregon's Socrata catalog search returns *federated results from other states* -- ids
+  that also appear under `data.wa.gov` -- and none resolve on `data.oregon.gov`, which
+  carries no ORESTAR dataset (its only campaign-finance datasets are penalty notices).
+  The public transaction search is a session-bound POST form behind
+  `JSESSIONID_ORESTAR`, which is why the public tools for it all drive a browser.
+  Closing this gap is a harvester or a records request, not a corrected URL. Do not
+  register one without running the adapter against it.
 - **SEI has no API**, unchanged and by design.
 
 Two Socrata lessons worth keeping: a `url` column serialises as an object, not a
