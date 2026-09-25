@@ -148,9 +148,15 @@ def _build_story(
     brief, styles, Paragraph, Spacer, Table, TableStyle, colors, inch, entity_ids=None
 ):
     story = []
-    n = len(brief.sections)
     #: Sections plus the footer. The header is unnumbered, matching SPEC-1.
-    total = n + 1
+    total = len(brief.sections) + 1
+    #: Distinct records the brief cites. This counted sections instead, which made a
+    #: two-section brief over ten records announce "2 verified signals" directly under
+    #: a synopsis saying it cleared ten -- the same page contradicting itself. Counted
+    #: as a set because one record cited by two sections is one signal, and drawn from
+    #: `source_record_ids` because that is what the document can vouch for: every id in
+    #: the count also appears in a section body.
+    signals = len({rid for s in brief.sections for rid in s.source_record_ids})
 
     # ── Header ────────────────────────────────────────────────────────────────
     story.append(Paragraph(f"{BRIEF_TITLE} · {esc(brief.date)}", styles["title"]))
@@ -161,7 +167,7 @@ def _build_story(
     story.append(Spacer(1, 6))
     story.append(
         Paragraph(
-            f"↓ {n} verified signal{'s' if n != 1 else ''}",
+            f"↓ {signals} verified signal{'s' if signals != 1 else ''}",
             styles["subtitle"],
         )
     )

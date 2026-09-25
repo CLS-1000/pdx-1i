@@ -65,14 +65,47 @@ def test_synopsis_follows_the_masthead(tmp_path):
     assert "Two bodies filed this cycle" in _text(tmp_path, _brief())
 
 
-def test_verified_signal_count_matches_sections(tmp_path):
-    assert "↓ 2 verified signals" in _text(tmp_path, _brief())
+def test_verified_signal_count_is_the_records_cited_not_the_sections(tmp_path):
+    """
+    The count names signals, so it has to count records.
+
+    It counted sections until a real cycle exposed it: ten records over two
+    sections printed "2 verified signals" directly under a synopsis saying the
+    cycle cleared ten. A brief that contradicts itself on its own first page is
+    worse than one that omits the figure.
+    """
+    from pdx1.models import BriefSection
+
+    brief = _brief(
+        sections=[
+            BriefSection(title="A", body="- one", source_record_ids=["r1", "r2", "r3"]),
+            BriefSection(title="B", body="- two", source_record_ids=["r4", "r5"]),
+        ]
+    )
+    text = _text(tmp_path, brief)
+    assert "↓ 5 verified signals" in text
+    assert "↓ 2 verified signals" not in text
+
+
+def test_a_record_cited_twice_counts_once(tmp_path):
+    """Two sections resting on the same record is one signal, not two."""
+    from pdx1.models import BriefSection
+
+    brief = _brief(
+        sections=[
+            BriefSection(title="A", body="- one", source_record_ids=["r1", "r2"]),
+            BriefSection(title="B", body="- two", source_record_ids=["r2", "r3"]),
+        ]
+    )
+    assert "↓ 3 verified signals" in _text(tmp_path, brief)
 
 
 def test_verified_signal_count_is_singular_for_one(tmp_path):
     from pdx1.models import BriefSection
 
-    brief = _brief(sections=[BriefSection(title="Only", body="- one")])
+    brief = _brief(
+        sections=[BriefSection(title="Only", body="- one", source_record_ids=["r1"])]
+    )
     text = _text(tmp_path, brief)
     assert "↓ 1 verified signal" in text
     assert "verified signals" not in text
