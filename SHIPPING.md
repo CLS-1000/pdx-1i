@@ -112,7 +112,7 @@ written       10
 brief         2 sections; 10 records across 5 feeds; 3 at elevated disposition
 ```
 
-Suite on this checkout, Python 3.13: **484 passed**. Run with
+Suite on this checkout, Python 3.12: **701 passed** (2026-09-25). Run with
 `pytest > /tmp/pytest.log 2>&1; echo $?` and read the file — `pyproject.toml`
 already sets `-q` in `addopts`, so passing `-q` again suppresses the summary
 line entirely, and piping through `tail`/`grep` hides that it is missing.

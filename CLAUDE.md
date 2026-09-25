@@ -52,7 +52,7 @@ engine publishes about real people and institutions.
 ## Layout
 
 ```
-src/pdx1/            44 modules
+src/pdx1/            45 modules
   config.py          settings; every PDX1_* key is documented in .env.example
   models.py          Pydantic schemas — Signal → IntelligenceRecord
   gates.py           the four-gate filter (credibility, volume, velocity, novelty)
@@ -70,11 +70,11 @@ src/pdx1/            44 modules
     normalize.py     money/date/header coercions shared by the adapters
   watch/             6 infrastructure monitors, declared in targets.py
   neutrality/        attribution gate · tone + hedging observations
-  publication/       IssueBuilder · BriefPublisher · PDF renderer
-  api/               FastAPI app, routes (incl. /graph), API-key auth
+  publication/       IssueBuilder · BriefPublisher · PDF renderer · network_diagram
+  api/               FastAPI app, routes (incl. /graph and /brief/pdf), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               36 files, 612 tests
+tests/               39 files, 701 tests
   fixtures/          source payloads replayed by the adapters
 ```
 

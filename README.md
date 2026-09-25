@@ -543,7 +543,7 @@ input yields no records and therefore no brief.
 
 ```
 pdx-1i/
-├── src/pdx1/                  43 modules
+├── src/pdx1/                  45 modules
 │   ├── config.py              settings; every PDX1_* key in .env.example
 │   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
 │   ├── gates.py               the four-gate filter
@@ -563,7 +563,7 @@ pdx-1i/
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
 ├── scripts/                   patch_citizen_weights.py — topic weight sliders
-├── tests/                     38 test files, 670 tests
+├── tests/                     39 test files, 701 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -659,7 +659,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-670 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+701 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
