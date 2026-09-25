@@ -146,6 +146,26 @@ and the reason is below.
 
 `pdx1 --check-endpoints` agrees: **5 of 15 registered URLs answered**, exit 1.
 
+**Addendum, 2026-09-25.** Two rows in that table have since been corrected, and the
+corrections are in `main`, not pending.
+
+- **OLIS** was not an endpoint problem. Its `odata.nextLink` drops `$format`, so page
+  two onwards came back as Atom XML and `response.json()` raised. Re-adding the
+  parameter on every page fixed it; field names verified 2026-09-07.
+- **WA_PDC** was a wrong dataset id. `tijg-9uu3` is not in the `data.wa.gov` catalogue
+  at all and looks like a corruption of `tijg-9zyp` (*expenditures*). Contributions are
+  `kv7h-kjye`, verified 200 with 29 columns on 2026-09-25, 13 of 14 canonical fields
+  resolving. A re-probe on 2026-09-22 measured 5 of 15 with OLIS already green and
+  WA_PDC still on the old id; with this correction it is **6 of 15**.
+
+`ORESTAR` and `SEI` are not in that category and should stop being counted as URL rot.
+Oregon publishes no machine-readable feed for either. `data.oregon.gov` carries no
+ORESTAR dataset — the only campaign-finance datasets there are penalty notices — and
+the public transaction search is a session-bound POST form behind `JSESSIONID_ORESTAR`,
+which is why the two public tools for it both drive a headless browser. Closing that
+gap is a harvester or a public-records request, and neither belongs inside a cycle.
+That is a D-step decision, not a bug fix.
+
 ### Live vs the fixture baseline
 
 | | fixture | live |

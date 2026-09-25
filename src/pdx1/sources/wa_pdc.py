@@ -38,11 +38,17 @@ MAX_PAGES = 50
 
 # Socrata column names for each canonical field, in preference order.
 #
-# UNVERIFIED. The dataset could not be fetched from the environment this mapping was
-# written in, so these names come from a prior PDX-1i implementation rather than from
-# a real response. Matching is case- and punctuation-insensitive. Verify against a live
-# response before treating output as authoritative; a name matching nothing leaves its
-# field empty rather than raising.
+# VERIFIED 2026-09-25 against a live `kv7h-kjye` response (29 columns). Matching is
+# case- and punctuation-insensitive (see `normalize.header_key`), which is what lets
+# the underscored Socrata names match the spaced spellings below. Thirteen of the
+# fourteen canonical fields resolve; `aggregate` is the exception and is documented on
+# its own line. A name matching nothing leaves its field empty rather than raising.
+#
+# Deliberately NOT mapped, though the dataset carries them: `contributor_address`,
+# `contributor_zip` and `contributor_location`. Those are the home addresses of
+# individual donors. The repo publishes public records about institutions and seats,
+# and a donor's street address is a personal identifier -- see the data sensitivity
+# note in CLAUDE.md. Adding them here would put them in published Signal text.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "receipt_id": ("id", "receipt id", "transaction id", "report number"),
     "recipient": ("filer name", "filer", "recipient", "candidate"),
@@ -54,11 +60,29 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "contributor_state": ("contributor state", "state"),
     "contributor_type": ("contributor type", "cash or in kind", "code"),
     "amount": ("amount", "contribution amount"),
+    # Not present in `kv7h-kjye`: Washington does not carry a running cycle aggregate
+    # on the contribution row. Kept because the checked-in fixture supplies it, and
+    # because an empty result here is reported rather than invented -- see `_to_signal`.
     "aggregate": ("aggregate amount", "aggregate"),
     "contribution_date": ("receipt date", "contribution date", "date"),
     "filed_at": ("filed date", "report date", "receipt date"),
     "url": ("url", "link", "report url"),
 }
+
+
+def _socrata_url(raw: Any) -> str | None:
+    """
+    Read Socrata's composite URL cell.
+
+    A Socrata `url` column is not a string: it serialises as
+    `{"url": "...", "description": "..."}`. Handing that dict straight to `Signal.url`
+    raises a Pydantic validation error, which `safe_fetch` turns into an adapter error
+    -- so every live row was lost while the cycle reported a merely-empty feed. The
+    fixture stores a plain string, so both shapes have to work.
+    """
+    if isinstance(raw, dict):
+        raw = raw.get("url", "")
+    return str(raw).strip() or None
 
 
 class WaPdcAdapter(LiveSourceAdapter):
@@ -70,11 +94,11 @@ class WaPdcAdapter(LiveSourceAdapter):
     # Washington PDC contributions, served as a Socrata dataset on the state open-data
     # portal. Washington's disclosure regime exposes a real API where Oregon's does not.
     #
-    # VERIFIED WRONG: HTTP 404 on a live run, 2026-08-06. `data.wa.gov` is the right
-    # host and Socrata is the right shape, but this dataset identifier is not. Find the
-    # current one in the portal's dataset catalogue; the paging and mapping below are
-    # independent of it.
-    feed_url = "https://data.wa.gov/resource/tijg-9uu3.json"
+    # VERIFIED 2026-09-25: HTTP 200, JSON array, 29 columns. The previous identifier
+    # `tijg-9uu3` 404ed on the 2026-08-06 run; it does not exist in the `data.wa.gov`
+    # catalogue and looks like a corruption of `tijg-9zyp`, which is the *expenditures*
+    # dataset. This is the contributions one.
+    feed_url = "https://data.wa.gov/resource/kv7h-kjye.json"
 
     # ── Live fetch ───────────────────────────────────────────────────────────
 
@@ -145,9 +169,12 @@ class WaPdcAdapter(LiveSourceAdapter):
             return None
 
         amount = parse_money(rec.get("amount"))
-        aggregate = parse_money(rec.get("aggregate")) or amount
         contributor_state = rec.get("contributor_state") or "not stated"
-        contribution_date = rec.get("contribution_date") or filed_at.date().isoformat()
+        # `receipt_date` arrives as a full Socrata timestamp ("2026-08-18T00:00:00.000").
+        # The sentence below says "contribution date", so render a date; printing the
+        # timestamp states a filing time the record does not actually pin down.
+        raw_date = parse_timestamp(rec.get("contribution_date"))
+        contribution_date = (raw_date or filed_at).date().isoformat()
 
         text = (
             f"Washington PDC receipt {rec.get('receipt_id') or 'not stated'} reports a "
@@ -160,15 +187,25 @@ class WaPdcAdapter(LiveSourceAdapter):
             f"recorded as {rec.get('contributor_type') or 'not stated'}. The "
             f"contribution date is {contribution_date} and the filing was received "
             f"{filed_at.isoformat()}. Cross-border status: contributor state is "
-            f"{contributor_state} against recipient state WA. Cycle aggregate "
-            f"from this contributor is ${aggregate:,.2f}."
+            f"{contributor_state} against recipient state WA."
         )
+
+        # Only state an aggregate the payload actually carries. `kv7h-kjye` has no
+        # aggregate column, and the previous `or amount` fallback made every live
+        # record assert that the cycle total equalled this single contribution --
+        # a measurement the source never reported. Silence is the correct output.
+        aggregate = parse_money(rec.get("aggregate"))
+        if aggregate:
+            text += (
+                f" Cycle aggregate from this contributor is ${aggregate:,.2f}, "
+                f"as reported on the filing."
+            )
 
         return Signal(
             source=self.name,
             source_type=self.source_type,
             text=text,
-            url=rec.get("url") or None,
+            url=_socrata_url(rec.get("url")),
             author=rec.get("recipient") or None,
             published_at=filed_at,
             credibility=self.credibility,

@@ -95,11 +95,17 @@ elsewhere), and each table carries a comment saying how far it has been confirme
 
 A live probe on 2026-08-21 did reach the network -- earlier sandboxes could not -- and
 found **5 of 15 registered endpoints answering**; the measured table is in
-`SHIPPING.md`. Of the four record feeds, ORESTAR and WA_PDC 404, SEI answers HTML
-because OGEC publishes no API, and OLIS answers 200 with something that is not JSON. So
-the field names are still unverified, but for a different reason than before: the
-endpoints are reachable now, and mostly wrong. Verify an alias table against a real
-payload before trusting it, and update the comment on it to say how far you got.
+`SHIPPING.md`. Two of those results have since been corrected. OLIS answers JSON once
+paging re-adds `$format`, and its field names were verified on 2026-09-07. WA_PDC's 404
+was a wrong dataset id, corrected to `kv7h-kjye` and its alias table verified against a
+live payload on 2026-09-25 -- so the probe now reads **6 of 15**.
+
+That leaves ORESTAR and SEI, and neither is URL rot. Oregon publishes no machine
+-readable campaign-finance feed at all: `data.oregon.gov` carries no ORESTAR dataset,
+and the public transaction search is a session-bound POST form, which is why the public
+tools for it drive a browser. SEI is the same story at OGEC. Do not go looking for the
+endpoint; there isn't one. Verify an alias table against a real payload before trusting
+it, and update the comment on it to say how far you got.
 
 Two feeds are special cases worth knowing before you touch them:
 

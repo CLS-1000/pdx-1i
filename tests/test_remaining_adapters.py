@@ -16,6 +16,7 @@ Everything here runs offline.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -323,3 +324,123 @@ def test_press_still_reads_a_bare_rss_fixture(fixture_dir):
     result = PortlandPressAdapter(fixture_path=fixture_dir / "portland_press.xml").safe_fetch()
     assert result.ok
     assert len(result) == 3
+
+
+# ── WA PDC: the live Socrata schema ──────────────────────────────────────────
+#
+# The rows in `wa_pdc_socrata.json` are real `kv7h-kjye` records captured on
+# 2026-09-25, with `contributor_address`, `contributor_zip` and `contributor_location`
+# stripped before they entered the repo. Everything above this block exercises the
+# adapter against hand-built rows; these tests exist because three defects survived
+# that and only showed up against a real payload.
+
+
+def _socrata_fixture(fixture_dir):
+    return json.loads((fixture_dir / "wa_pdc_socrata.json").read_text())
+
+
+def test_wa_pdc_points_at_the_contributions_dataset():
+    """
+    `tijg-9uu3` is not in the data.wa.gov catalogue; `tijg-9zyp` is *expenditures*.
+    Contributions are `kv7h-kjye`, verified 200 on 2026-09-25.
+    """
+    assert WaPdcAdapter.feed_url == "https://data.wa.gov/resource/kv7h-kjye.json"
+
+
+def test_wa_pdc_reads_the_real_socrata_schema(tmp_path, fixture_dir):
+    rows = _socrata_fixture(fixture_dir)
+    with patch("httpx.get", return_value=_response(payload=rows)):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.ok, result.errors
+    # One row in the fixture has no receipt_date and must drop.
+    assert len(result) == len(rows) - 1
+    for signal in result.signals:
+        assert "not stated" not in signal.text.split("recorded as")[0], signal.text
+
+
+def test_wa_pdc_accepts_socrata_composite_url(tmp_path, fixture_dir):
+    """
+    A Socrata `url` cell is `{"url": ..., "description": ...}`, not a string. Passing
+    the dict to `Signal.url` raises a validation error, which `safe_fetch` reports as
+    an adapter error -- the feed reads as empty rather than broken.
+    """
+    rows = [r for r in _socrata_fixture(fixture_dir) if isinstance(r.get("url"), dict)]
+    assert rows, "fixture must carry at least one composite url cell"
+
+    with patch("httpx.get", return_value=_response(payload=rows)):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.ok, result.errors
+    assert result.signals[0].url == rows[0]["url"]["url"]
+    assert result.signals[0].url.startswith("https://")
+
+
+def test_wa_pdc_states_no_aggregate_when_the_payload_has_none(tmp_path, fixture_dir):
+    """
+    `kv7h-kjye` carries no aggregate column. The previous `or amount` fallback made
+    every live record assert that the cycle total equalled this one contribution --
+    a measurement the source never published.
+    """
+    rows = _socrata_fixture(fixture_dir)
+    assert not any("aggregate" in k for r in rows for k in r)
+
+    with patch("httpx.get", return_value=_response(payload=rows)):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    for signal in result.signals:
+        assert "aggregate" not in signal.text.lower(), signal.text
+
+
+def test_wa_pdc_still_reports_an_aggregate_the_filing_carries(fixture_dir):
+    """The canonical fixture does supply one, and that number must still be stated."""
+    signals = WaPdcAdapter(fixture_path=fixture_dir / "wa_pdc.json").fetch().signals
+    assert "Cycle aggregate from this contributor is $15,000.00" in signals[0].text
+
+
+def test_wa_pdc_renders_a_date_not_a_socrata_timestamp(tmp_path, fixture_dir):
+    rows = _socrata_fixture(fixture_dir)
+    with patch("httpx.get", return_value=_response(payload=rows)):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    for signal in result.signals:
+        sentence = signal.text.split("The contribution date is ")[1]
+        rendered = sentence.split(" and ")[0]
+        assert "T00:00:00" not in rendered, rendered
+        datetime.strptime(rendered, "%Y-%m-%d")
+
+
+def test_wa_pdc_live_rows_clear_the_volume_gate(tmp_path, fixture_dir):
+    """
+    Dropping the invented aggregate sentence shortens every live record. The volume
+    gate needs 50 words, and a feed that silently falls under it publishes nothing.
+    """
+    rows = _socrata_fixture(fixture_dir)
+    with patch("httpx.get", return_value=_response(payload=rows)):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.signals
+    for signal in result.signals:
+        assert len(signal.text.split()) >= 50, len(signal.text.split())
+
+
+def test_wa_pdc_never_publishes_donor_address_fields(tmp_path, fixture_dir):
+    """
+    `kv7h-kjye` carries `contributor_address`, `contributor_zip` and
+    `contributor_location`. They are home addresses of individual donors and must not
+    reach published Signal text -- see the data sensitivity note in CLAUDE.md.
+    """
+    rows = _socrata_fixture(fixture_dir)
+    for row in rows:
+        row["contributor_address"] = "1 Nowhere Lane"
+        row["contributor_zip"] = "98604"
+        row["contributor_location"] = {"latitude": "45.7", "longitude": "-122.5"}
+
+    with patch("httpx.get", return_value=_response(payload=rows)):
+        result = WaPdcAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+
+    assert result.signals
+    for signal in result.signals:
+        assert "Nowhere Lane" not in signal.text
+        assert "98604" not in signal.text
+        assert "45.7" not in signal.text
