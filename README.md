@@ -12,13 +12,29 @@ infrastructure, covering the bi-state metro: Multnomah, Washington and Clackamas
 counties in Oregon, and Clark County in Washington.
 
 PDX-1i is the regional module of the SPEC-1 architecture. It harvests public records,
-scores them through a four-gate deterministic filter, resolves the entities they name,
+scored through a four-gate deterministic filter, resolves the entities they name,
 measures them against a rolling baseline, and writes structured intelligence records —
 then assembles a neutrality-gated brief when publication triggers.
 
 Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily cycle,
 a PDF renderer for the brief, and two single-page viewers — the daily brief and the
-force-directed political web. What is *not* built is listed at the bottom.
+force-directed political web. What is not built is listed at the bottom.
+
+## At a glance
+
+PDX-1i is a deterministic OSINT pipeline for the Portland metro. It harvests public
+records, resolves the offices and institutions they mention, applies a strict four-gate
+filter, measures each surviving signal against a rolling baseline, and publishes only
+what can be traced to a stored record.
+
+The system is built to do three things well:
+
+- collect and normalize public records from the metro footprint
+- identify the institutions, jurisdictions, and seats those records reference
+- report whether a pattern is materially new, materially large, and materially time-sensitive
+
+It is not built to speculate, attribute motive, or present anonymous conclusions as fact.
+The neutrality layer is a real editorial constraint, not a decorative one.
 
 ---
 
@@ -55,28 +71,34 @@ force-directed political web. A daily cron cycle drives the whole thing. Six
 infrastructure-watch monitors run alongside the record feeds and feed the same pipeline.
 
 As of the current build, the transport, scoring, storage, and publication machinery
-are fully exercised. Live connectivity is partial: OLIS, two press feeds, and one watch
-target answer; the remaining feed URLs are documented 404s, and no record feed has yet
-returned a row that confirmed its field-alias table against real data.
+are fully exercised. Live connectivity is partial but no longer marginal: **10 of 15
+registered endpoints answer**, measured 2026-09-22. Two of the four record feeds return
+real rows — OLIS gives 307 measures plus 1,283 procedural transitions with its field
+mapping verified against a real payload, and WA PDC gives 6.37M rows, of which the
+adapter parses 49,350 signals across 3,907 distinct dates. ORESTAR publishes no bulk
+endpoint at all (see *Not built yet*), and SEI has no API by design.
 
 ### What it will be
 
-Three bodies of work remain, in priority order:
+Two bodies of work remain, in priority order. A third — network diagrams in the PDF
+brief — is built; see *Not built yet* for what it does and refuses to do.
 
-1. **Feed verification.** Correct the dead endpoint URLs and confirm each adapter's
-   field-alias table against a real payload. This is data entry and one alias-table
-   pass per feed — no new machinery required. Until it is done, the engine publishes
-   only press records and watch events.
+1. **The two feeds that remain unverified.** ORESTAR and SEI. Neither is a dead URL
+   to correct: ORESTAR serves transactions only through an interactive session-scoped
+   search with no bulk export, and SEI has no API by design. Both need a decision about
+   shape — scrape a session, or fetch a download by hand — not a data-entry pass. The
+   alias tables for the feeds that *do* answer are confirmed only as far as their
+   comments say.
 
 2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
    GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
-   endpoints they depend on exist; the work is front-end. The visual language also
-   needs to converge on the SPEC-1 monochrome design system (black canvas, white
-   opacity hierarchy, hue reserved for live-status only).
-
-3. **Network diagrams in the PDF brief.** The renderer currently emits text only —
-   headings, paragraphs, tables. Structural diagrams of the political web are the
-   natural next addition once the data layer is verified.
+   endpoints they depend on exist; the work is front-end. The visual language is no
+   longer an open question across the board: `webmap.html` now holds the SPEC-1
+   monochrome system (black canvas, white opacity hierarchy, `#00FF00`/`#FF0000`
+   reserved for live status and declared as tokens), and `citizen-cognisance.html` is
+   a deliberate exception, MCM Editorial rather than phosphor. What is undecided is
+   `index.html`, the brief reader, which still carries a light multi-hue palette and
+   has no recorded decision either way.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
@@ -241,11 +263,11 @@ different:
 
 | Adapter | Live shape |
 |---|---|
-| **ORESTAR** | the Secretary of State bulk transaction export — a ZIP containing one CSV, unwrapped by `_decode`. Published per calendar year, so `feed_url` carries a `{year}` the adapter resolves at construction. |
+| **ORESTAR** | a ZIP containing one CSV, unwrapped by `_decode`, with `feed_url` carrying a `{year}` the adapter resolves. That is the shape the adapter implements — but **no published export of that shape was found**, and the registered URL 404s. See *Not built yet*. The ZIP and CSV handling is independent of the URL and stays valid if a bulk file appears. |
 | **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
 | **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
-| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object, and rejects HTML loudly rather than returning nothing. |
-| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled only OregonLive. |
+| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object. |
+| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled fewer. |
 
 The four record feeds map field names through an alias table, so correcting a name is a
 one-line change in one place, and a name matching nothing leaves its field empty and
@@ -272,6 +294,12 @@ re-derives it:
 | Pamplin Media | SSL handshake failure |
 | OHSU · PPB · NW Natural · Water Bureau | 404 |
 | PGE watch | DNS failure |
+
+That table is a record of one dated run, not current status. Several of its rows have
+since been corrected and the fixes are registered: WA PDC now answers on a working
+dataset id, and four of the five dead watch feeds were re-pointed on **2026-09-22**.
+ORESTAR is the one confirmed to have no replacement. Current per-endpoint status lives
+in [`SHIPPING.md`](SHIPPING.md); `pdx1 --check-endpoints` measures it directly.
 
 Two things follow from that run, both aimed at making the next correction cheap:
 
@@ -449,6 +477,8 @@ Live runs should pass the real clock.
 | `GET /brief` | the most recently published brief |
 | `GET /brief/archive` | every published brief, newest first, paginated |
 | `GET /brief/{brief_id}` | one brief by ID |
+| `GET /brief/pdf` | the latest brief rendered in the SPEC-1 WorldStateBrief format |
+| `GET /brief/{brief_id}/pdf` | one archived brief, same format |
 | `GET /graph` | the political web — every node and tie, with record activity |
 | `GET /graph/districts` | the district roster, for the District Map |
 | `GET /graph/{node_id}` | one node, its ties, its neighbours, and the records touching it |
@@ -461,6 +491,24 @@ the allowed origins.
 `GET /brief` reads the store rather than process memory, so a brief assembled by
 `python -m pdx1.pipeline` or by `pdx1-scheduler` is served here, and survives a restart.
 It 404s only when no cycle has ever published one.
+
+The two `/pdf` routes serve that same brief in the SPEC-1 WorldStateBrief format —
+`title · date`, synopsis, verified-signal count, `[i/total]` sections, and a footer
+carrying the `run_id`. It is a rendering, not a second assembly: the renderer writes no
+prose of its own, so the PDF and the JSON are the same document in two formats, and
+both read a brief that a cycle already published and the attribution gate already
+cleared.
+
+They also append the network diagram, which is the reason these live behind an endpoint
+rather than in the caller. `render_brief_pdf` takes `entity_ids` as a parameter because
+a `Brief` carries *record* ids and resolving them to the bodies named needs the store;
+the route is the layer holding both, and resolves one to the other via
+`entity_ids_for_records`. The diagram is still skipped when it would claim nothing —
+fewer than two known nodes, or no tie between them.
+
+PDF rendering needs the `pdf` extra. Without reportlab installed these routes return
+**503**, not 500: the feature is unconfigured rather than broken, and the distinction
+is the difference between an `.env` fix and a bug hunt.
 
 ## Storage
 
@@ -514,7 +562,8 @@ pdx-1i/
 │   └── demos/                 runnable walkthrough
 ├── ui/                        index.html (brief) · webmap.html (political web)
 │                              citizen-cognisance.html (public landing) · DESIGN.md
-├── tests/                     27 test files, 484 tests
+├── scripts/                   patch_citizen_weights.py — topic weight sliders
+├── tests/                     38 test files, 670 tests
 │   └── fixtures/              source payloads replayed by the adapters
 ├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
 └── pyproject.toml
@@ -610,7 +659,7 @@ ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-484 tests. The suite leans on boundary conditions — a signal at exactly 0.5
+670 tests. The suite leans on boundary conditions — a signal at exactly 0.5
 credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
 silently changes what the engine publishes.
 
@@ -660,26 +709,80 @@ Two things separate it from `ui/webmap.html`, and both are deliberate:
   interchangeable, and the role-based registry remains the authority for anything the
   engine publishes.
 
+#### Topic weight sliders are applied, not shipped
+
+The page as committed ranks the list by signal freshness and carries no sliders.
+`scripts/patch_citizen_weights.py` adds them — a five-topic weight bar (housing, civic
+money, public safety, environment, state politics) that re-ranks the list by a weighted
+score while any slider sits off 1.0, and falls back to freshness when they are all at
+1.0.
+
+```bash
+python scripts/patch_citizen_weights.py --dry-run   # print the diff, write nothing
+python scripts/patch_citizen_weights.py             # apply, after a timestamped backup
+```
+
+It is idempotent: every injection is guarded by a sentinel drawn from its own text, so a
+second run reports `No changes needed (already patched).` rather than stacking a copy. A
+missing anchor aborts before any write and leaves the file byte-identical. `--file`
+targets a copy.
+
+Kept out of the committed page deliberately. Two independent implementations of this
+feature once landed at the same time and both were applied to the file, which put two
+`TOPIC_WEIGHTS` declarations in one script scope and stopped the whole `<script>` block
+parsing — taking the map and filters down with it, not just the sliders. Keeping the
+page pristine and the feature in a tested patcher is what prevents a repeat;
+`tests/test_patch_citizen_weights.py` asserts the committed file carries no patcher
+output and references no helper the patcher defines.
+
+**The weighting is unverified against live data.** Its matchers read `pattern`,
+`source_type` and `confidence` off the signal payload, and no other code on the page
+reads those three fields. The `/api/v1/nodes/{id}/signal` endpoint is not served from
+this repo, so whether they arrive has never been checked. If they do not, every matcher
+returns false and the ranking quietly degrades to a recency ordering — the sliders move
+and nothing much changes. Worth confirming against a real payload before relying on it.
+
 ## Not built yet
 
-Each of these is a clean follow-on. What is listed here is genuinely absent — if a
-capability is described anywhere above, it exists and has tests.
+Each of these is a clean follow-on. Every entry not struck through is genuinely absent —
+if a capability is described anywhere above, it exists and has tests. A struck-through
+entry has since been built and is kept here, marked, so the record of what was promised
+does not quietly disappear.
 
-- **Working endpoints for most feeds.** The transport, mapping and fault tolerance are
-  done and exercised against the real internet — a live run completes and publishes.
-  What is missing is correct URLs: as of 2026-08-06 only OLIS, two press feeds and one
-  watch target answer, and no record feed has yet returned a row, so no field mapping
-  has been confirmed against real data. Every failure is recorded per-endpoint in
-  *Fixture replay vs live fetch* and beside the URL in the source. This is data entry
-  plus one alias-table pass, not new machinery.
-- **Network diagrams in the PDF.** `render_brief_pdf` emits text — headings, paragraphs
-  and tables. No diagram is drawn.
+- **Working endpoints for the remaining feeds.** The transport, mapping and fault
+  tolerance are done and exercised against the real internet — a live run completes and
+  publishes. Two of the four record feeds now return real rows, measured on
+  **2026-09-22** by running the adapters rather than by reading a catalog: OLIS gives
+  307 measures plus 1,283 procedural transitions with its field mapping verified against
+  a real payload, and WA PDC gives 49,367 parseable rows via `PDX1_WA_PDC_URL`. What is
+  still missing is ORESTAR and SEI, and neither is a URL correction. ORESTAR 404s on
+  every path tried, and the 2026-09-22 search found no public bulk endpoint to replace
+  it: transactions are served only by a session-scoped interactive search that exposes
+  no export. Harvesting it means emulating that session and scraping paginated HTML — a
+  different shape from this adapter, whose `parse` is pure and whose fetch expects one
+  document. SEI has no API by design. Both need a decision about shape before any
+  mapping work; what remains for the feeds that *do* answer is an alias-table pass.
+  Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and beside the
+  URL in the source.
+- ~~**Network diagrams in the PDF.**~~ **Built.** `render_brief_pdf` takes an optional
+  `entity_ids` and appends a diagram of the registry ties among them, drawn from the
+  role-based registry with shape carrying `group` and a disclosure tie dashed. It draws
+  nothing for fewer than two known nodes or when those nodes share no tie, because an
+  empty frame would read as "these bodies are unconnected" — a claim the data does not
+  make. See `src/pdx1/publication/network_diagram.py`.
 - **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
   with per-record four-gate expansion, Statistics. All depend on graph and record
   endpoints that mostly exist; the work is front-end.
-- **SPEC-1 visual language for the UI** — monochrome `#000` canvas, hierarchy by white
-  opacity ramp, severity by brightness rather than hue, `#00FF00`/`#FF0000` reserved for
-  live status only.
+- **SPEC-1 visual language on `index.html`** — monochrome `#000` canvas, hierarchy by
+  white opacity ramp, brightness rather than hue for emphasis, `#00FF00`/`#FF0000`
+  reserved for live status only. This is now scoped to the brief reader alone.
+  `webmap.html` already holds it, enforced by `tests/test_webmap_ui.py`: an allowlist
+  of the SPEC-1 palette, plus a check that both status hues resolve through a custom
+  property so an inlined `rgba(255,0,0,…)` cannot slip a third colour past the hex
+  scan. `citizen-cognisance.html` is out of scope by choice, not omission — it is MCM
+  Editorial, and the exception is documented above. Whether `index.html` should
+  converge at all is undecided; it is listed here as an open question rather than as
+  agreed work.
 
 ## License
 

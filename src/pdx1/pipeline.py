@@ -366,6 +366,31 @@ def summarize(parsed: ParsedSignal, limit: int = 240) -> str:
 # ── The cycle ────────────────────────────────────────────────────────────────
 
 
+def _anchor(settings: Settings, signals: list[Signal]) -> datetime:
+    """
+    Pick the instant the velocity gate measures against.
+
+    Fixture mode anchors to the newest harvested signal. That exists because the
+    checked-in payloads carry fixed dates: against wall-clock time every fixture would
+    age out of the velocity window and a replay would publish nothing.
+
+    **Live mode uses the real clock**, which is what the fixture rationale implies and
+    what the README has always said live runs should do. Anchoring a live run to its
+    own newest signal lets one bad timestamp decide the window for everything else,
+    and that is not hypothetical: a single WA PDC record dated nine days in the future
+    pulled the anchor forward and the velocity gate dropped 51,028 of 51,029 harvested
+    signals. The cycle still "succeeded" -- it wrote a record and published a brief of
+    one section -- which is the failure mode worth fearing, because nothing in the run
+    log says the morning's brief is empty for a reason that has nothing to do with the
+    news.
+
+    An explicit `now` (from `--as-of`) still wins over both.
+    """
+    if settings.live_fetch:
+        return datetime.now(timezone.utc)
+    return max((s.published_at for s in signals), default=datetime.now(timezone.utc))
+
+
 def run_cycle(
     settings: Settings | None = None,
     adapters: list[SourceAdapter] | None = None,
@@ -419,7 +444,7 @@ def run_cycle(
         errors.extend(f"{fetch_result.source}: {e}" for e in fetch_result.errors)
 
     if now is None:
-        now = max((s.published_at for s in signals), default=datetime.now(timezone.utc))
+        now = _anchor(settings, signals)
 
     run_id = make_run_id(now)
     outcomes = [_outcome(run_id, f) for f in fetched]
@@ -633,6 +658,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--init-store",
+        action="store_true",
+        help=(
+            "Create the JSONL and SQLite store at the configured paths and exit. "
+            "The schema is otherwise created implicitly the first time a store is "
+            "opened, which is fine in practice and unhelpful on a clean host -- "
+            "there is no command to point a deploy document at. This is that command."
+        ),
+    )
+    parser.add_argument(
         "--check-endpoints",
         dest="check_endpoints",
         action="store_true",
@@ -741,6 +776,55 @@ def bootstrap_olis(settings: Settings) -> int:
     return 1 if result.errors else 0
 
 
+def init_store(settings: Settings) -> int:
+    """
+    Create the store at the configured paths and report where they landed.
+
+    `DualWriteStore` creates directories and runs the schema on construction, so
+    opening one is the whole operation -- the schema was always created implicitly on
+    first use. That works and gives a deploy document nothing to point at, which is
+    why this exists as a named command.
+
+    Printing the resolved paths matters as much as creating them: on the VM they must
+    land on the persistent SSD rather than the boot disk, and this is how that gets
+    confirmed before the first 06:00 run instead of after a reboot loses the store.
+
+    Split out of `main` to keep it under the complexity ceiling CI enforces, the same
+    reason `_publish` is not inline in `run_cycle`.
+    """
+    store = DualWriteStore(settings.store_path, settings.db_path, settings.briefs_path)
+    print("store initialised")
+    print(f"  jsonl   {store.jsonl_path}")
+    print(f"  sqlite  {store.db_path}")
+    print(f"  briefs  {store.briefs_path}")
+    return 0
+
+
+def _report(result: CycleResult, settings: Settings) -> None:
+    """
+    Print one cycle's summary.
+
+    Split out of `main` for the complexity ceiling CI enforces -- `main` sat exactly
+    at the limit, so adding the `--init-store` branch required giving some of it back.
+    This block is pure output and reads as one thing.
+    """
+    print(f"run {result.run_id}")
+    print(f"  harvested     {result.harvested}")
+    print(f"  parsed        {result.parsed}")
+    print(f"  opportunities {result.opportunities}")
+    if result.dropped:
+        detail = ", ".join(f"{k}={v}" for k, v in sorted(result.dropped.items()))
+        print(f"  dropped by    {detail}")
+    print(f"  written       {result.written}")
+    print(f"  store         {settings.store_path} + {settings.db_path}")
+
+    if result.brief:
+        print(f"  brief         {result.brief.brief_id} ({len(result.brief.sections)} sections)")
+        print(f"                {result.brief.headline}")
+    else:
+        print("  brief         not triggered")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
@@ -756,6 +840,9 @@ def main(argv: list[str] | None = None) -> int:
         level=getattr(logging, settings.log_level, logging.INFO),
         format="%(levelname)s %(name)s :: %(message)s",
     )
+
+    if args.init_store:
+        return init_store(settings)
 
     if args.check_endpoints:
         return check_endpoints(settings)
@@ -774,21 +861,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     result = run_cycle(settings=settings, adapters=adapters, now=now)
 
-    print(f"run {result.run_id}")
-    print(f"  harvested     {result.harvested}")
-    print(f"  parsed        {result.parsed}")
-    print(f"  opportunities {result.opportunities}")
-    if result.dropped:
-        detail = ", ".join(f"{k}={v}" for k, v in sorted(result.dropped.items()))
-        print(f"  dropped by    {detail}")
-    print(f"  written       {result.written}")
-    print(f"  store         {settings.store_path} + {settings.db_path}")
-
-    if result.brief:
-        print(f"  brief         {result.brief.brief_id} ({len(result.brief.sections)} sections)")
-        print(f"                {result.brief.headline}")
-    else:
-        print("  brief         not triggered")
+    _report(result, settings)
 
     for note in result.observations:
         print(f"  [info] {note}")

@@ -93,19 +93,43 @@ shapes through alias tables (`_COLUMN_ALIASES` in `orestar.py`, `_FIELD_ALIASES`
 elsewhere), and each table carries a comment saying how far it has been confirmed. The
 *mapping logic* is tested and the *field names* are mostly not.
 
-A live probe on 2026-08-21 did reach the network -- earlier sandboxes could not -- and
-found **5 of 15 registered endpoints answering**; the measured table is in
-`SHIPPING.md`. Two of those results have since been corrected. OLIS answers JSON once
-paging re-adds `$format`, and its field names were verified on 2026-09-07. WA_PDC's 404
-was a wrong dataset id, corrected to `kv7h-kjye` and its alias table verified against a
-live payload on 2026-09-25 -- so the probe now reads **6 of 15**.
+Live probes reach the network from this sandbox. The measured tables are in
+`SHIPPING.md`; as of **2026-09-22**, of the four record feeds:
 
-That leaves ORESTAR and SEI, and neither is URL rot. Oregon publishes no machine
--readable campaign-finance feed at all: `data.oregon.gov` carries no ORESTAR dataset,
-and the public transaction search is a session-bound POST form, which is why the public
-tools for it drive a browser. SEI is the same story at OGEC. Do not go looking for the
-endpoint; there isn't one. Verify an alias table against a real payload before trusting
-it, and update the comment on it to say how far you got.
+- **OLIS works, and its mapping is verified against a real payload.** 307 measures
+  plus 1,283 procedural transitions, real URLs and dates. `title` is `None` on every
+  measure, which is by design -- `Signal.title` is optional and publication falls back
+  to the opening of `text`. Note that transitions need a `store`: `_harvest_transitions`
+  returns `[]` without one, so a bare adapter in a script silently yields no procedural
+  state even though the feed is healthy.
+- **WA_PDC works, and `kv7h-kjye` is now the registered default** -- no override
+  needed. `tijg-9uu3` is not merely gone, it is not in the `data.wa.gov` catalogue at
+  all and looks like a corruption of `tijg-9zyp` (*expenditures*), which is why probing
+  for a moved endpoint never found it. `kv7h-kjye` returns 49,367 parseable rows,
+  23,244 of them from 2026. Its alias table is **verified** against a live response
+  (2026-09-25): 13 of 14 canonical fields resolve. The fourteenth, `aggregate`, has no
+  column -- Washington carries no running cycle total on the contribution row -- so the
+  adapter now states no aggregate rather than restating the single contribution as one.
+  Note that `filed_at` and `contribution_date` both resolve to `receipt_date`.
+- **ORESTAR is still 404**, and it is not URL rot -- there is no endpoint to find.
+  Oregon's Socrata catalog search returns *federated results from other states* -- ids
+  that also appear under `data.wa.gov` -- and none resolve on `data.oregon.gov`, which
+  carries no ORESTAR dataset (its only campaign-finance datasets are penalty notices).
+  The public transaction search is a session-bound POST form behind
+  `JSESSIONID_ORESTAR`, which is why the public tools for it all drive a browser.
+  Closing this gap is a harvester or a records request, not a corrected URL. Do not
+  register one without running the adapter against it.
+- **SEI has no API**, unchanged and by design.
+
+Two Socrata lessons worth keeping: a `url` column serialises as an object, not a
+string, and feeding that to `Signal.url` raises out of `parse` and costs the whole
+feed rather than one row (see `_socrata_url`). And `wa_pdc` pages with
+`$limit`/`$offset` and **no `$order`**, which Socrata does not guarantee is stable
+across pages; it also hits the 50-page ceiling at ~42s. Both are known, neither is
+fixed.
+
+Verify an alias table against a real payload before trusting it, and update the
+comment on it to say how far you got.
 
 Two feeds are special cases worth knowing before you touch them:
 

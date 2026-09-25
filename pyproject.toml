@@ -55,6 +55,10 @@ dev = [
     "tzlocal>=4.0",
     "reportlab>=4.0",
     "uvicorn[standard]>=0.29",
+    # Reads the rendered PDF back. The brief format is asserted against extracted
+    # page text, not the story list, so without this the format tests would skip
+    # rather than fail and CI would report green on an unrendered format.
+    "pypdf>=4.0",
 ]
 
 [project.scripts]

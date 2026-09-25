@@ -108,6 +108,23 @@ def _env_bool_strict(key: str) -> bool | None:
     )
 
 
+def _resolve_api_host(environment: str) -> str:
+    """
+    Where the API listens.
+
+    Loopback by default. The API carries records assembled from public sources, but it
+    also exposes the store and is guarded only by an API key, and a Compute Engine
+    instance with 0.0.0.0:8000 open is reachable by anything that finds the external
+    IP. Binding loopback means a misconfigured firewall rule cannot turn a private
+    service into a public one by accident.
+
+    `PDX1_API_HOST=0.0.0.0` still works for the case where it genuinely must be
+    reachable -- behind a reverse proxy, say -- but that is now a deliberate line in
+    an .env file rather than the default nobody chose.
+    """
+    return _env("PDX1_API_HOST", "127.0.0.1")
+
+
 def _resolve_live_fetch(environment: str) -> bool:
     """
     Decide fixture replay vs live HTTP -- the single switch, with no production default.
@@ -224,6 +241,18 @@ class Settings:
     #: How far back a session's BeginDate may be and still be harvested.
     olis_session_lookback_days: int = 540
 
+    #: True when PDX1_ENVIRONMENT was actually set, rather than defaulted. The
+    #: scheduler refuses to start without it; everything else tolerates the default.
+    environment_declared: bool = False
+    #: Whether the scheduler process also serves the HTTP API in a background thread.
+    #: OFF by default: on the VM `pdx1-api` owns port 8000 as its own unit, and a
+    #: scheduler that also bound 8000 would collide with it -- under
+    #: `Restart=on-failure` that is a crash loop, not a visible error.
+    scheduler_embedded_api: bool = False
+    #: Address the API binds to. Loopback by default -- see `_resolve_api_host`.
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
+
     live_fetch: bool = False
     #: When False the vocabulary gates -- tone and hedging -- are bypassed; source
     #: language is published as-is while citation discipline (attribution gate)
@@ -239,6 +268,10 @@ class Settings:
         except ValueError:
             tier = AnomalyTier.TIER_1
 
+        # Defaults to development on purpose: the CLI, the API and the test suite all
+        # build Settings, and none of them should need a variable set to run. The
+        # scheduler is the process that must not guess, and it enforces that itself
+        # via `require_declared_environment()` -- see scheduler.py.
         environment = _env("PDX1_ENVIRONMENT", "development")
 
         return cls(
@@ -288,6 +321,10 @@ class Settings:
             olis_session_lookback_days=_env_int("PDX1_OLIS_SESSION_LOOKBACK_DAYS", 540),
             # D1: no fixture default in production. `_env_bool("PDX1_LIVE", False)`
             # would resolve an unset or misspelled value to a silent fixture replay.
+            environment_declared=bool(os.environ.get("PDX1_ENVIRONMENT", "").strip()),
+            scheduler_embedded_api=_env_bool("PDX1_SCHEDULER_EMBEDDED_API", False),
+            api_host=_resolve_api_host(environment),
+            api_port=_env_int("PDX1_API_PORT", 8000),
             live_fetch=_resolve_live_fetch(environment),
             tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )

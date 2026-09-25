@@ -70,19 +70,23 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _socrata_url(raw: Any) -> str | None:
+def _socrata_url(value: object) -> str | None:
     """
-    Read Socrata's composite URL cell.
+    Unwrap Socrata's URL column type.
 
-    A Socrata `url` column is not a string: it serialises as
-    `{"url": "...", "description": "..."}`. Handing that dict straight to `Signal.url`
-    raises a Pydantic validation error, which `safe_fetch` turns into an adapter error
-    -- so every live row was lost while the cycle reported a merely-empty feed. The
-    fixture stores a plain string, so both shapes have to work.
+    A Socrata column of type `url` serialises as an object -- `{"url": "...",
+    "description": "..."}` -- not as a string, so handing it straight to `Signal.url`
+    fails validation and takes the whole feed down with it: `parse` raises, and one
+    bad column reads downstream as "Washington filed no contributions today".
+
+    Accepts the plain-string form too, because not every Socrata dataset declares the
+    column that way and the adapter should not care which it gets.
     """
-    if isinstance(raw, dict):
-        raw = raw.get("url", "")
-    return str(raw).strip() or None
+    if isinstance(value, dict):
+        value = value.get("url")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 class WaPdcAdapter(LiveSourceAdapter):
@@ -94,10 +98,20 @@ class WaPdcAdapter(LiveSourceAdapter):
     # Washington PDC contributions, served as a Socrata dataset on the state open-data
     # portal. Washington's disclosure regime exposes a real API where Oregon's does not.
     #
-    # VERIFIED 2026-09-25: HTTP 200, JSON array, 29 columns. The previous identifier
-    # `tijg-9uu3` 404ed on the 2026-08-06 run; it does not exist in the `data.wa.gov`
-    # catalogue and looks like a corruption of `tijg-9zyp`, which is the *expenditures*
-    # dataset. This is the contributions one.
+    # VERIFIED REACHABLE 2026-09-22: 200, and `$select=count(1)` reports 6,375,722 rows
+    # carrying the contribution columns this adapter maps (amount, contributor_name,
+    # committee_id, election_year, receipt_date). Measured by querying the dataset, not
+    # by reading the catalogue.
+    #
+    # `tijg-9uu3` is not in the data.wa.gov catalogue at all -- it looks like a
+    # corruption of `tijg-9zyp`, the *expenditures* dataset, which is why probing
+    # for a moved endpoint never found it.
+    #
+    # Replaces `tijg-9uu3`, which 404s and was still registered here after being
+    # recorded as dead on 2026-08-06 -- the working id had been found and used only as
+    # a PDX1_WA_PDC_URL override, so a default run kept hitting the dead one.
+    #
+    # The field names remain only partly confirmed; see _FIELD_ALIASES below.
     feed_url = "https://data.wa.gov/resource/kv7h-kjye.json"
 
     # ── Live fetch ───────────────────────────────────────────────────────────

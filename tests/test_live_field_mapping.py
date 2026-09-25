@@ -481,3 +481,77 @@ def test_olis_combined_pages_are_cached_as_one_array(tmp_path):
 
     cached = json.loads(adapter.cache_path().read_text(encoding="utf-8"))
     assert isinstance(cached, list) and len(cached) == 1
+
+
+# ── Socrata column types ─────────────────────────────────────────────────────
+
+
+def test_socrata_url_column_object_is_unwrapped():
+    """
+    A Socrata `url` column serialises as an object, not a string.
+
+    Found against the live WA PDC dataset: `{"url": "...", "description": "..."}`
+    went straight into `Signal.url`, pydantic rejected it, and `parse` raised -- which
+    takes down the *whole feed*, not one row. Downstream that reads as "Washington
+    filed no contributions today", which is a false statement about public records.
+    """
+    from pdx1.sources.wa_pdc import _socrata_url
+
+    assert _socrata_url({"url": "https://example.invalid/r/1"}) == "https://example.invalid/r/1"
+    assert _socrata_url({"url": "https://example.invalid/r/1", "description": "x"}) == (
+        "https://example.invalid/r/1"
+    )
+
+
+def test_socrata_url_accepts_the_plain_string_form():
+    """Not every dataset declares the column as a url type; the adapter shouldn't care."""
+    from pdx1.sources.wa_pdc import _socrata_url
+
+    assert _socrata_url("https://example.invalid/r/2") == "https://example.invalid/r/2"
+    assert _socrata_url("  https://example.invalid/r/3  ") == "https://example.invalid/r/3"
+
+
+def test_socrata_url_absent_or_empty_is_none_not_a_crash():
+    """A missing URL is a row with no link, never a dead feed."""
+    from pdx1.sources.wa_pdc import _socrata_url
+
+    for value in (None, "", "   ", {}, {"description": "no url key"}, 42, []):
+        assert _socrata_url(value) is None, value
+
+
+def test_a_url_object_does_not_take_down_the_whole_feed():
+    """
+    The regression, at the level that matters.
+
+    One malformed column used to raise out of `parse` and cost every row in the
+    payload. Rule 6: a dead feed must never halt a cycle -- and a feed that returns
+    nothing because of one column is the same failure wearing a different hat.
+    """
+    import json
+
+    from pdx1.sources.wa_pdc import WaPdcAdapter
+
+    rows = [
+        {
+            "id": "1",
+            "filer_name": "Committee A",
+            "contributor_name": "Donor A",
+            "amount": "100.00",
+            "receipt_date": "2026-01-15T00:00:00.000",
+            "url": {"url": "https://example.invalid/report/1"},
+        },
+        {
+            "id": "2",
+            "filer_name": "Committee B",
+            "contributor_name": "Donor B",
+            "amount": "250.00",
+            "receipt_date": "2026-01-16T00:00:00.000",
+            "url": "https://example.invalid/report/2",
+        },
+    ]
+
+    signals = WaPdcAdapter().parse(json.dumps(rows))
+
+    assert len(signals) == 2, "one bad column must not cost the other rows"
+    assert str(signals[0].url) == "https://example.invalid/report/1"
+    assert str(signals[1].url) == "https://example.invalid/report/2"
