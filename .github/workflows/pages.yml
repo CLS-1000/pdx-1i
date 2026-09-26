@@ -1,0 +1,47 @@
+name: Publish site
+
+# Serves the public landing page at the site root. Only ui/ is published:
+# citizen-cognisance.html becomes index.html, the brief viewer moves to
+# brief.html, and webmap.html keeps its name. Nothing else in the repo ships.
+#
+# Pages has no /api/v1 behind it, so the landing page reports "API offline ·
+# static graph" and draws its fallback dataset. Point it at a running API with
+# ?api=https://<host> once one is public.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "ui/**", ".github/workflows/pages.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage site
+        run: |
+          mkdir _site
+          cp ui/citizen-cognisance.html _site/index.html
+          cp ui/citizen-cognisance.html _site/citizen-cognisance.html
+          cp ui/index.html              _site/brief.html
+          cp ui/webmap.html             _site/webmap.html
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
