@@ -132,6 +132,10 @@ class DualWriteStore:
             if briefs_path is not None
             else self.jsonl_path.with_name(f"{self.jsonl_path.stem}_briefs.jsonl")
         )
+        #: One line per cycle, written whether or not a brief published. Plain JSON
+        #: rather than a model: it is an operational log, and a run that crashed
+        #: before building any model still has to leave a line.
+        self.runs_path = self.jsonl_path.with_name(f"{self.jsonl_path.stem}_runs.jsonl")
         self._ensure_paths()
         self._init_db()
 
@@ -184,6 +188,33 @@ class DualWriteStore:
         self._append_jsonl(pending)
         self._insert_sqlite(pending)
         return len(pending)
+
+    def write_run(self, line: dict) -> None:
+        """
+        Append one run-ledger line, flushed and fsynced.
+
+        This is the daily evidence for the unattended count: a quiet day, a partial
+        day and a crashed day each leave one line that tells them apart, where
+        otherwise all three leave the same trace -- no brief.
+        """
+        with self.runs_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(line, sort_keys=True, default=str) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def iter_runs(self) -> Iterator[dict]:
+        """Every run-ledger line, oldest first. Blank or torn lines are skipped."""
+        if not self.runs_path.exists():
+            return
+        with self.runs_path.open(encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    yield json.loads(raw)
+                except json.JSONDecodeError:
+                    logger.warning("runs ledger: skipped unreadable line")
 
     def _append_jsonl(self, records: list[IntelligenceRecord]) -> None:
         with self.jsonl_path.open("a", encoding="utf-8") as fh:

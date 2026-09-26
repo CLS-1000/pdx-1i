@@ -25,7 +25,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .anomaly import BaselineRegistry
@@ -148,6 +148,12 @@ class CycleResult:
     adapters: list[AdapterOutcome] = field(default_factory=list)
     #: What the harvest reached. Also stored on the brief.
     coverage: FeedCoverage | None = None
+    #: Why the trigger fired, or an empty tuple when it did not.
+    trigger_reasons: tuple[str, ...] = ()
+    #: Why no brief published this cycle; None when one did.
+    no_brief_reason: str | None = None
+    #: Stored records loaded into the rolling baselines before scoring.
+    baseline_seeded: int = 0
 
     @property
     def stored(self) -> int:
@@ -392,7 +398,7 @@ def _anchor(settings: Settings, signals: list[Signal]) -> datetime:
     return max((s.published_at for s in signals), default=datetime.now(timezone.utc))
 
 
-def run_cycle(
+def _run_cycle(
     settings: Settings | None = None,
     adapters: list[SourceAdapter] | None = None,
     now: datetime | None = None,
@@ -415,6 +421,10 @@ def run_cycle(
 
     resolver = EntityResolver(NODES, ALIASES)
     baselines = BaselineRegistry(settings.baseline_window_days)
+    # A trigger handed in by the caller carries its own state. One built here starts
+    # from the store, so the floor cadence and accumulated weight survive the process
+    # -- the scheduler builds a fresh one every morning.
+    seed_trigger_from_store = trigger is None
     trigger = trigger or TriggerState(
         weight_threshold=settings.trigger_weight_threshold,
         floor_days=settings.trigger_floor_days,
@@ -448,6 +458,10 @@ def run_cycle(
         now = _anchor(settings, signals)
 
     run_id = make_run_id(now)
+    baseline_seeded = seed_state(
+        store, baselines, trigger if seed_trigger_from_store else None,
+        settings.baseline_window_days, now,
+    )
     outcomes = [_outcome(run_id, f) for f in fetched]
     for outcome in outcomes:
         # Logged at warning when the feed did not deliver, so a partial cycle is
@@ -461,6 +475,7 @@ def run_cycle(
         errors=errors,
         adapters=outcomes,
         coverage=_coverage(outcomes),
+        baseline_seeded=baseline_seeded,
     )
 
     # ── 02 Parse ──
@@ -534,11 +549,166 @@ def run_cycle(
     # ── 07 Store ──
     result.written = store.write(records)
 
-    decision = trigger.evaluate(now)
-    if decision.should_publish and records:
-        _publish(result, records, run_id, now, settings, store, trigger, errors)
-
+    _decide(result, records, run_id, now, settings, store, trigger, errors)
     return result
+
+
+def _decide(
+    result: CycleResult,
+    records: list[IntelligenceRecord],
+    run_id: str,
+    now: datetime,
+    settings: Settings,
+    store: DualWriteStore,
+    trigger: TriggerState,
+    errors: list[str],
+) -> None:
+    """Evaluate the trigger, publish if it fires, and record why when nothing did."""
+    decision = trigger.evaluate(now)
+    result.trigger_reasons = decision.reasons
+    if not records:
+        result.no_brief_reason = "no records cleared the gates"
+    elif not decision.should_publish:
+        result.no_brief_reason = (
+            f"trigger not met: weight {decision.accumulated_weight:.2f} < "
+            f"{trigger.weight_threshold:.2f}, no {trigger.publish_tier.value} anomaly, "
+            f"floor of {trigger.floor_days}d not reached"
+        )
+    else:
+        _publish(result, records, run_id, now, settings, store, trigger, errors)
+        if result.brief is None:
+            result.no_brief_reason = "every section was withheld by the attribution gate"
+
+
+def seed_state(
+    store: DualWriteStore,
+    baselines: BaselineRegistry,
+    trigger: TriggerState | None,
+    window_days: int,
+    now: datetime,
+) -> int:
+    """
+    Load what earlier cycles stored into this cycle's baselines and trigger.
+
+    Baselines get every stored record whose `published_at` falls inside the window,
+    keyed and valued exactly as `run_cycle` observes them (source, composite score), so
+    a sigma reading measures against the stated 90 days rather than against whatever
+    else arrived in the same run. The trigger, when given, gets the last publication
+    time and the weight accrued by records created since then.
+
+    One pass over ground truth. Returns how many records seeded the baselines.
+    """
+    latest = store.latest_brief() if trigger is not None else None
+    if trigger is not None and latest is not None:
+        trigger.last_published_at = latest.produced_at
+
+    cutoff = now - timedelta(days=window_days)
+    seeded = 0
+    for record in store.iter_jsonl():
+        if cutoff <= record.published_at <= now:
+            baselines.baseline(record.source).add(record.confidence, record.published_at)
+            seeded += 1
+        if latest is not None and record.created_at > latest.produced_at:
+            trigger.add_weight(record.confidence)
+    return seeded
+
+
+def run_cycle(
+    settings: Settings | None = None,
+    adapters: list[SourceAdapter] | None = None,
+    now: datetime | None = None,
+    store: DualWriteStore | None = None,
+    trigger: TriggerState | None = None,
+) -> CycleResult:
+    """
+    Run one full intelligence cycle and write its line to the run ledger.
+
+    `now` anchors the velocity gate. With live fetching it defaults to the real clock;
+    with fixture replay, to the newest harvested signal, because anchoring a replay to
+    real time would drop every record on velocity as the fixtures age. An explicit
+    `now` wins over both.
+
+    The ledger line is written in every case -- a published brief, a quiet day, and a
+    cycle that raised -- because those three otherwise leave the same trace.
+    """
+    settings = settings or Settings.from_env()
+    store = store or DualWriteStore(
+        settings.store_path, settings.db_path, settings.briefs_path
+    )
+    started = utcnow()
+    try:
+        result = _run_cycle(settings, adapters, now, store, trigger)
+    except Exception as exc:
+        _write_ledger(store, run_ledger_failure(settings, started, exc))
+        raise
+    _write_ledger(store, run_ledger_line(result, settings, started))
+    return result
+
+
+def _write_ledger(store: DualWriteStore, line: dict) -> None:
+    # Never let the ledger take down a cycle that otherwise worked: a failed write is
+    # logged loudly, and the next morning's missing line is what the alert catches.
+    try:
+        store.write_run(line)
+    except Exception:  # noqa: BLE001
+        logger.exception("run ledger write failed for %s", line.get("run_id"))
+
+
+def run_ledger_line(result: CycleResult, settings: Settings, started: datetime) -> dict:
+    """The ledger line for a cycle that completed."""
+    failed = [a.source for a in result.adapters if not a.ok]
+    answered = [a for a in result.adapters if a.ok]
+    if not answered:
+        status = "fail"
+    elif failed:
+        status = "partial"
+    else:
+        status = "ok"
+    return {
+        "run_id": result.run_id,
+        "started_at": started.isoformat(),
+        "finished_at": utcnow().isoformat(),
+        "live": settings.live_fetch,
+        "environment": settings.environment,
+        "status": status,
+        "adapters": [
+            {
+                "source": a.source,
+                "ok": a.ok,
+                "items": a.items,
+                "from_cache": a.from_cache,
+                **({"error": a.errors[0]} if a.errors else {}),
+            }
+            for a in result.adapters
+        ],
+        "failed_adapters": failed,
+        "harvested": result.harvested,
+        "parsed": result.parsed,
+        "opportunities": result.opportunities,
+        "dropped": dict(sorted(result.dropped.items())),
+        "written": result.written,
+        "baseline_seeded": result.baseline_seeded,
+        "trigger_reasons": list(result.trigger_reasons),
+        "brief_id": result.brief.brief_id if result.brief else None,
+        "brief_sections": len(result.brief.sections) if result.brief else 0,
+        "no_brief_reason": result.no_brief_reason,
+        "errors": len(result.errors),
+    }
+
+
+def run_ledger_failure(settings: Settings, started: datetime, exc: BaseException) -> dict:
+    """The ledger line for a cycle that raised before it could return."""
+    return {
+        "run_id": make_run_id(started),
+        "started_at": started.isoformat(),
+        "finished_at": utcnow().isoformat(),
+        "live": settings.live_fetch,
+        "environment": settings.environment,
+        "status": "fail",
+        "brief_id": None,
+        "brief_sections": 0,
+        "no_brief_reason": f"cycle raised {type(exc).__name__}: {exc}",
+    }
 
 
 def _publish(
