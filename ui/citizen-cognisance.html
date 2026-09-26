@@ -466,7 +466,7 @@ footer { border-top: 1px solid var(--rule-2); background: var(--paper); }
   <section class="lede">
     <div class="shell"><div class="lede-in">
       <h2><span class="num" id="n-nodes">—</span> nodes. <span class="num" id="n-links">—</span> relationships.
-        Live signal from Portland's political ecosystem.</h2>
+        <span id="lede-tail">Portland's political ecosystem, drawn from public records.</span></h2>
       <p>Who holds authority over whom, where the money moves, and where the friction
         sits — drawn from public records and refreshed as the engine indexes them.
         Built for reporters, researchers and residents who need the structure, not the story.</p>
@@ -1050,6 +1050,12 @@ async function loadSignals() {
 function paintBadge() {
   const badge = document.getElementById('badge');
   const text = document.getElementById('badge-text');
+  // The headline claims live signal only while the engine is actually serving it.
+  const tail = document.getElementById('lede-tail');
+  const live = apiOnline === true && [...signals.values()].some(e => e.sig);
+  tail.textContent = live
+    ? "Live signal from Portland's political ecosystem."
+    : "Portland's political ecosystem, drawn from public records.";
 
   if (apiOnline === false) {
     badge.dataset.state = 'offline';
