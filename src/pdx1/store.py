@@ -37,6 +37,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
+from .ledger import read_ledger
 from .models import Brief, IntelligenceRecord, utcnow
 
 logger = logging.getLogger(__name__)
@@ -204,17 +205,7 @@ class DualWriteStore:
 
     def iter_runs(self) -> Iterator[dict]:
         """Every run-ledger line, oldest first. Blank or torn lines are skipped."""
-        if not self.runs_path.exists():
-            return
-        with self.runs_path.open(encoding="utf-8") as fh:
-            for raw in fh:
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    yield json.loads(raw)
-                except json.JSONDecodeError:
-                    logger.warning("runs ledger: skipped unreadable line")
+        return read_ledger(self.runs_path)
 
     def _append_jsonl(self, records: list[IntelligenceRecord]) -> None:
         with self.jsonl_path.open("a", encoding="utf-8") as fh:
