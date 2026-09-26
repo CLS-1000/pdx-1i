@@ -120,6 +120,10 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     # --- executive / post-passage ----------------------------------------
     ("president_signed",           r"President signed",                 "signed_by_presiding", {"signer": "president"}),
     ("speaker_signed",             r"Speaker signed",                   "signed_by_presiding", {"signer": "speaker"}),
+    # Signed into law with some items struck. The measure is enacted; a later "Veto
+    # sustained" row concerns the struck items, not the measure (see step()).
+    ("governor_signed_line_item",  r"Governor signed with line-item veto", "enacted_line_item_veto",
+                                                                        {"veto_type": "line_item"}),
     ("governor_signed",            r"Governor signed",                  "enacted", {}),
     ("art_v_time_allowed",         r"The time allowed by Article V[^.]*", None, {}),
     ("art_v_time_allowed",         r"The time allowed by Article V[^.]*", None, {}),
@@ -257,15 +261,24 @@ CHAMBER_FLOW = {
                "adopted", "veto_sustained", "veto_overridden"},
     "adopted": {"signed_by_presiding", "committee", "adopted", "third_reading", "passed"},
     "failed": {"committee", "failed", "second_reading", "third_reading", "passed", "adopted"},
-    "signed_by_presiding": {"signed_by_presiding", "enacted", "vetoed", "committee"},
-    # proc_track repeats this key four times with an identical value, a copy-paste
-    # artifact. Collapsed to one here because ruff F601 is a hard CI gate; the built
-    # dict is identical either way, and `test_olis_actions_parity` asserts that.
-    "enacted": {"vetoed", "veto_sustained"},
+    "signed_by_presiding": {"signed_by_presiding", "enacted", "enacted_line_item_veto", "vetoed", "committee"},
+    # Enacted is final for the measure. proc_track used to allow enacted -> vetoed /
+    # veto_sustained, which only HB5050 (2019R1) and SB5506 (2023R1) ever used -- both
+    # line-item vetoes, and both law. That path is modelled below instead.
+    "enacted": set(),
+    "enacted_line_item_veto": {"line_item_veto_sustained"},
     "vetoed": {"tabled", "veto_sustained", "veto_overridden", "committee", "passed"},
     "tabled": {"veto_sustained", "veto_overridden"},
 }
-TERMINAL = {"veto_sustained", "veto_overridden"}
+TERMINAL = {"veto_sustained", "veto_overridden", "line_item_veto_sustained"}
+
+# After a line-item veto the measure is law. OLIS records the Legislature declining to
+# override the struck items with the same text as a full veto ("Veto sustained in
+# accordance with Art. V, sec. 15b"), so the row is read by where the measure stands:
+# from enacted_line_item_veto it means the item veto stood, not that the measure died.
+CONTEXTUAL_STATE = {
+    ("enacted_line_item_veto", "veto_sustained"): "line_item_veto_sustained",
+}
 
 
 class Halt(Exception):
@@ -288,6 +301,7 @@ class Item:
 
 def step(item: Item, to_state: str, chamber: str, occurred_at: str, rule_id: str, payload: dict):
     frm = item.states.get(chamber)
+    to_state = CONTEXTUAL_STATE.get((frm, to_state), to_state)
     # crossover: origin chamber passed -> second chamber introduction is legal
     if frm is None and to_state == "introduced":
         pass
@@ -335,7 +349,7 @@ def replay(measure_id: str, rows: list[dict]):
 #:
 #: Bump this deliberately when re-copying from proc_track. A failure here on a
 #: deliberate sync is expected and is the whole point: the copy cannot drift quietly.
-RULES_VERSION = "5d6c1b8bf766"
+RULES_VERSION = "f08744a669f3"
 
 #: States worth a Signal. These are the procedural facts a reader would call news:
 #: a measure moved, or it stopped moving.
@@ -363,6 +377,8 @@ EMITTABLE: frozenset[str] = frozenset(
         "veto_overridden",
         "signed_by_presiding",
         "tabled",
+        "enacted_line_item_veto",
+        "line_item_veto_sustained",
     }
 )
 
@@ -412,7 +428,9 @@ def transitions(rows: list[dict]) -> tuple[Item, list[Transition]]:
                     action_id=int(r["MeasureHistoryId"]),
                     chamber=r["Chamber"],
                     from_state=before,
-                    to_state=e.state,
+                    # What step() actually recorded: CONTEXTUAL_STATE can reinterpret
+                    # the emitted state (a veto sustained after a line-item veto).
+                    to_state=item.states[r["Chamber"]],
                     action_text=r["ActionText"],
                     action_date=r["ActionDate"],
                     rule_id=e.rule_id,
