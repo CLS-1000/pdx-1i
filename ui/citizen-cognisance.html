@@ -991,7 +991,14 @@ async function fetchSignal(id) {
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
   try {
     const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}/signal`, { signal: ctrl.signal });
-    if (res.status === 404) return { ok: true, sig: null };       // API up, node has no signal
+    // A 404 means "API up, node has no signal" only when the API sent it. A static
+    // host with no API behind it (GitHub Pages) also 404s, with an HTML page, and
+    // reading that as a live API would put a false status on the front page.
+    if (res.status === 404) {
+      const type = res.headers.get('content-type') || '';
+      if (type.includes('application/json')) return { ok: true, sig: null };
+      throw new Error('HTTP 404 (not the API)');
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const payload = await res.json();
     return { ok: true, sig: payload && payload.signal ? payload.signal : null };

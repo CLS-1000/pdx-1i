@@ -691,6 +691,14 @@ python -m http.server 8300 --directory ui
 # open http://localhost:8300/citizen-cognisance.html
 ```
 
+It is published as the site's front page by `.github/workflows/pages.yml` on every push
+to `main` that touches `ui/` — at <https://cls-1000.github.io/pdx-1i/>, with the brief
+viewer at `brief.html` and the political web at `webmap.html`. Pages serves no API, so
+the live site draws the static fallback and says so; append `?api=https://<host>` to
+point it at a running engine (that host must list the Pages origin in
+`PDX1_CORS_ORIGINS`). The public front page therefore carries the fallback dataset's
+named officeholders, which is the confined exception described below.
+
 Node colour is signal freshness (LIVE < 6h, RECENT < 24h, STALE beyond), node shape is
 category, node size is relationship degree, and edge colour is relationship type. Below
 768px the force graph is replaced by the same nodes as a list ranked by freshness, since
