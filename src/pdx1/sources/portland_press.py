@@ -29,19 +29,20 @@ logger = logging.getLogger(__name__)
 
 #: Tracked feeds. Live mode polls every one of them.
 #
-#: Status from a live run on 2026-08-06 -- two of five answered, and the adapter
-#: harvested from those two rather than failing:
-#:   OregonLive       200
-#:   KOIN             200
-#:   Willamette Week  404  -- URL needs correcting
-#:   Pamplin Media    SSL handshake failure -- host may not serve modern TLS
-#:   NW Politics      404  -- URL needs correcting
+#: Verified 2026-09-22 with a browser-style User-Agent -- all five return RSS:
+#:   OregonLive       Arc outbound feed
+#:   Willamette Week  moved to the Arc outbound feed (old /feed/ is 404)
+#:   KOIN             WordPress feed
+#:   Pamplin Media    pamplinmedia.com is gone since the 2024 Carpenter Media sale;
+#:                    the Portland Tribune feed replaces it
+#:   NW Politics      OPB's all-local-news feed. OPB publishes no politics-only feed,
+#:                    so this outlet is broader than its label.
 FEEDS: dict[str, str] = {
     "OregonLive": "https://www.oregonlive.com/arc/outboundfeeds/rss/",
-    "Willamette Week": "https://www.wweek.com/feed/",
+    "Willamette Week": "https://www.wweek.com/arc/outboundfeeds/rss/?outputType=xml",
     "KOIN": "https://www.koin.com/feed/",
-    "Pamplin Media": "https://pamplinmedia.com/feed/",
-    "NW Politics": "https://www.opb.org/news/feed/",
+    "Pamplin Media": "https://portlandtribune.com/feed/",
+    "NW Politics": "https://www.opb.org/arc/outboundfeeds/rss/?outputType=xml",
 }
 
 #: Declared so the adapter still satisfies the single-`feed_url` contract every other

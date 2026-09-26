@@ -60,6 +60,7 @@ from .sources import (
     SourceAdapter,
     WaPdcAdapter,
 )
+from .sources.base import DEFAULT_HEADERS
 from .sources.portland_press import FEEDS as PRESS_FEEDS
 from .store import DualWriteStore
 from .trigger import TriggerState
@@ -712,25 +713,59 @@ def check_endpoints(settings: Settings) -> int:
         targets.append((f"PORTLAND_PRESS/{outlet}", url))
 
     failures = 0
+    kinds: dict[str, int] = {}
     width = max(len(name) for name, _ in targets)
     for name, url in targets:
         try:
+            # Range keeps the probe to one byte. Probe only -- ingest never sends it,
+            # so a 206 here is expected and not a truncated harvest.
+            # A windowed URL (ORESTAR) is probed over today only. Sent literally, the
+            # placeholders make an unbounded search that times out.
+            today = datetime.now(timezone.utc).strftime("%m/%d/%Y")
+            probe_url = url.replace("{start}", today).replace("{end}", today)
             response = httpx.get(
-                url, timeout=15, follow_redirects=True, headers={"Range": "bytes=0-0"}
+                probe_url,
+                timeout=15,
+                follow_redirects=True,
+                headers={**DEFAULT_HEADERS, "Range": "bytes=0-0"},
             )
-            status = str(response.status_code)
-            ok = response.status_code < 400
+            code = response.status_code
+            status = str(code)
+            ok = code < 400
+            kind = "" if ok else _probe_failure_kind(code)
         except Exception as exc:  # noqa: BLE001 - report every failure mode alike
             status = type(exc).__name__
             ok = False
+            kind = "network"
         if not ok:
             failures += 1
-        print(f"  {'ok  ' if ok else 'FAIL'} {name:<{width}}  {status:<20} {url}")
+            kinds[kind] = kinds.get(kind, 0) + 1
+        print(
+            f"  {'ok  ' if ok else 'FAIL'} {name:<{width}}  {status:<20} "
+            f"{(kind or ''):<8} {url}"
+        )
 
     print(f"\n{len(targets) - failures}/{len(targets)} endpoints answered.")
     if failures:
-        print("Override a moved endpoint with the matching PDX1_*_URL setting.")
+        print("  " + ", ".join(f"{k}: {v}" for k, v in sorted(kinds.items())))
+        if kinds.get("moved"):
+            print("moved   -> override with the matching PDX1_*_URL setting.")
+        if kinds.get("blocked"):
+            print("blocked -> the server refused the request; check headers or bot walls.")
+        if kinds.get("network"):
+            print("network -> no connection made; check DNS/proxy/firewall on this host.")
     return 1 if failures else 0
+
+
+def _probe_failure_kind(code: int) -> str:
+    """Name the fix a failed status points at: moved, blocked, or server-side."""
+    if code in (404, 410):
+        return "moved"
+    if code in (401, 403, 429):
+        return "blocked"
+    if code >= 500:
+        return "server"
+    return "other"
 
 
 def bootstrap_olis(settings: Settings) -> int:

@@ -70,6 +70,15 @@ MAX_RETRY_DELAY_S = 60.0
 #: reports the last failure, which is the outcome a 06:00 job needs.
 DEFAULT_RETRY_BUDGET_S = 120.0
 
+#: Headers sent on every live GET. httpx's default `python-httpx/x.y` User-Agent is
+#: refused outright by some publisher WAFs (portland.gov answered 403 to it on
+#: 2026-09-22), which reads as a dead feed when the feed is fine. Callers' own headers
+#: win on conflict.
+DEFAULT_HEADERS: dict[str, str] = {
+    "User-Agent": "Mozilla/5.0 (compatible; pdx-1i/0.1; +https://github.com/CLS-1000/pdx-1i)",
+    "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+}
+
 #: Status codes worth a second attempt. 429 is the server asking for one; 5xx is the
 #: server having a bad moment. Every other 4xx is a settled answer about the request.
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504, 507, 508, 509})
@@ -320,6 +329,7 @@ class LiveSourceAdapter(SourceAdapter):
                 f"{self.name}: httpx is required for live fetch -- "
                 "install it with: pip install 'pdx-1i[live]'"
             ) from exc
+        kwargs["headers"] = {**DEFAULT_HEADERS, **(kwargs.get("headers") or {})}
         response = httpx.get(url, timeout=self.timeout, follow_redirects=True, **kwargs)
         self._http_status = getattr(response, "status_code", None)
         return response

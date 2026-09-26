@@ -8,12 +8,14 @@ states what the filing says and attributes nothing.
 Two payload shapes are accepted, and `parse` detects which it has:
 
 - **JSON array** — the checked-in fixture shape, already in canonical field names.
-- **CSV** — the live shape. The Secretary of State publishes transactions as a bulk
-  ZIP containing one CSV, so `_decode` unwraps the archive and `parse` reads the CSV.
+- **CSV** — the live shape. There is no bulk file (the old
+  `{year}_report_transactions.zip` path 404s). The live fetch runs ORESTAR's public
+  transaction search for a rolling date window, then pulls `XcelCNESearch` -- the
+  "Export To Excel" link -- in the same session. That returns an .xlsx, which is
+  flattened to CSV text so the cache and `parse` see one format.
 
-Real exports do not use the fixture's field names, so `_COLUMN_ALIASES` maps the
-canonical names onto the header spellings a real export may carry. See the note on
-that table before trusting live output.
+ORESTAR caps a search at 5,000 rows, so a window that hits the cap is halved and
+fetched in pieces. A single day still over the cap is logged as truncated.
 """
 
 from __future__ import annotations
@@ -22,8 +24,10 @@ import csv
 import io
 import json
 import logging
+import re
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from xml.etree import ElementTree as ET  # nosec B405 -- parses the SOS's own export
 from typing import Any
 
 from ..models import Signal, SourceType
@@ -34,15 +38,28 @@ logger = logging.getLogger(__name__)
 
 _ZIP_MAGIC = b"PK\x03\x04"
 
+ORESTAR_BASE = "https://secure.sos.state.or.us/orestar/"
+# The "Export To Excel Format" link on a results page. It exports whatever search the
+# session last ran, so it only works with the search response's cookies.
+EXPORT_URL = ORESTAR_BASE + "XcelCNESearch"
+# Contributions (TranType=C) filed in [start, end]. Dates are MM/DD/YYYY.
+SEARCH_URL = (
+    ORESTAR_BASE + "cneSearch.do?cneSearchButtonName=search&cneSearchTranType=C"
+    "&cneSearchTranStartDate={start}&cneSearchTranEndDate={end}"
+)
+ROW_CAP = 5000
+_RECORDS_FOUND = re.compile(r"([\d,]+)\s+records\s+found", re.IGNORECASE)
+_XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
 # Header spellings accepted for each canonical field, in preference order.
 #
-# UNVERIFIED. The bulk export could not be fetched from the development environment
-# used to write this mapping, so these spellings are drawn from the two prior PDX-1i
-# implementations rather than from a downloaded file. Matching is case- and
-# punctuation-insensitive (see `normalize.header_key`), which absorbs spacing and
-# casing differences but not genuinely different column names. Verify against a real
-# export before treating live ORESTAR output as authoritative; a header that matches
-# nothing leaves its field empty rather than raising.
+# VERIFIED 2026-09-22 against a live XcelCNESearch export. Its headers are:
+# Tran Id, Original Id, Tran Date, Tran Status, Filer, Contributor/Payee, Sub Type,
+# Amount, Aggregate Amount, Filer Id, Filed Date, Book Type, Occptn Txt, Emp Name,
+# Emp City, Emp State, Addr Line1, City, State, Zip, Purp Desc, ... (45 in all).
+# The first alias in each tuple is the live spelling; the rest are kept so older
+# exports and hand-made files still map. Matching is case- and punctuation-insensitive
+# (see `normalize.header_key`).
 _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "tran_id": ("tran id", "tranid", "transaction id", "id"),
     "committee": ("filer", "filer name", "committee", "committee name"),
@@ -50,13 +67,13 @@ _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "contributor": ("contributor payee", "contributor", "contributor name", "payee"),
     "contributor_city": ("city", "contributor city"),
     "contributor_state": ("state", "contributor state"),
-    "contributor_employer": ("employer", "contributor employer", "occupation"),
+    "contributor_employer": ("emp name", "employer", "contributor employer", "occupation"),
     "contribution_type": ("sub type", "subtype", "contribution type", "book type"),
     "amount": ("amount", "transaction amount"),
     "aggregate": ("aggregate amount", "aggregate"),
     "transaction_date": ("tran date", "trandate", "transaction date", "date"),
     "filed_at": ("filed date", "filed at", "filed", "received date"),
-    "purpose": ("purpose", "purpose of expenditure", "description"),
+    "purpose": ("purp desc", "purpose", "purpose of expenditure", "description"),
     "url": ("url", "link"),
 }
 
@@ -68,43 +85,90 @@ class OrestarAdapter(LiveSourceAdapter):
     source_type = SourceType.ORESTAR
     # A filed contribution report is a primary public record.
     credibility = 0.9
-    # Oregon Secretary of State bulk transaction export -- a ZIP containing one CSV.
-    # `{year}` is filled in at fetch time from the current calendar year.
-    #
-    # VERIFIED WRONG, and on 2026-09-22 verified to have no public replacement. The
-    # search was exhaustive enough to be worth not repeating:
-    #
-    #   - This URL 404s (re-confirmed 2026-09-22).
-    #   - The SOS campaign-finance page and its historical-data page link to exactly
-    #     three things: the ORESTAR web app, a data.oregon.gov catalogue query, and a
-    #     support mailbox. Neither page offers a bulk file.
-    #   - data.oregon.gov holds no ORESTAR transaction dataset. Its only campaign-
-    #     finance datasets are Penalty Notices (`fku5-vh2b`, 844 rows, reachable;
-    #     `t6qa-n2ph`, 403 non-tabular) -- enforcement actions, not contributions, so
-    #     not a substitute for this feed.
-    #   - Transactions are served only by the interactive app at
-    #     secure.sos.state.or.us/orestar (`gotoPublicTransactionSearch.do`): a
-    #     session-scoped JSP search whose results POST redirect-loops without the full
-    #     hidden form state, and which exposes no export link.
-    #
-    # So the data appears to be behind an interactive search rather than a public bulk
-    # endpoint. Harvesting it would mean emulating that session and scraping paginated
-    # HTML -- a different shape from this adapter, whose `parse` is pure and whose
-    # fetch expects one document. That is a design decision, not a URL correction.
-    #
-    # The ZIP and CSV handling below is independent of the URL and stays valid if a
-    # bulk file reappears; pass `year=` to try another year without a code change.
-    feed_url = "https://sos.oregon.gov/elections/Documents/orestar/{year}_report_transactions.zip"
+    # ORESTAR public transaction search; `{start}`/`{end}` are filled per fetch from a
+    # rolling window. An override may be any URL: a `cneSearch.do` URL uses the
+    # search-then-export flow, anything else (a CSV, JSON or ZIP file) is one GET.
+    # `{year}` is still accepted in an override for backward compatibility.
+    feed_url = SEARCH_URL
 
-    def __init__(self, *args, year: int | None = None, **kwargs) -> None:
+    def __init__(
+        self, *args, year: int | None = None, lookback_days: int = 7, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
         self._year = year or datetime.now(timezone.utc).year
-        # Bind the year into whichever URL is in effect -- the class default, or an
-        # override the base class has already applied. Reading `type(self).feed_url`
-        # here instead would discard the override, and a corrected URL is still
-        # allowed to be year-templated.
+        # Late and amended filings land days after the transaction date, so the window
+        # overlaps day to day; the novelty gate drops what has already been seen.
+        self.lookback_days = max(1, int(lookback_days))
+        # Bind into whichever URL is in effect -- the class default or an override the
+        # base class already applied. Not str.format: `{start}`/`{end}` stay unbound.
         if "{year}" in self.feed_url:
-            self.feed_url = self.feed_url.format(year=self._year)
+            self.feed_url = self.feed_url.replace("{year}", str(self._year))
+
+    # ── Live fetch: search, then export ──────────────────────────────────────
+
+    def _is_search(self) -> bool:
+        return "cneSearch.do" in self.feed_url
+
+    def _fetch_live(self) -> str:
+        if not self._is_search():
+            return super()._fetch_live()
+
+        end = datetime.now(timezone.utc).date()
+        start = end - timedelta(days=self.lookback_days - 1)
+        sheets = self._export_window(start, end)
+
+        header: list[str] | None = None
+        body: list[list[str]] = []
+        for rows in sheets:
+            if not rows:
+                continue
+            if header is None:
+                header = rows[0]
+            body.extend(rows[1:])
+
+        out = io.StringIO()
+        if header is not None:
+            writer = csv.writer(out)
+            writer.writerow(header)
+            writer.writerows(body)
+        logger.info("%s: %d transaction(s) for %s..%s", self.name, len(body), start, end)
+        return out.getvalue()
+
+    def _window_url(self, start: date, end: date) -> str:
+        return self.feed_url.replace("{start}", start.strftime("%m/%d/%Y")).replace(
+            "{end}", end.strftime("%m/%d/%Y")
+        )
+
+    def _export_window(self, start: date, end: date) -> list[list[list[str]]]:
+        """Search one window and export it, splitting it while it exceeds the row cap."""
+        search = self._get(self._window_url(start, end))
+        search.raise_for_status()
+
+        match = _RECORDS_FOUND.search(search.text or "")
+        found = int(match.group(1).replace(",", "")) if match else None
+        if found == 0:
+            return []
+        if found is not None and found >= ROW_CAP:
+            templated = "{start}" in self.feed_url and "{end}" in self.feed_url
+            if templated and start < end:
+                mid = start + timedelta(days=(end - start).days // 2)
+                return self._export_window(start, mid) + self._export_window(
+                    mid + timedelta(days=1), end
+                )
+            logger.warning(
+                "%s: %s..%s has %d records; ORESTAR exports only the first %d",
+                self.name, start, end, found, ROW_CAP,
+            )
+
+        export = self._get(EXPORT_URL, cookies=search.cookies)
+        export.raise_for_status()
+        content = export.content or b""
+        if not content.startswith(_ZIP_MAGIC):
+            raise ValueError(
+                f"{self.name}: export returned {export.headers.get('content-type')!r}, "
+                "not a workbook -- the search session was probably not carried over"
+            )
+        return [_xlsx_rows(content)]
 
     def _decode(self, response) -> str:
         """
@@ -118,6 +182,10 @@ class OrestarAdapter(LiveSourceAdapter):
             return response.text
 
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            if "xl/workbook.xml" in archive.namelist():
+                out = io.StringIO()
+                csv.writer(out).writerows(_xlsx_rows(content))
+                return out.getvalue()
             names = [n for n in archive.namelist() if n.lower().endswith(".csv")]
             if not names:
                 raise ValueError(
@@ -221,3 +289,62 @@ class OrestarAdapter(LiveSourceAdapter):
             published_at=filed_at,
             credibility=self.credibility,
         )
+
+
+# ── .xlsx without a dependency ───────────────────────────────────────────────
+
+
+def _col_index(ref: str | None) -> int | None:
+    """`"AB12"` -> 27. None when the cell carries no reference."""
+    if not ref:
+        return None
+    n = 0
+    for ch in ref:
+        if not ch.isalpha():
+            break
+        n = n * 26 + (ord(ch.upper()) - 64)
+    return n - 1 if n else None
+
+
+def _xlsx_rows(content: bytes) -> list[list[str]]:
+    """
+    First worksheet of an .xlsx as rows of strings.
+
+    Stdlib only, so a live install does not need openpyxl for one adapter. Handles
+    shared strings, inline strings and numbers -- everything the ORESTAR export uses.
+    """
+    with zipfile.ZipFile(io.BytesIO(content)) as z:
+        names = z.namelist()
+        shared: list[str] = []
+        if "xl/sharedStrings.xml" in names:
+            root = ET.fromstring(z.read("xl/sharedStrings.xml"))  # nosec B314
+            for si in root.iter(_XLSX_NS + "si"):
+                shared.append("".join(t.text or "" for t in si.iter(_XLSX_NS + "t")))
+        sheets = sorted(n for n in names if n.startswith("xl/worksheets/") and n.endswith(".xml"))
+        if not sheets:
+            raise ValueError(f"ORESTAR: workbook has no worksheet (members: {names})")
+        sheet = ET.fromstring(z.read(sheets[0]))  # nosec B314
+
+    rows: list[list[str]] = []
+    for row in sheet.iter(_XLSX_NS + "row"):
+        cells: dict[int, str] = {}
+        pos = 0
+        for c in row.iter(_XLSX_NS + "c"):
+            idx = _col_index(c.get("r"))
+            pos = pos if idx is None else idx
+            kind = c.get("t")
+            v = c.find(_XLSX_NS + "v")
+            if kind == "s":
+                val = shared[int(v.text)] if v is not None and v.text else ""
+            elif kind == "inlineStr":
+                val = "".join(t.text or "" for t in c.iter(_XLSX_NS + "t"))
+            else:
+                val = v.text if v is not None and v.text else ""
+            # Integral numbers come back as "20.0" from some writers; keep them clean.
+            if kind in (None, "n") and val.endswith(".0"):
+                val = val[:-2]
+            cells[pos] = val
+            pos += 1
+        width = max(cells) + 1 if cells else 0
+        rows.append([cells.get(i, "") for i in range(width)])
+    return rows

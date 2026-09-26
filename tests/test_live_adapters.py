@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
+from pdx1.sources.base import DEFAULT_HEADERS
 from pdx1.sources import OrestarAdapter, PortlandPressAdapter
 from pdx1.sources.base import LiveSourceAdapter
 
@@ -63,15 +64,16 @@ def test_live_adapter_calls_httpx_when_live_true(fixture_dir):
     mock_response.raise_for_status = MagicMock()
 
     with patch("httpx.get", return_value=mock_response) as mock_get:
-        adapter = OrestarAdapter(live=True)
+        adapter = OrestarAdapter(live=True, feed_url="https://example.invalid/tx.json")
         result = adapter.safe_fetch()
 
-    # The instance URL, not the class attribute: ORESTAR's bulk export is published
-    # per calendar year, so the adapter resolves `{year}` at construction.
+    # A plain-file override takes the single-GET path; the default search URL needs
+    # a second request for the export.
     mock_get.assert_called_once_with(
         adapter.feed_url,
         timeout=adapter.timeout,
         follow_redirects=True,
+        headers=DEFAULT_HEADERS,
     )
     assert "{year}" not in adapter.feed_url
     assert result.ok
@@ -97,7 +99,7 @@ def test_live_adapter_timeout_is_forwarded():
     mock_response.raise_for_status = MagicMock()
 
     with patch("httpx.get", return_value=mock_response) as mock_get:
-        adapter = OrestarAdapter(timeout=99, live=True)
+        adapter = OrestarAdapter(timeout=99, live=True, feed_url="https://example.invalid/tx.json")
         adapter._read_raw()
 
     _, kwargs = mock_get.call_args

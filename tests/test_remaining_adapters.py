@@ -174,7 +174,9 @@ def test_sei_rejects_html_rather_than_reporting_nothing():
 
 def test_sei_html_surfaces_as_an_adapter_error_not_a_crash(tmp_path):
     with patch("httpx.get", return_value=_response(text="<html>landing page</html>")):
-        result = SeiAdapter(live=True, cache_dir=tmp_path).safe_fetch()
+        result = SeiAdapter(
+            live=True, cache_dir=tmp_path, feed_url="https://www.oregon.gov/ogec/pages/sei.aspx"
+        ).safe_fetch()
 
     assert not result.ok
     assert "not a JSON or JSONL export" in result.errors[0]
