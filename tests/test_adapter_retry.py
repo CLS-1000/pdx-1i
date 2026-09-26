@@ -28,9 +28,15 @@ def _response(status: int, text: str = "") -> httpx.Response:
     )
 
 
+# A plain-file URL keeps ORESTAR on the single-GET base path these tests exercise; the
+# default search URL does search-then-export, two GETs per attempt.
+PLAIN_URL = "https://example.invalid/feed.json"
+
+
 def _adapter(**kwargs):
     """A live adapter with the backoff removed, so tests do not sleep."""
     kwargs.setdefault("retry_backoff_s", 0)
+    kwargs.setdefault("feed_url", PLAIN_URL)
     return OrestarAdapter(live=True, **kwargs)
 
 
@@ -232,6 +238,7 @@ def test_total_retry_sleep_cannot_exceed_the_budget(monkeypatch):
 
     with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
         OrestarAdapter(
+            feed_url=PLAIN_URL,
             live=True, max_attempts=20, retry_backoff_s=2.0, retry_budget_s=30.0
         ).safe_fetch()
 
@@ -244,6 +251,7 @@ def test_a_huge_backoff_does_not_buy_a_huge_sleep(monkeypatch):
 
     with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
         OrestarAdapter(
+            feed_url=PLAIN_URL,
             live=True, max_attempts=5, retry_backoff_s=86_400.0, retry_budget_s=120.0
         ).safe_fetch()
 
@@ -257,6 +265,7 @@ def test_no_single_sleep_exceeds_the_delay_ceiling(monkeypatch):
 
     with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
         OrestarAdapter(
+            feed_url=PLAIN_URL,
             live=True, max_attempts=12, retry_backoff_s=2.0, retry_budget_s=10_000.0
         ).safe_fetch()
 
@@ -270,6 +279,7 @@ def test_exhausting_the_budget_still_reports_the_real_failure(monkeypatch):
 
     with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
         result = OrestarAdapter(
+            feed_url=PLAIN_URL,
             live=True, max_attempts=20, retry_backoff_s=2.0, retry_budget_s=5.0
         ).safe_fetch()
 
@@ -283,7 +293,7 @@ def test_the_budget_does_not_interfere_with_normal_retries(fixture_dir, monkeypa
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
 
     with patch("httpx.get", side_effect=[httpx.ConnectError("refused"), _response(200, body)]):
-        result = OrestarAdapter(live=True).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL).safe_fetch()
 
     assert result.ok
     assert result.attempts == 2

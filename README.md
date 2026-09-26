@@ -75,20 +75,19 @@ are fully exercised. Live connectivity is partial but no longer marginal: **10 o
 registered endpoints answer**, measured 2026-09-22. Two of the four record feeds return
 real rows — OLIS gives 307 measures plus 1,283 procedural transitions with its field
 mapping verified against a real payload, and WA PDC gives 6.37M rows, of which the
-adapter parses 49,350 signals across 3,907 distinct dates. ORESTAR publishes no bulk
-endpoint at all (see *Not built yet*), and SEI has no API by design.
+adapter parses 49,350 signals across 3,907 distinct dates. ORESTAR has no bulk
+file but is read through its public search export, and SEI through OGEC's EFS records
+pages; both measured live 2026-09-26.
 
 ### What it will be
 
 Two bodies of work remain, in priority order. A third — network diagrams in the PDF
 brief — is built; see *Not built yet* for what it does and refuses to do.
 
-1. **The two feeds that remain unverified.** ORESTAR and SEI. Neither is a dead URL
-   to correct: ORESTAR serves transactions only through an interactive session-scoped
-   search with no bulk export, and SEI has no API by design. Both need a decision about
-   shape — scrape a session, or fetch a download by hand — not a data-entry pass. The
-   alias tables for the feeds that *do* answer are confirmed only as far as their
-   comments say.
+1. **Feed alias passes.** All four record feeds return live rows as of 2026-09-26:
+   ORESTAR through its public search export, SEI through OGEC's EFS records pages,
+   OLIS and WA PDC through their APIs. What remains is confirming each alias table as
+   far as its comment says, and the dead press and watch endpoints.
 
 2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
    GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
@@ -529,6 +528,7 @@ Two streams are persisted, each with its own ground-truth file and its own table
 |---|---|---|
 | `IntelligenceRecord` | `pdx1_signals.jsonl` | `intelligence_records` |
 | `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
+| run ledger | `pdx1_signals_runs.jsonl` | — (one JSON line per cycle, written even when no brief publishes or the cycle raises) |
 
 They are kept apart rather than interleaved so each file stays a homogeneous stream that
 reads back without discriminating on type. The briefs path is derived from the records
@@ -757,21 +757,11 @@ if a capability is described anywhere above, it exists and has tests. A struck-t
 entry has since been built and is kept here, marked, so the record of what was promised
 does not quietly disappear.
 
-- **Working endpoints for the remaining feeds.** The transport, mapping and fault
-  tolerance are done and exercised against the real internet — a live run completes and
-  publishes. Two of the four record feeds now return real rows, measured on
-  **2026-09-22** by running the adapters rather than by reading a catalog: OLIS gives
-  307 measures plus 1,283 procedural transitions with its field mapping verified against
-  a real payload, and WA PDC gives 49,367 parseable rows via `PDX1_WA_PDC_URL`. What is
-  still missing is ORESTAR and SEI, and neither is a URL correction. ORESTAR 404s on
-  every path tried, and the 2026-09-22 search found no public bulk endpoint to replace
-  it: transactions are served only by a session-scoped interactive search that exposes
-  no export. Harvesting it means emulating that session and scraping paginated HTML — a
-  different shape from this adapter, whose `parse` is pure and whose fetch expects one
-  document. SEI has no API by design. Both need a decision about shape before any
-  mapping work; what remains for the feeds that *do* answer is an alias-table pass.
-  Every result is recorded per-endpoint in [`SHIPPING.md`](SHIPPING.md) and beside the
-  URL in the source.
+- ~~**Working endpoints for the remaining feeds.**~~ **Built 2026-09-26.** ORESTAR has
+  no bulk file, so the adapter drives the public transaction search and its Excel
+  export in one session; SEI walks OGEC's EFS public-records pages. Both measured
+  live from a cloud sandbox; see [`SHIPPING.md`](SHIPPING.md). What remains is the
+  dead press and watch endpoints.
 - ~~**Network diagrams in the PDF.**~~ **Built.** `render_brief_pdf` takes an optional
   `entity_ids` and appends a diagram of the registry ties among them, drawn from the
   role-based registry with shape carrying `group` and a disclosure tie dashed. It draws

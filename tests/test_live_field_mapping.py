@@ -33,6 +33,11 @@ from pdx1.sources.normalize import (
 )
 
 
+
+# Single-GET path. The default ORESTAR URL is a search that needs a second request for
+# the export; these tests exercise the plain-file path an override still takes.
+PLAIN_URL = "https://example.invalid/transactions.zip"
+
 def _response(
     *,
     text: str = "",
@@ -133,7 +138,7 @@ def test_no_cache_written_when_cache_dir_not_configured(tmp_path, fixture_dir):
     """Constructing an adapter directly must not touch the disk."""
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
     with patch("httpx.get", return_value=_response(text=body)):
-        adapter = OrestarAdapter(live=True, retry_backoff_s=0)
+        adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, retry_backoff_s=0)
         assert adapter.safe_fetch().ok
     assert adapter.cache_path() is None
     assert list(tmp_path.iterdir()) == []
@@ -142,7 +147,7 @@ def test_no_cache_written_when_cache_dir_not_configured(tmp_path, fixture_dir):
 def test_successful_live_fetch_writes_cache(tmp_path, fixture_dir):
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
     with patch("httpx.get", return_value=_response(text=body)):
-        adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
+        adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0)
         assert adapter.safe_fetch().ok
 
     assert adapter.cache_path().is_file()
@@ -154,7 +159,7 @@ def test_failed_live_fetch_falls_back_to_cache(tmp_path, fixture_dir):
     import httpx
 
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
-    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
+    adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0)
 
     with patch("httpx.get", return_value=_response(text=body)):
         assert adapter.safe_fetch().ok
@@ -171,7 +176,7 @@ def test_failed_live_fetch_without_cache_still_errors(tmp_path):
     import httpx
 
     with patch("httpx.get", side_effect=httpx.ConnectError("connection refused")):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert not result.ok
     assert "ConnectError" in result.errors[0]
@@ -179,7 +184,7 @@ def test_failed_live_fetch_without_cache_still_errors(tmp_path):
 
 def test_cache_is_not_consulted_when_fetch_succeeds(tmp_path, fixture_dir):
     """A live success overwrites the cache rather than serving the stale copy."""
-    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
+    adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0)
     adapter.cache_path().parent.mkdir(parents=True, exist_ok=True)
     adapter.cache_path().write_text("[]", encoding="utf-8")
 
@@ -198,7 +203,7 @@ def test_unwritable_cache_dir_does_not_fail_the_fetch(tmp_path, fixture_dir):
 
     body = (fixture_dir / "orestar.json").read_text(encoding="utf-8")
     with patch("httpx.get", return_value=_response(text=body)):
-        result = OrestarAdapter(live=True, cache_dir=blocker).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=blocker).safe_fetch()
 
     assert result.ok
 
@@ -223,7 +228,7 @@ def _zipped(csv_text: str, name: str = "transactions.csv") -> bytes:
 
 def test_orestar_unwraps_bulk_zip_and_parses_csv(tmp_path):
     with patch("httpx.get", return_value=_response(content=_zipped(_CSV))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert result.ok, result.errors
     assert len(result) == 1
@@ -236,7 +241,7 @@ def test_orestar_unwraps_bulk_zip_and_parses_csv(tmp_path):
 
 def test_orestar_caches_the_unwrapped_csv_not_the_zip(tmp_path):
     """The cache holds decoded text, so a fallback read needs no unzip step."""
-    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
+    adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0)
     with patch("httpx.get", return_value=_response(content=_zipped(_CSV))):
         assert adapter.safe_fetch().ok
 
@@ -256,7 +261,7 @@ def test_orestar_zip_without_csv_is_reported(tmp_path):
         archive.writestr("readme.txt", "no data here")
 
     with patch("httpx.get", return_value=_response(content=payload.getvalue())):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert not result.ok
     assert "no CSV" in result.errors[0]
@@ -268,7 +273,7 @@ def test_orestar_header_matching_is_case_and_punctuation_insensitive(tmp_path):
         "1,Committee A,Donor B,100,2026-05-27T00:00:00+00:00\r\n"
     )
     with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert len(result) == 1
     assert "Committee A" in result.signals[0].text
@@ -282,7 +287,7 @@ def test_orestar_drops_rows_with_no_readable_date(tmp_path):
         "2,Committee C,Donor D,200,05/26/2026,\r\n"
     )
     with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert len(result) == 1, "the undated row is dropped, the dated one survives"
     assert "Committee C" in result.signals[0].text
@@ -291,7 +296,7 @@ def test_orestar_drops_rows_with_no_readable_date(tmp_path):
 def test_orestar_falls_back_to_transaction_date_when_filed_date_missing(tmp_path):
     csv_text = "Tran Id,Filer,Contributor/Payee,Amount,Tran Date\r\n1,A,B,100,05/26/2026\r\n"
     with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
-        result = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
+        result = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0).safe_fetch()
 
     assert len(result) == 1
     assert result.signals[0].published_at.date() == datetime(2026, 5, 26).date()
@@ -304,10 +309,107 @@ def test_orestar_still_reads_the_fixture_json(fixture_dir):
     assert len(result) == 3
 
 
-def test_orestar_feed_url_resolves_the_year():
-    adapter = OrestarAdapter(year=2026)
-    assert adapter.feed_url.endswith("2026_report_transactions.zip")
-    assert "{year}" not in adapter.feed_url
+def test_orestar_default_feed_is_the_transaction_search():
+    """The bulk ZIP path 404s; the default is the public search, windowed per fetch."""
+    adapter = OrestarAdapter()
+    assert "cneSearch.do" in adapter.feed_url
+    assert "{start}" in adapter.feed_url and "{end}" in adapter.feed_url
+
+
+def _xlsx(rows: list[list[str]]) -> bytes:
+    """A minimal one-sheet .xlsx using inline strings, the way a test can build one."""
+    def cell(col: int, row: int, value: str) -> str:
+        ref = chr(65 + col) + str(row)
+        return f'<c r="{ref}" t="inlineStr"><is><t>{value}</t></is></c>'
+
+    body = "".join(
+        f'<row r="{r}">' + "".join(cell(c, r, v) for c, v in enumerate(vals)) + "</row>"
+        for r, vals in enumerate(rows, start=1)
+    )
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("xl/workbook.xml", f'<workbook xmlns="{ns}"/>')
+        z.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="{ns}"><sheetData>{body}</sheetData></worksheet>')
+    return buf.getvalue()
+
+
+# Header spellings copied from a live XcelCNESearch export, 2026-09-22.
+_LIVE_HEADER = ["Tran Id", "Tran Date", "Filer", "Contributor/Payee", "Sub Type",
+                "Amount", "Aggregate Amount", "Filer Id", "Filed Date", "Emp Name",
+                "City", "State", "Purp Desc"]
+_LIVE_ROW = ["5818088", "09/21/2026", "Oregon Nurse Anesthetist PAC", "Kyle Bowling",
+             "Cash Contribution", "20", "180", "3099", "09/21/2026",
+             "Northwest Permanente", "Portland", "OR", ""]
+
+
+def _search_page(found: int) -> MagicMock:
+    page = MagicMock()
+    page.text = f"<td>{found} records found for the above search criteria</td>"
+    page.cookies = {"JSESSIONID": "abc"}
+    page.raise_for_status = MagicMock()
+    return page
+
+
+def _export(content: bytes) -> MagicMock:
+    resp = MagicMock()
+    resp.content = content
+    resp.headers = {"content-type": "application/vnd.ms-excel"}
+    resp.raise_for_status = MagicMock()
+    return resp
+
+
+def test_orestar_searches_then_exports_in_the_same_session():
+    workbook = _xlsx([_LIVE_HEADER, _LIVE_ROW])
+    with patch("httpx.get", side_effect=[_search_page(1), _export(workbook)]) as get:
+        result = OrestarAdapter(live=True, retry_backoff_s=0).safe_fetch()
+
+    assert result.ok, result.errors
+    assert len(result) == 1
+    text = result.signals[0].text
+    assert "Oregon Nurse Anesthetist PAC (3099)" in text
+    assert "Kyle Bowling of Portland, OR" in text
+    assert "employer or affiliation Northwest Permanente" in text
+    assert "$20.00" in text
+
+    search_call, export_call = get.call_args_list
+    assert "cneSearch.do" in search_call.args[0]
+    assert "{start}" not in search_call.args[0]
+    assert export_call.args[0].endswith("XcelCNESearch")
+    assert export_call.kwargs["cookies"] == {"JSESSIONID": "abc"}
+
+
+def test_orestar_empty_window_skips_the_export():
+    with patch("httpx.get", side_effect=[_search_page(0)]) as get:
+        result = OrestarAdapter(live=True, retry_backoff_s=0).safe_fetch()
+    assert result.ok, result.errors
+    assert len(result) == 0
+    assert get.call_count == 1
+
+
+def test_orestar_window_over_the_row_cap_is_split():
+    """ORESTAR exports at most 5,000 rows; a capped window is halved, not truncated."""
+    workbook = _xlsx([_LIVE_HEADER, _LIVE_ROW])
+    responses = [
+        _search_page(6000),                      # 2-day window: over the cap
+        _search_page(3000), _export(workbook),   # day 1
+        _search_page(3000), _export(workbook),   # day 2
+    ]
+    with patch("httpx.get", side_effect=responses) as get:
+        result = OrestarAdapter(live=True, lookback_days=2, retry_backoff_s=0).safe_fetch()
+
+    assert result.ok, result.errors
+    assert len(result) == 2
+    assert get.call_count == 5
+
+
+def test_orestar_export_that_is_not_a_workbook_is_reported():
+    page = _export(b"<html>session expired</html>")
+    page.headers = {"content-type": "text/html"}
+    with patch("httpx.get", side_effect=[_search_page(1), page]):
+        result = OrestarAdapter(live=True, max_attempts=1, retry_backoff_s=0).safe_fetch()
+    assert not result.ok
+    assert "not a workbook" in result.errors[0]
 
 
 # ── OLIS: OData envelope + paging ─────────────────────────────────────────────
@@ -555,3 +657,37 @@ def test_a_url_object_does_not_take_down_the_whole_feed():
     assert len(signals) == 2, "one bad column must not cost the other rows"
     assert str(signals[0].url) == "https://example.invalid/report/1"
     assert str(signals[1].url) == "https://example.invalid/report/2"
+
+
+# ── ORESTAR: nothing unmapped reaches the cache ───────────────────────────────
+
+_PRIVATE_HEADER = [*_LIVE_HEADER, "Addr Line1", "Zip"]
+_PRIVATE_ROW = [*_LIVE_ROW, "1234 NE Example St", "97211"]
+
+
+def test_orestar_cache_holds_only_mapped_columns(tmp_path):
+    """The live export carries donor street addresses; the cache must not."""
+    workbook = _xlsx([_PRIVATE_HEADER, _PRIVATE_ROW])
+    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
+    with patch("httpx.get", side_effect=[_search_page(1), _export(workbook)]):
+        result = adapter.safe_fetch()
+
+    assert result.ok, result.errors
+    assert len(result) == 1
+    cached = adapter.cache_path().read_text(encoding="utf-8")
+    assert "Addr Line1" not in cached
+    assert "1234 NE Example St" not in cached
+    assert "97211" not in cached
+    # What parse needs is still there, so a cache fallback reads the same records.
+    assert "Oregon Nurse Anesthetist PAC" in cached
+    assert "1234 NE Example St" not in result.signals[0].text
+
+
+def test_orestar_plain_csv_override_is_projected_too(tmp_path):
+    csv_text = ",".join(_PRIVATE_HEADER) + "\n" + ",".join(_PRIVATE_ROW) + "\n"
+    adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0)
+    with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
+        assert adapter.safe_fetch().ok
+    cached = adapter.cache_path().read_text(encoding="utf-8")
+    assert "Zip" not in cached.splitlines()[0]
+    assert "97211" not in cached

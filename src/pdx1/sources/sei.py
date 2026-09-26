@@ -9,19 +9,39 @@ text says what was declared and when, and stops there.
 Officials are carried as the seat they hold, not as named individuals -- consistent with
 the rest of the module.
 
-**OGEC publishes no machine-readable endpoint.** Oregon serves SEI data as periodic
-downloads from a landing page, not as an API a single GET can consume, which is the
-opposite of Washington's Socrata dataset next door in `wa_pdc.py`. So live mode for
-this feed means pointing `fixture_path` at a downloaded export rather than letting the
-adapter fetch: `feed_url` is the landing page, and a live fetch of it returns HTML that
-`parse` will correctly reject. `parse` accepts the export shapes -- JSON array, JSONL,
-or an object wrapping rows -- so a downloaded file drops straight in.
+**Live source: OGEC's Electronic Filing System (EFS) public records.** There is no
+bulk export, but the public-records page runs on three JSON/HTML endpoints that need
+no login and no session:
+
+1. ``Records/GetJurisdictionLookupData`` -- every jurisdiction and office, with ids.
+2. ``Records/GetGridData`` -- SEI filers for a jurisdiction and year (JSON).
+3. ``Records/GetUserProfile`` -- one filer's offices held and every SEI report they
+   have filed (year, date, status, report id).
+4. ``SEIReport/ViewReport/{id}`` -- the report itself. The page embeds the whole
+   report as a JSON ``model`` object; ``SEIReport`` holds the declared interests.
+
+The live fetch walks those for the configured jurisdictions and emits records in the
+same canonical shape as the fixture, so `parse` and the cache are unchanged.
+
+**Privacy.** The ViewReport ``model`` also carries the filer's account record
+(``SEIUser``: home address, personal email, phone). The adapter never reads it, never
+caches the page, and drops street addresses and household member names from declared
+interests -- only entity, description and city/state are kept. Officials are carried
+as the seat they hold, as before.
+
+An override ``feed_url`` that is not the EFS base is fetched with one GET and must be
+a JSON or JSONL export in the fixture shape.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import time
+from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 from ..models import Signal, SourceType
 from .base import LiveSourceAdapter
@@ -37,10 +57,9 @@ logger = logging.getLogger(__name__)
 
 # Export column names for each canonical field, in preference order.
 #
-# UNVERIFIED. No export was available to the environment this mapping was written in,
-# so these names come from a prior PDX-1i implementation rather than a real file.
-# Matching is case- and punctuation-insensitive. A name matching nothing leaves its
-# field empty rather than raising.
+# The live fetch emits these canonical names directly (see `_filer_records`); the
+# aliases are for downloaded or hand-made exports. Matching is case- and
+# punctuation-insensitive. A name matching nothing leaves its field empty.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "filing_id": ("filing id", "id", "statement id"),
     "seat": ("seat", "position", "role", "office"),
@@ -61,15 +80,232 @@ _INTEREST_DESC = ("description", "detail", "value", "name")
 _INTEREST_ENTITY = ("entity", "organization", "source", "business")
 
 
+EFS_BASE = "https://apps.oregon.gov/OGEC/EFS/"
+
+# Portland-metro bodies, spelled as OGEC's jurisdiction lookup spells them. Matched
+# case-insensitively against `JurisdictionName`; an unknown name is logged and skipped.
+DEFAULT_JURISDICTIONS: tuple[str, ...] = (
+    "PORTLAND",
+    "MULTNOMAH CO",
+    "WASHINGTON CO",
+    "CLACKAMAS CO",
+    "METRO",
+    "PORT OF PORTLAND",
+    "TRI-MET BOARD",
+    "PORTLAND SD 1J",
+)
+
+# One row per report in the profile page's "SEI Reports" table.
+_REPORT_ROW = re.compile(
+    r"ViewReport/(\d+)['\"]>\s*(\d{4})\s*</a>\s*</td>\s*<td>\s*([^<]*?)\s*</td>"
+    r"\s*<td>\s*([^<]*?)\s*</td>",
+    re.IGNORECASE,
+)
+_OFFICES_TABLE = re.compile(r'(?s)id="officesTable".*?<tbody>(.*?)</tbody>')
+_TABLE_ROW = re.compile(r"(?s)<tr>(.*?)</tr>")
+_TABLE_CELL = re.compile(r"(?s)<td>\s*(.*?)\s*</td>")
+_MODEL = re.compile(r"var model = (\{.*?\});\s*\n", re.DOTALL)
+
+# Declared-interest sections of the SEI form: (model key, kind label, entity fields,
+# description fields). Street addresses, ZIPs and `HeldByWhom` (household member
+# names) are deliberately absent.
+_SECTIONS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("BusinessOfficeOrDirectorship", "Business office or directorship",
+     ("BusinessName",), ("TitleOfOffice", "DescriptionOfBusiness")),
+    ("BusinessOfficeOrDirectorshipHousehold", "Household member business office or directorship",
+     ("BusinessName",), ("TitleOfOffice", "DescriptionOfBusiness")),
+    ("SourcesOfIncome", "Source of income", ("NameOfSource",), ("DescriptionOfSource",)),
+    ("IncomeOfThousandOrMore", "Income of $1,000 or more", ("IncomeSource",), ("Description",)),
+    ("BusinessInvestmentOfThousandOrMore", "Business investment of $1,000 or more",
+     ("BusinessName",), ("DescriptionOfBusiness",)),
+    ("RealProperty", "Real property", (), ("Description",)),
+    ("DebtOfThousandOrMore", "Debt of $1,000 or more",
+     ("NameOfCreditor", "Creditor"), ("DateOfLoan", "InterestRate", "InterestRateOfLoan")),
+    ("Honoraria", "Honorarium", ("OrganizationName",), ("NatureOfEvent", "Date", "ViewAmount", "Amount")),
+    ("OfficeRelatedEventsSectionA", "Office-related event (A)",
+     ("OrganizationName",), ("NatureOfEvent", "Date", "ViewAmount", "Amount")),
+    ("OfficeRelatedEventsSectionB", "Office-related event (B)",
+     ("OrganizationName",), ("NatureOfEvent", "Date", "ViewAmount", "Amount")),
+    ("SharedBusinessWithLobbyist", "Business shared with a lobbyist",
+     ("NameOfBusiness",), ("TypeOfBusiness", "NameOfLobbyist")),
+    ("ServiceFeeOfThousandOrMore", "Service fee of $1,000 or more", ("Name",), ()),
+)
+
+
+def _clean(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value)).strip() if value not in (None, "") else ""
+
+
+def _interests(report: dict[str, Any]) -> list[dict[str, str]]:
+    """Flatten the report's sections into kind/description/entity entries."""
+    out: list[dict[str, str]] = []
+    for key, kind, entity_keys, desc_keys in _SECTIONS:
+        for item in report.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            if key == "RealProperty":
+                entity = ", ".join(v for v in (_clean(item.get("City")), _clean(item.get("State"))) if v)
+            else:
+                entity = next((_clean(item.get(k)) for k in entity_keys if _clean(item.get(k))), "")
+            parts: list[str] = []
+            for k in desc_keys:
+                v = _clean(item.get(k))
+                if k in ("Amount",) and _clean(item.get("ViewAmount")):
+                    continue
+                if k == "NameOfLobbyist" and v:
+                    v = f"lobbyist {v}"
+                if v and v not in parts:
+                    parts.append(v)
+            out.append({
+                "kind": kind,
+                "description": "; ".join(parts) or "not stated",
+                "entity": entity or "not stated",
+            })
+    return out
+
+
 class SeiAdapter(LiveSourceAdapter):
     """Parses SEI filings and amendments."""
 
     name = "SEI"
     source_type = SourceType.SEI
     credibility = 0.85
-    # Landing page, not an API. See the module docstring -- a live fetch of this
-    # returns HTML and `parse` will reject it rather than invent records.
-    feed_url = "https://www.oregon.gov/ogec/pages/sei.aspx"
+    # EFS public-records base. See the module docstring for the endpoints walked.
+    feed_url = EFS_BASE
+
+    def __init__(
+        self,
+        *args,
+        jurisdictions: tuple[str, ...] | list[str] | None = None,
+        year: int | None = None,
+        request_delay_s: float = 0.2,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.jurisdictions = tuple(jurisdictions or DEFAULT_JURISDICTIONS)
+        # SEIs are filed by April 15 for the prior calendar year; `year` is the
+        # filing year, as EFS labels it.
+        self._year = year or datetime.now(timezone.utc).year
+        # A courtesy pause between the per-filer page loads.
+        self.request_delay_s = max(0.0, float(request_delay_s))
+
+    # ── Live fetch: EFS public records ──────────────────────────────────────
+
+    def _is_efs(self) -> bool:
+        return self.feed_url.rstrip("/").lower() == EFS_BASE.rstrip("/").lower()
+
+    def _efs_get(self, path: str, **params: Any):
+        url = EFS_BASE + path + (("?" + urlencode(params)) if params else "")
+        response = self._get(url)
+        response.raise_for_status()
+        return response
+
+    def _resolve_jurisdictions(self) -> dict[int, tuple[int, str]]:
+        """JurisdictionID -> (CategoryID, name) for each configured metro body."""
+        lookup = self._efs_get("Records/GetJurisdictionLookupData").json()
+        wanted = {name.upper() for name in self.jurisdictions}
+        found: dict[int, tuple[int, str]] = {}
+        for row in lookup:
+            name = _clean(row.get("JurisdictionName")).upper()
+            if name in wanted:
+                found[row["JurisdictionID"]] = (row["CategoryID"], name)
+        for missing in sorted(wanted - {n for _, n in found.values()}):
+            logger.warning("%s: jurisdiction %r not in OGEC lookup -- skipped", self.name, missing)
+        return found
+
+    def _list_filers(self, found: dict[int, tuple[int, str]]) -> dict[int, set[str]]:
+        """FilerID -> jurisdiction names the filer was listed under."""
+        filers: dict[int, set[str]] = {}
+        for juris_id, (cat_id, name) in found.items():
+            criteria = {
+                "ResultType": "Filers", "FilerType": "SEI",
+                "FromYear": str(self._year), "ToYear": str(self._year),
+                "Quarter": "0", "TrustProfileStatusID": "0",
+                "JurisdictionCategoryID": str(cat_id), "JurisdictionID": str(juris_id),
+            }
+            grid = self._efs_get(
+                "Records/GetGridData",
+                current=1, rowCount=-1, **{"sort[LastName]": "asc"},
+                searchPhrase=json.dumps(criteria),
+            ).json()
+            for row in grid.get("rows") or []:
+                filers.setdefault(int(row["FilerID"]), set()).add(name)
+        return filers
+
+    def _fetch_live(self) -> str:
+        if not self._is_efs():
+            return super()._fetch_live()
+
+        filers = self._list_filers(self._resolve_jurisdictions())
+
+        records: list[dict[str, Any]] = []
+        failed = 0
+        for filer_id, names in sorted(filers.items()):
+            try:
+                records.extend(self._filer_records(filer_id, names))
+            except Exception as exc:  # one bad page must not cost the whole feed
+                failed += 1
+                logger.warning("%s: filer %s skipped: %s", self.name, filer_id, exc)
+            if self.request_delay_s:
+                time.sleep(self.request_delay_s)
+
+        if filers and failed == len(filers):
+            raise RuntimeError(f"{self.name}: every filer page failed ({failed})")
+        logger.info(
+            "%s: %d filer(s), %d report(s) for %d, %d failed",
+            self.name, len(filers), len(records), self._year, failed,
+        )
+        return json.dumps(records, ensure_ascii=False)
+
+    def _filer_records(self, filer_id: int, jurisdictions: set[str]) -> list[dict[str, Any]]:
+        page = self._efs_get(
+            "Records/GetUserProfile", filerID=filer_id, reportType="Filers", filerType="SEI"
+        ).text
+
+        offices: list[tuple[str, str]] = []
+        table = _OFFICES_TABLE.search(page)
+        for row in _TABLE_ROW.findall(table.group(1) if table else ""):
+            cells = [_clean(re.sub(r"<[^>]+>", "", c)) for c in _TABLE_CELL.findall(row)]
+            if len(cells) >= 2 and cells[0].upper() in jurisdictions:
+                offices.append((cells[0], cells[1]))
+
+        reports = sorted(
+            (int(rid), int(yr), date, status) for rid, yr, date, status in _REPORT_ROW.findall(page)
+        )
+        prior = [r for r in reports if r[1] == self._year - 1]
+        prior_id = str(prior[-1][0]) if prior else ""
+
+        out: list[dict[str, Any]] = []
+        for report_id, yr, date_filed, status in reports:
+            if yr != self._year:
+                continue
+            report = self._report(report_id)
+            if report is None:
+                continue
+            out.append({
+                "filing_id": f"SEI-{report_id}",
+                "seat": "; ".join(sorted({o for _, o in offices})) or "not stated",
+                "jurisdiction": "; ".join(sorted({j for j, _ in offices} or jurisdictions)),
+                # The form reports the calendar year before the filing year.
+                "year": yr - 1,
+                "filing_type": "amendment" if status.lower().startswith("amend") else "original",
+                "filed_at": report.get("DateFiled") or date_filed,
+                "prior_filing_id": f"SEI-{prior_id}" if prior_id else "",
+                "status": status or "Filed",
+                "interests": _interests(report),
+                "url": f"{EFS_BASE}SEIReport/ViewReport/{report_id}",
+            })
+        return out
+
+    def _report(self, report_id: int) -> dict[str, Any] | None:
+        """The `SEIReport` part of the page model only -- `SEIUser` is never touched."""
+        page = self._efs_get(f"SEIReport/ViewReport/{report_id}").text
+        match = _MODEL.search(page)
+        if not match:
+            logger.warning("%s: report %s has no embedded model", self.name, report_id)
+            return None
+        report = json.loads(match.group(1)).get("SEIReport")
+        return report if isinstance(report, dict) else None
 
     def parse(self, raw: str) -> list[Signal]:
         text = raw.lstrip()
@@ -77,9 +313,9 @@ class SeiAdapter(LiveSourceAdapter):
             # HTML from the landing page, or anything else non-JSON. Say so plainly
             # rather than returning an empty list that reads as "nothing was filed".
             raise ValueError(
-                f"{self.name}: payload is not a JSON or JSONL export. OGEC publishes no "
-                f"API -- download an export and pass it as fixture_path. See the module "
-                f"docstring."
+                f"{self.name}: payload is not a JSON or JSONL export. The default feed_url "
+                f"walks OGEC's EFS records; an override must point at an export in the "
+                f"fixture shape. See the module docstring."
             )
 
         rows = load_records(raw)

@@ -48,6 +48,13 @@ engine publishes about real people and institutions.
 6. **A dead feed must never halt a cycle.** Adapters are independently fault-tolerant;
    `safe_fetch` converts any failure into an error on the result. The cycle still
    completes and still writes.
+7. **Every cycle leaves one line in the run ledger** (`<store>_runs.jsonl`), including
+   a quiet day and a cycle that raised. That line is the evidence for the thirty-day
+   count; a missing line is what the alert looks for. Do not make it conditional.
+8. **State that must outlive the process is read from the store.** Novelty hashes,
+   rolling baselines and the trigger's last publication are all seeded from ground
+   truth at the start of a cycle. Something held only in memory resets every morning,
+   because the scheduler starts a fresh process -- or a fresh machine.
 
 ## Layout
 
@@ -74,7 +81,7 @@ src/pdx1/            45 modules
   api/               FastAPI app, routes (incl. /graph and /brief/pdf), API-key auth
   demos/             runnable walkthrough
 ui/                  index.html · webmap.html · citizen-cognisance.html · DESIGN.md
-tests/               39 files, 701 tests
+tests/               40 files, 727 tests
   fixtures/          source payloads replayed by the adapters
 ```
 
@@ -111,22 +118,22 @@ Live probes reach the network from this sandbox. The measured tables are in
   column -- Washington carries no running cycle total on the contribution row -- so the
   adapter now states no aggregate rather than restating the single contribution as one.
   Note that `filed_at` and `contribution_date` both resolve to `receipt_date`.
-- **ORESTAR is still 404**, and it is not URL rot -- there is no endpoint to find.
-  Oregon's Socrata catalog search returns *federated results from other states* -- ids
-  that also appear under `data.wa.gov` -- and none resolve on `data.oregon.gov`, which
-  carries no ORESTAR dataset (its only campaign-finance datasets are penalty notices).
-  The public transaction search is a session-bound POST form behind
-  `JSESSIONID_ORESTAR`, which is why the public tools for it all drive a browser.
-  Closing this gap is a harvester or a records request, not a corrected URL. Do not
-  register one without running the adapter against it.
-- **SEI has no API**, unchanged and by design.
+- **ORESTAR works, through the public search rather than a bulk file** (2026-09-26).
+  There is no bulk export; the adapter runs `cneSearch.do` for a rolling window and
+  pulls the `XcelCNESearch` .xlsx in the same session, halving any window over the
+  5,000-row cap. Measured from a cloud sandbox: 67 signals for a 2-day window in 3.8s.
+  The export carries donors' street address and ZIP; `_fetch_live` projects to mapped
+  columns before returning, so neither reaches the cache. Keep it that way.
+- **SEI works, through OGEC's EFS public-records endpoints** (2026-09-26). No login, no
+  session. The report page's `model` also carries `SEIUser` (home address, personal
+  email, phone); the adapter never reads it and never caches the page. Measured: 8
+  filings for Metro in 18.6s; all 8 jurisdictions take a few minutes.
 
 Two Socrata lessons worth keeping: a `url` column serialises as an object, not a
 string, and feeding that to `Signal.url` raises out of `parse` and costs the whole
-feed rather than one row (see `_socrata_url`). And `wa_pdc` pages with
-`$limit`/`$offset` and **no `$order`**, which Socrata does not guarantee is stable
-across pages; it also hits the 50-page ceiling at ~42s. Both are known, neither is
-fixed.
+feed rather than one row (see `_socrata_url`). And `$offset` paging needs an `$order`,
+or Socrata may skip or repeat rows across pages; `wa_pdc` now sends `$order=:id` and a
+7-day `$where` on `receipt_date`, which took a live read from ~42s to ~1s.
 
 Verify an alias table against a real payload before trusting it, and update the
 comment on it to say how far you got.

@@ -88,11 +88,11 @@ and a test, not a redesign.
 | step | what it delivers | state |
 |------|------------------|-------|
 | D0 | Freeze scope — SHIPPING.md, PARKED.md, notes in other repos | this file; PARKED notes in other repos **not yet written** |
-| D1 | Go live — explicit live/fixture config, no fixture default in production, per-adapter isolation, timeouts, bounded retry | code done; **9 of 11 live endpoints are dead** — see below |
+| D1 | Go live — explicit live/fixture config, no fixture default in production, per-adapter isolation, timeouts, bounded retry | **done 2026-09-26** — all four record feeds return live rows (ORESTAR via search export, SEI via OGEC EFS, OLIS, WA PDC); see the 2026-09-26 section |
 | D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | **done** (code); DEPLOY.md deferred to D4, which must write it from a real deploy |
-| D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | not started |
+| D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | **started** — empty-day behaviour defined by the run ledger; baselines and trigger now persist. Leads, chain of custody, seed warnings not started |
 | D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | **blocked** — see below |
-| D5 | The clock — health-check line, one alert path, start the count | not started |
+| D5 | The clock — health-check line, one alert path, start the count | health line **built** (run ledger); alert path not armed |
 | D6 | When it breaks — fix, test, log, reset | standing |
 
 ---
@@ -477,6 +477,40 @@ Fixture baseline unchanged: 12 harvested, 10 written, 2 sections.
 A future timestamp no longer decides the window, but it still passes the velocity gate
 as "fresh". That is a data-quality question about the source rather than a gate bug,
 and it is worth a look before the count starts.
+
+---
+
+## 2026-09-26 — four record feeds live, and three things a fresh process got wrong
+
+**Feeds.** The ORESTAR and SEI adapters that had lived only in a local checkout are
+on the branch, and both were re-measured from a cloud sandbox rather than the PC:
+
+| feed | measured | how |
+|---|---|---|
+| ORESTAR | 67 signals, 2-day window, 3.8s | `cneSearch.do` then `XcelCNESearch` in one session |
+| SEI | 8 filings for Metro, 18.6s | OGEC EFS: lookup → grid → profile → report `model` |
+| WA PDC | 806 signals, 7-day window, 1.0s | now `$where receipt_date` + `$order=:id` (was ~42s, unordered) |
+
+ORESTAR's export carries donors' street address and ZIP. They are now dropped before
+the last-good cache is written; the cache header was checked on the live read above.
+
+The future-dated WA PDC record noted below no longer needs a fix: the velocity gate
+rejects negative ages (`age >= 0`). The live read above contained one row dated
+2041-06-06, and it cannot pass.
+
+**State.** Three pieces of the cycle were rebuilt from nothing every morning:
+
+- The rolling baseline. A "90-day" sigma measured each signal against earlier signals
+  from the same run. It is now seeded from stored records inside the window.
+- The trigger. `last_published_at` was always empty, so "no prior publication" fired
+  every run and the weight threshold and 7-day floor never decided anything. It is now
+  seeded from the latest stored brief. **This changes what publishes:** a day under
+  the weight threshold, with no TIER_1 anomaly and inside the floor, now publishes no
+  brief. `PDX1_TRIGGER_WEIGHT_THRESHOLD=0` restores daily publication.
+- The empty day. A quiet day and a crashed day left the same trace, no brief. Every
+  cycle now appends one line to `<store>_runs.jsonl` with its status, per-adapter
+  result, drops by gate, and either the brief id or the reason there is none. Fill
+  each row of the count table from that line.
 
 ---
 
