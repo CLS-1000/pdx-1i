@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..models import Signal, SourceType
@@ -31,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 #: Socrata page size. The service caps a single response; paging is how bulk reads work.
 PAGE_SIZE = 1000
+
+#: Days of receipts read per cycle. Covers the 48h velocity window with room for
+#: filings that land late; the novelty gate drops what an earlier cycle already stored.
+LOOKBACK_DAYS = 7
 
 #: Stop after this many pages. Only exists so a service that ignores `$offset` cannot
 #: spin forever.
@@ -116,14 +121,34 @@ class WaPdcAdapter(LiveSourceAdapter):
 
     # ── Live fetch ───────────────────────────────────────────────────────────
 
+    def __init__(self, *args, lookback_days: int = LOOKBACK_DAYS, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.lookback_days = max(1, int(lookback_days))
+
+    def _query(self, page: int) -> dict[str, Any]:
+        """
+        Socrata parameters for one page of the recent window.
+
+        `$where` keeps the read to recent receipts. Without it every cycle walked the
+        6.4M-row history from the top and stopped at the page ceiling (~42s), so what
+        came back was whatever Socrata served first, not the day's filings.
+
+        `$order` makes `$offset` paging stable. Socrata does not guarantee row order
+        without it, so consecutive pages could skip or repeat rows.
+        """
+        since = (datetime.now(timezone.utc) - timedelta(days=self.lookback_days)).date()
+        return {
+            "$where": f"receipt_date >= '{since.isoformat()}T00:00:00'",
+            "$order": ":id",
+            "$limit": PAGE_SIZE,
+            "$offset": page * PAGE_SIZE,
+        }
+
     def _fetch_live(self) -> str:
         """Walk the Socrata pages and return one combined JSON array."""
         rows: list[dict[str, Any]] = []
         for page in range(MAX_PAGES):
-            response = self._get(
-                self.feed_url,
-                params={"$limit": PAGE_SIZE, "$offset": page * PAGE_SIZE},
-            )
+            response = self._get(self.feed_url, params=self._query(page))
             response.raise_for_status()
             batch = response.json()
             if not isinstance(batch, list):

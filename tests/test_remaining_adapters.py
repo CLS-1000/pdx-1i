@@ -446,3 +446,24 @@ def test_wa_pdc_never_publishes_donor_address_fields(tmp_path, fixture_dir):
         assert "Nowhere Lane" not in signal.text
         assert "98604" not in signal.text
         assert "45.7" not in signal.text
+
+
+def test_wa_pdc_reads_only_the_recent_window_in_a_stable_order(tmp_path):
+    """
+    Without `$where` every cycle walked the full history from the top; without
+    `$order`, `$offset` paging could skip or repeat rows.
+    """
+    from datetime import date, timedelta
+
+    with patch("httpx.get", return_value=_response(payload=[_SOCRATA_ROW])) as mock_get:
+        WaPdcAdapter(live=True, cache_dir=tmp_path, lookback_days=3).safe_fetch()
+
+    params = mock_get.call_args.kwargs["params"]
+    assert params["$order"] == ":id"
+    since = (date.today() - timedelta(days=3)).isoformat()
+    # Allow for the UTC date differing from the local one around midnight.
+    earlier = (date.today() - timedelta(days=4)).isoformat()
+    assert params["$where"] in (
+        f"receipt_date >= '{since}T00:00:00'",
+        f"receipt_date >= '{earlier}T00:00:00'",
+    )
