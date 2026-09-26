@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get the Map · Citizen Cognisance</title>
+<meta name="description" content="Sign up for free access to the Citizen Cognisance web map: Portland's political ecosystem drawn from public records.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+/* MCM Editorial — same tokens as citizen-cognisance.html (see ui/DESIGN.md). */
+:root {
+  --paper: #F5F1E8; --paper-2: #EFEADD; --card: #FBF8F1;
+  --ink: #1A1815; --ink-2: #3E3830; --ink-3: #6B635A;
+  --rule: #DCD4C4; --rule-2: #C9BFAC;
+  --accent: #14625C; --accent-2: #2E8C82; --accent-wash: #E2EBE7;
+  --plate: #1C1A17; --plate-2: #26231E; --plate-rule: #3A352E;
+  --plate-ink: #EDE7DA; --plate-ink-2: #9A9184;
+  --live: #61A96F; --recent: #D9A441; --stale: #8A8175;
+  --rel-oversight: #4C7FA0; --rel-funding: #B98526; --rel-conflict: #BF5B45; --rel-coalition: #3E8F84;
+  --error: #9C3B2A;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --shell: 1180px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--paper); color: var(--ink-2); font-family: var(--f-body); font-size: 17px; line-height: 1.55; }
+a { color: var(--accent); }
+.shell { max-width: var(--shell); margin: 0 auto; padding-inline: 26px; }
+
+/* Header strip — matches the landing page */
+.strip { background: var(--paper); border-top: 2px solid var(--accent); border-bottom: 1px solid var(--rule); }
+.strip-in { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 62px; flex-wrap: wrap; }
+.mark { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; text-decoration: none; }
+.mark b { font-family: var(--f-display); font-weight: 700; font-size: 19px; letter-spacing: .26em; text-transform: uppercase; line-height: 1; color: var(--ink); }
+.submark { font-family: var(--f-mono); font-weight: 500; font-size: 10px; letter-spacing: .16em; color: var(--ink-3); border-left: 1px solid var(--rule-2); padding-left: 11px; line-height: 1; }
+.descriptor { font-family: var(--f-mono); font-size: 10px; font-weight: 500; letter-spacing: .19em; text-transform: uppercase; color: var(--ink-3); }
+
+/* Body grid */
+main { padding-block: 52px 64px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); grid-template-areas: "pitch form" "plate form"; column-gap: 56px; align-items: start; }
+.pitch { grid-area: pitch; }
+.form-col { grid-area: form; }
+.plate-col { grid-area: plate; }
+.eyebrow { font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--f-display); font-weight: 600; font-size: clamp(32px, 4.4vw, 48px); line-height: 1.08; letter-spacing: -.01em; color: var(--ink); margin-top: 14px; text-wrap: balance; }
+.intro { margin-top: 18px; max-width: 34em; color: var(--ink-2); }
+
+/* The plate — a legend of what the map encodes */
+.plate { margin-top: 34px; background: var(--plate); color: var(--plate-ink); padding: 26px 26px 22px; }
+.plate h2 { font-family: var(--f-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--plate-ink-2); }
+.enc { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 28px; margin-top: 18px; }
+.enc h3 { font-family: var(--f-display); font-weight: 600; font-size: 15px; letter-spacing: .02em; color: var(--plate-ink); }
+.enc ul { list-style: none; margin-top: 9px; display: grid; gap: 6px; }
+.enc li { display: flex; align-items: center; gap: 10px; font-family: var(--f-mono); font-size: 12px; color: var(--plate-ink-2); }
+.enc svg { flex: none; }
+.plate .count { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--plate-rule); font-family: var(--f-mono); font-size: 12px; color: var(--plate-ink-2); font-variant-numeric: tabular-nums; }
+.plate .count b { color: var(--plate-ink); font-weight: 600; }
+
+/* Form card */
+.card { background: var(--card); border: 1px solid var(--rule-2); padding: 30px 30px 26px; }
+.card h2 { font-family: var(--f-display); font-weight: 600; font-size: 22px; color: var(--ink); }
+.card .sub { margin-top: 6px; font-size: 15px; color: var(--ink-3); }
+form { display: grid; gap: 18px; margin-top: 22px; }
+.field { display: grid; gap: 6px; }
+label, .legend { font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.opt { text-transform: none; letter-spacing: 0; font-weight: 400; }
+input[type=email], input[type=text], select {
+  width: 100%; font: inherit; font-size: 16px; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--rule-2); border-radius: 0;
+  padding: 11px 12px; appearance: none;
+}
+select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 34px; }
+input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[aria-invalid=true] { border-color: var(--error); }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.check { font-family: var(--f-body); text-transform: none; letter-spacing: 0; font-weight: 400; display: flex; gap: 11px; align-items: flex-start; font-size: 15px; color: var(--ink-2); line-height: 1.45; }
+.check input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+button {
+  font-family: var(--f-mono); font-size: 13px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--card); background: var(--accent); border: 0; padding: 15px 18px; cursor: pointer;
+}
+button:hover { background: #0F4F4A; }
+button[disabled] { opacity: .6; cursor: progress; }
+.msg { font-size: 15px; color: var(--error); min-height: 1.2em; }
+.fine { font-size: 13px; color: var(--ink-3); line-height: 1.5; border-top: 1px solid var(--rule); padding-top: 14px; }
+.fine code { font-family: var(--f-mono); font-size: 12px; }
+
+/* Success */
+.done h2 { color: var(--accent); }
+.done p { margin-top: 10px; }
+.go { display: inline-block; margin-top: 20px; font-family: var(--f-mono); font-size: 13px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; text-decoration: none; color: var(--card); background: var(--accent); padding: 15px 18px; }
+.go:hover { background: #0F4F4A; }
+.also { margin-top: 16px; font-size: 15px; }
+
+footer { border-top: 1px solid var(--rule); padding-block: 18px 26px; font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-3); }
+footer .shell { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+@media (max-width: 880px) {
+  .grid { grid-template-columns: 1fr; grid-template-areas: "pitch" "form" "plate"; row-gap: 30px; }
+  .plate { margin-top: 0; }
+  .descriptor { display: none; }
+}
+@media (max-width: 520px) {
+  .shell { padding-inline: 16px; }
+  main { padding-block: 32px 48px; }
+  .enc, .row { grid-template-columns: 1fr; }
+  .card { padding: 22px 18px 20px; }
+  .mark b { font-size: 16px; letter-spacing: .2em; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="strip">
+  <div class="shell strip-in">
+    <a class="mark" href="citizen-cognisance.html"><b>Citizen Cognisance</b><span class="submark">pdx-1i · SPEC-1</span></a>
+    <span class="descriptor">Portland Metropolitan Political Intelligence</span>
+  </div>
+</header>
+
+<main>
+  <div class="shell grid">
+    <section class="pitch">
+      <p class="eyebrow">Free · Portland metro</p>
+      <h1>Get the map of who holds authority over whom in Portland.</h1>
+      <p class="intro">Citizen Cognisance draws Portland's political ecosystem from public
+        records: the seats, agencies, issues and jurisdictions, and the documented ties
+        between them. Sign up and the map opens right away. Tick the box if you also want the brief by email.</p>
+    </section>
+
+    <section class="plate-col">
+      <div class="plate" aria-label="What the map shows">
+        <h2>How to read it</h2>
+        <div class="enc">
+          <div>
+            <h3>Shape is category</h3>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#EDE7DA" stroke-width="1.4"/></svg>People</li>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,1.5 13.6,4.75 13.6,11.25 8,14.5 2.4,11.25 2.4,4.75" fill="none" stroke="#EDE7DA" stroke-width="1.4"/></svg>Issues</li>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="#EDE7DA" stroke-width="1.4"/></svg>Entities</li>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,1.5 14.5,8 8,14.5 1.5,8" fill="none" stroke="#EDE7DA" stroke-width="1.4"/></svg>Jurisdictions</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Line color is the tie</h3>
+            <ul>
+              <li><svg width="22" height="8" viewBox="0 0 22 8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#4C7FA0" stroke-width="2"/></svg>Oversight</li>
+              <li><svg width="22" height="8" viewBox="0 0 22 8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#B98526" stroke-width="2"/></svg>Funding</li>
+              <li><svg width="22" height="8" viewBox="0 0 22 8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#BF5B45" stroke-width="2"/></svg>Conflict</li>
+              <li><svg width="22" height="8" viewBox="0 0 22 8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#3E8F84" stroke-width="2"/></svg>Coalition</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Color is freshness</h3>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="#61A96F" fill-opacity=".18" stroke="#61A96F" stroke-width="1.8"/></svg>Live · under 6h</li>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="#D9A441" fill-opacity=".18" stroke="#D9A441" stroke-width="1.6"/></svg>Recent · under 24h</li>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="#8A8175" fill-opacity=".18" stroke="#8A8175" stroke-width="1.4" stroke-dasharray="2.4 2"/></svg>Stale · 24h and older</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Size is connection</h3>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="#EDE7DA" stroke-width="1.4"/></svg>Few documented ties</li>
+              <li><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="#EDE7DA" stroke-width="1.4"/></svg>Many documented ties</li>
+            </ul>
+          </div>
+        </div>
+        <p class="count"><b>48</b> nodes · <b>131</b> relationships · a tie is a documented relationship, not an allegation</p>
+      </div>
+    </section>
+
+    <section class="form-col">
+      <div class="card" id="card">
+        <div id="signup">
+          <h2>Send me the map</h2>
+          <p class="sub">Free. Opens as soon as you sign up.</p>
+          <form id="form" novalidate>
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@example.com">
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="zip">ZIP <span class="opt">(optional)</span></label>
+                <input id="zip" name="zip" type="text" inputmode="numeric" autocomplete="postal-code" maxlength="10" placeholder="97214">
+              </div>
+              <div class="field">
+                <label for="role">I'm a <span class="opt">(optional)</span></label>
+                <select id="role" name="role">
+                  <option value="">Choose one</option>
+                  <option>Resident</option>
+                  <option>Reporter</option>
+                  <option>Researcher</option>
+                  <option>Organizer or advocate</option>
+                  <option>Public employee</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+            <label class="check" for="brief">
+              <input id="brief" name="wants_brief" type="checkbox" value="yes">
+              <span>Also send me the Portland brief when the engine publishes one. Unsubscribe anytime.</span>
+            </label>
+            <div class="hp" aria-hidden="true">
+              <label for="gotcha">Leave this empty</label>
+              <input id="gotcha" name="_gotcha" type="text" tabindex="-1" autocomplete="off">
+            </div>
+            <button id="submit" type="submit">Get the map</button>
+            <p class="msg" id="msg" role="alert" aria-live="assertive"></p>
+            <p class="fine">Your email goes to our form provider and to us, and nowhere else.
+              We don't sell or share it. To have it removed, write to
+              <code>spec1_ops@proton.me</code>.</p>
+          </form>
+        </div>
+
+        <div id="done" class="done" hidden tabindex="-1">
+          <h2>You're in.</h2>
+          <p>Your map is ready. Bookmark it: the link stays the same and the data refreshes as the engine indexes new records.</p>
+          <a class="go" href="citizen-cognisance.html">Open the map</a>
+          <p class="also">The daily brief lives at <a href="brief.html">brief.html</a>.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="shell">
+    <span>Public records only · Powered by SPEC-1 · EVASTARARCANA LLC</span>
+    <span>Portland, OR</span>
+  </div>
+</footer>
+
+<script>
+/* Where sign-ups go. A Formspree form endpoint (https://formspree.io/f/<id>).
+   Until it is set, the form says sign-ups aren't open rather than pretending
+   to accept an address it has nowhere to send. */
+const FORM_ENDPOINT = 'https://formspree.io/f/REPLACE_ME';
+const ENDPOINT_READY = !/REPLACE_ME/.test(FORM_ENDPOINT);
+
+const form = document.getElementById('form');
+const email = document.getElementById('email');
+const zip = document.getElementById('zip');
+const msg = document.getElementById('msg');
+const submit = document.getElementById('submit');
+
+function fail(text, field) {
+  msg.textContent = text;
+  if (field) { field.setAttribute('aria-invalid', 'true'); field.focus(); }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  msg.textContent = '';
+  email.removeAttribute('aria-invalid');
+  zip.removeAttribute('aria-invalid');
+
+  if (!email.value.trim() || !email.checkValidity()) {
+    return fail('Enter an email address like name@example.com.', email);
+  }
+  if (zip.value.trim() && !/^\d{5}(-\d{4})?$/.test(zip.value.trim())) {
+    return fail('ZIP should be five digits, or leave it blank.', zip);
+  }
+  if (!ENDPOINT_READY) {
+    return fail('Sign-ups aren’t open yet. The map is public in the meantime: open it from the header.');
+  }
+
+  submit.disabled = true;
+  submit.textContent = 'Sending…';
+  try {
+    const data = new FormData(form);
+    data.append('source', 'citizen-cognisance-signup');
+    const res = await fetch(FORM_ENDPOINT, { method: 'POST', body: data, headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    document.getElementById('signup').hidden = true;
+    const done = document.getElementById('done');
+    done.hidden = false;
+    done.focus();
+  } catch (err) {
+    fail('That didn’t go through. Check your connection and try again.');
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Get the map';
+  }
+});
+</script>
+</body>
+</html>
