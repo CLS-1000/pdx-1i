@@ -200,10 +200,8 @@ class SeiAdapter(LiveSourceAdapter):
         response.raise_for_status()
         return response
 
-    def _fetch_live(self) -> str:
-        if not self._is_efs():
-            return super()._fetch_live()
-
+    def _resolve_jurisdictions(self) -> dict[int, tuple[int, str]]:
+        """JurisdictionID -> (CategoryID, name) for each configured metro body."""
         lookup = self._efs_get("Records/GetJurisdictionLookupData").json()
         wanted = {name.upper() for name in self.jurisdictions}
         found: dict[int, tuple[int, str]] = {}
@@ -213,8 +211,10 @@ class SeiAdapter(LiveSourceAdapter):
                 found[row["JurisdictionID"]] = (row["CategoryID"], name)
         for missing in sorted(wanted - {n for _, n in found.values()}):
             logger.warning("%s: jurisdiction %r not in OGEC lookup -- skipped", self.name, missing)
+        return found
 
-        # FilerID -> jurisdiction names the filer was listed under.
+    def _list_filers(self, found: dict[int, tuple[int, str]]) -> dict[int, set[str]]:
+        """FilerID -> jurisdiction names the filer was listed under."""
         filers: dict[int, set[str]] = {}
         for juris_id, (cat_id, name) in found.items():
             criteria = {
@@ -230,6 +230,13 @@ class SeiAdapter(LiveSourceAdapter):
             ).json()
             for row in grid.get("rows") or []:
                 filers.setdefault(int(row["FilerID"]), set()).add(name)
+        return filers
+
+    def _fetch_live(self) -> str:
+        if not self._is_efs():
+            return super()._fetch_live()
+
+        filers = self._list_filers(self._resolve_jurisdictions())
 
         records: list[dict[str, Any]] = []
         failed = 0

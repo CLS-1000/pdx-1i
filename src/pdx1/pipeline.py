@@ -681,6 +681,46 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _endpoint_targets(settings: Settings) -> list[tuple[str, str]]:
+    """Every registered (name, url) pair, with Portland Press expanded per outlet."""
+    live = replace(settings, live_fetch=True)
+    targets: list[tuple[str, str]] = []
+    for adapter in default_adapters(live):
+        # Portland Press polls a map of feeds rather than its single registered URL,
+        # so it is enumerated below instead -- listing both would report one outlet
+        # twice and imply the others are not polled.
+        if isinstance(adapter, PortlandPressAdapter):
+            continue
+        url = getattr(adapter, "feed_url", "")
+        if url:
+            targets.append((adapter.name, url))
+    for outlet, url in PRESS_FEEDS.items():
+        targets.append((f"PORTLAND_PRESS/{outlet}", url))
+    return targets
+
+
+def _probe(httpx, url: str) -> tuple[str, bool, str]:
+    """One-byte GET of `url`; returns (status text, ok, failure kind)."""
+    try:
+        # Range keeps the probe to one byte. Probe only -- ingest never sends it,
+        # so a 206 here is expected and not a truncated harvest.
+        # A windowed URL (ORESTAR) is probed over today only. Sent literally, the
+        # placeholders make an unbounded search that times out.
+        today = datetime.now(timezone.utc).strftime("%m/%d/%Y")
+        probe_url = url.replace("{start}", today).replace("{end}", today)
+        response = httpx.get(
+            probe_url,
+            timeout=15,
+            follow_redirects=True,
+            headers={**DEFAULT_HEADERS, "Range": "bytes=0-0"},
+        )
+    except Exception as exc:  # noqa: BLE001 - report every failure mode alike
+        return type(exc).__name__, False, "network"
+    code = response.status_code
+    ok = code < 400
+    return str(code), ok, "" if ok else _probe_failure_kind(code)
+
+
 def check_endpoints(settings: Settings) -> int:
     """
     Probe every registered endpoint and print what it answers.
@@ -698,45 +738,13 @@ def check_endpoints(settings: Settings) -> int:
         print("--check-endpoints needs the live extra: pip install 'pdx-1i[live]'")
         return 2
 
-    live = replace(settings, live_fetch=True)
-    targets: list[tuple[str, str]] = []
-    for adapter in default_adapters(live):
-        # Portland Press polls a map of feeds rather than its single registered URL,
-        # so it is enumerated below instead -- listing both would report one outlet
-        # twice and imply the others are not polled.
-        if isinstance(adapter, PortlandPressAdapter):
-            continue
-        url = getattr(adapter, "feed_url", "")
-        if url:
-            targets.append((adapter.name, url))
-    for outlet, url in PRESS_FEEDS.items():
-        targets.append((f"PORTLAND_PRESS/{outlet}", url))
+    targets = _endpoint_targets(settings)
 
     failures = 0
     kinds: dict[str, int] = {}
     width = max(len(name) for name, _ in targets)
     for name, url in targets:
-        try:
-            # Range keeps the probe to one byte. Probe only -- ingest never sends it,
-            # so a 206 here is expected and not a truncated harvest.
-            # A windowed URL (ORESTAR) is probed over today only. Sent literally, the
-            # placeholders make an unbounded search that times out.
-            today = datetime.now(timezone.utc).strftime("%m/%d/%Y")
-            probe_url = url.replace("{start}", today).replace("{end}", today)
-            response = httpx.get(
-                probe_url,
-                timeout=15,
-                follow_redirects=True,
-                headers={**DEFAULT_HEADERS, "Range": "bytes=0-0"},
-            )
-            code = response.status_code
-            status = str(code)
-            ok = code < 400
-            kind = "" if ok else _probe_failure_kind(code)
-        except Exception as exc:  # noqa: BLE001 - report every failure mode alike
-            status = type(exc).__name__
-            ok = False
-            kind = "network"
+        status, ok, kind = _probe(httpx, url)
         if not ok:
             failures += 1
             kinds[kind] = kinds.get(kind, 0) + 1

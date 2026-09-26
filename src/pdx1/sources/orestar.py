@@ -111,7 +111,12 @@ class OrestarAdapter(LiveSourceAdapter):
 
     def _fetch_live(self) -> str:
         if not self._is_search():
-            return super()._fetch_live()
+            text = super()._fetch_live()
+            # A CSV body from an override goes through the same projection as the
+            # search export; JSON is already in canonical fields and passes through.
+            if text.lstrip()[:1] in ("[", "{", ""):
+                return text
+            return _project_csv(list(csv.reader(io.StringIO(text))))
 
         end = datetime.now(timezone.utc).date()
         start = end - timedelta(days=self.lookback_days - 1)
@@ -126,13 +131,10 @@ class OrestarAdapter(LiveSourceAdapter):
                 header = rows[0]
             body.extend(rows[1:])
 
-        out = io.StringIO()
-        if header is not None:
-            writer = csv.writer(out)
-            writer.writerow(header)
-            writer.writerows(body)
         logger.info("%s: %d transaction(s) for %s..%s", self.name, len(body), start, end)
-        return out.getvalue()
+        if header is None:
+            return ""
+        return _project_csv([header, *body])
 
     def _window_url(self, start: date, end: date) -> str:
         return self.feed_url.replace("{start}", start.strftime("%m/%d/%Y")).replace(
@@ -293,6 +295,28 @@ class OrestarAdapter(LiveSourceAdapter):
 
 # ── .xlsx without a dependency ───────────────────────────────────────────────
 
+
+
+def _project_csv(rows: list[list[str]]) -> str:
+    """
+    Keep only the columns `_COLUMN_ALIASES` maps, and write them back as CSV.
+
+    The live export carries 45 columns, including donors' street address and ZIP.
+    `parse` never reads those, but whatever `_fetch_live` returns is written to the
+    last-good cache on disk. Dropping unmapped columns here means a donor's address
+    never reaches the cache, the store, or any host the cache is copied to.
+    """
+    if not rows:
+        return ""
+    header, body = rows[0], rows[1:]
+    keep_names = set(build_column_map(header, _COLUMN_ALIASES).values())
+    keep = [i for i, name in enumerate(header) if name in keep_names]
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow([header[i] for i in keep])
+    for row in body:
+        writer.writerow([row[i] if i < len(row) else "" for i in keep])
+    return out.getvalue()
 
 def _col_index(ref: str | None) -> int | None:
     """`"AB12"` -> 27. None when the cell carries no reference."""

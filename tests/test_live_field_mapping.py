@@ -657,3 +657,37 @@ def test_a_url_object_does_not_take_down_the_whole_feed():
     assert len(signals) == 2, "one bad column must not cost the other rows"
     assert str(signals[0].url) == "https://example.invalid/report/1"
     assert str(signals[1].url) == "https://example.invalid/report/2"
+
+
+# ── ORESTAR: nothing unmapped reaches the cache ───────────────────────────────
+
+_PRIVATE_HEADER = [*_LIVE_HEADER, "Addr Line1", "Zip"]
+_PRIVATE_ROW = [*_LIVE_ROW, "1234 NE Example St", "97211"]
+
+
+def test_orestar_cache_holds_only_mapped_columns(tmp_path):
+    """The live export carries donor street addresses; the cache must not."""
+    workbook = _xlsx([_PRIVATE_HEADER, _PRIVATE_ROW])
+    adapter = OrestarAdapter(live=True, cache_dir=tmp_path, retry_backoff_s=0)
+    with patch("httpx.get", side_effect=[_search_page(1), _export(workbook)]):
+        result = adapter.safe_fetch()
+
+    assert result.ok, result.errors
+    assert len(result) == 1
+    cached = adapter.cache_path().read_text(encoding="utf-8")
+    assert "Addr Line1" not in cached
+    assert "1234 NE Example St" not in cached
+    assert "97211" not in cached
+    # What parse needs is still there, so a cache fallback reads the same records.
+    assert "Oregon Nurse Anesthetist PAC" in cached
+    assert "1234 NE Example St" not in result.signals[0].text
+
+
+def test_orestar_plain_csv_override_is_projected_too(tmp_path):
+    csv_text = ",".join(_PRIVATE_HEADER) + "\n" + ",".join(_PRIVATE_ROW) + "\n"
+    adapter = OrestarAdapter(live=True, feed_url=PLAIN_URL, cache_dir=tmp_path, retry_backoff_s=0)
+    with patch("httpx.get", return_value=_response(content=_zipped(csv_text))):
+        assert adapter.safe_fetch().ok
+    cached = adapter.cache_path().read_text(encoding="utf-8")
+    assert "Zip" not in cached.splitlines()[0]
+    assert "97211" not in cached
