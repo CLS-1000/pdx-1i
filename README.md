@@ -95,9 +95,12 @@ brief — is built; see *Not built yet* for what it does and refuses to do.
    longer an open question across the board: `webmap.html` now holds the SPEC-1
    monochrome system (black canvas, white opacity hierarchy, `#00FF00`/`#FF0000`
    reserved for live status and declared as tokens), and `citizen-cognisance.html` is
-   a deliberate exception, MCM Editorial rather than phosphor. What is undecided is
-   `index.html`, the brief reader, which still carries a light multi-hue palette and
-   has no recorded decision either way.
+   a deliberate exception, MCM Editorial rather than phosphor. The families, their
+   tokens and the shared invariants are mapped in
+   [`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). What is undecided is `index.html`,
+   the brief reader, which carries a light multi-hue palette with no recorded
+   decision either way — the blueprint's §4 lays out the options and the fact that
+   the PDF already shares that palette.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
