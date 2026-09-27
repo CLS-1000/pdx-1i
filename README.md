@@ -399,7 +399,9 @@ day after their own `ActionDate` — one of them 399.9 days after. An `ActionDat
 watermark would therefore work and be wrong: it would skip exactly those backdated
 inserts. The replay runs from scratch each cycle and the emitted set is diffed against
 an `olis_emitted` table, so a row backdated into the middle of a history shows up as a
-new transition even though nothing changed at the tail.
+new transition even though nothing changed at the tail. That table's ground truth is
+`pdx1_signals_olis_emitted.jsonl`, rebuilt into SQLite like the other streams; a host
+that starts each run on a fresh machine must carry that file forward too.
 
 **Sessions are resolved, not hardcoded.** Interim keys are dropped and what remains is
 filtered by `PDX1_OLIS_SESSION_LOOKBACK_DAYS`; the resolved list is logged at INFO every
@@ -528,6 +530,7 @@ Two streams are persisted, each with its own ground-truth file and its own table
 |---|---|---|
 | `IntelligenceRecord` | `pdx1_signals.jsonl` | `intelligence_records` |
 | `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
+| OLIS emitted transitions | `pdx1_signals_olis_emitted.jsonl` | `olis_emitted` |
 | run ledger | `pdx1_signals_runs.jsonl` | — (one JSON line per cycle, written even when no brief publishes or the cycle raises) |
 
 The run ledger is what the dead-man check reads:
