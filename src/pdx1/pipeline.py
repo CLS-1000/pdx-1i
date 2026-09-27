@@ -898,6 +898,17 @@ def _probe(httpx, url: str) -> tuple[str, bool, str]:
             follow_redirects=True,
             headers={**DEFAULT_HEADERS, "Range": "bytes=0-0"},
         )
+        if response.status_code == 416:
+            # 416 rejects the one-byte Range request, not the resource: the endpoint
+            # is alive, it just will not serve partial content. Judge it on a plain
+            # GET instead -- the Range header is the probe's own optimisation, and a
+            # FAIL here would send someone off to "fix" a working URL.
+            response = httpx.get(
+                probe_url,
+                timeout=15,
+                follow_redirects=True,
+                headers=DEFAULT_HEADERS,
+            )
     except Exception as exc:  # noqa: BLE001 - report every failure mode alike
         return type(exc).__name__, False, "network"
     code = response.status_code

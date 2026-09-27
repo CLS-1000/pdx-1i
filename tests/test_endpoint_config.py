@@ -13,6 +13,7 @@ what each one actually answers.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
@@ -130,6 +131,67 @@ def test_probe_reports_a_transport_failure_by_exception_name(capsys):
     with _probe(error=httpx.ConnectError("name or service not known")):
         assert check_endpoints(_live()) == 1
     assert "ConnectError" in capsys.readouterr().out
+
+
+def _status(code: int):
+    response = MagicMock()
+    response.status_code = code
+    return response
+
+
+def test_a_range_intolerant_endpoint_is_not_reported_dead(capsys):
+    """
+    416 rejects the probe's one-byte Range request, not the resource.
+
+    The Range header is the probe's own optimisation; a server entitled to refuse it
+    is still alive. Without the plain-GET retry, a healthy endpoint reads as FAIL and
+    the report sends someone off to "fix" a working URL.
+    """
+    responses = itertools.cycle([_status(416), _status(200)])
+    with patch("httpx.get", side_effect=lambda *a, **kw: next(responses)):
+        assert check_endpoints(_live()) == 0
+    out = capsys.readouterr().out
+    assert "FAIL" not in out
+
+
+def test_the_416_retry_drops_the_range_header():
+    """The retry must actually remove Range, or it just asks the same question twice."""
+    seen_headers: list[dict] = []
+
+    def fake_get(*args, **kwargs):
+        seen_headers.append(kwargs.get("headers") or {})
+        return _status(416 if len(seen_headers) % 2 == 1 else 200)
+
+    with patch("httpx.get", side_effect=fake_get):
+        check_endpoints(_live())
+
+    ranged = [h for h in seen_headers if "Range" in h]
+    plain = [h for h in seen_headers if "Range" not in h]
+    assert ranged and plain, "every probe sent Range first, every retry dropped it"
+
+
+def test_a_genuinely_failing_endpoint_still_fails_after_the_416_retry(capsys):
+    """416 must not become a blanket pardon: the retry's own verdict stands."""
+    responses = itertools.cycle([_status(416), _status(404)])
+    with patch("httpx.get", side_effect=lambda *a, **kw: next(responses)):
+        assert check_endpoints(_live()) == 1
+    assert "404" in capsys.readouterr().out
+
+
+def test_a_healthy_endpoint_is_probed_exactly_once():
+    """The retry is for 416 only -- a clean answer must not cost a second request."""
+    calls: list[None] = []
+
+    def fake_get(*args, **kwargs):
+        calls.append(None)
+        return _status(200)
+
+    with patch("httpx.get", side_effect=fake_get):
+        check_endpoints(_live())
+
+    from pdx1.pipeline import _endpoint_targets
+
+    assert len(calls) == len(_endpoint_targets(_live()))
 
 
 def test_probe_covers_every_press_feed_not_just_the_registered_one(capsys):
