@@ -530,6 +530,16 @@ Two streams are persisted, each with its own ground-truth file and its own table
 | `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
 | run ledger | `pdx1_signals_runs.jsonl` | — (one JSON line per cycle, written even when no brief publishes or the cycle raises) |
 
+The run ledger is what the dead-man check reads:
+
+```bash
+pdx1 --check-ledger    # exit 1 if the newest line is missing, stale, failed, future-dated or a fixture replay
+```
+
+It prints the verdict as JSON and writes nothing. "Stale" means older than
+`PDX1_LEDGER_MAX_AGE_HOURS` (default 26: a daily run plus slack). Run it from a
+schedule other than the cycle's own: a cycle that never started cannot report itself.
+
 They are kept apart rather than interleaved so each file stays a homogeneous stream that
 reads back without discriminating on type. The briefs path is derived from the records
 path; override it with `PDX1_BRIEFS_PATH`.

@@ -21,6 +21,7 @@ Run it:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import sys
@@ -32,6 +33,7 @@ from .anomaly import BaselineRegistry
 from .config import ConfigError, Settings
 from .gates import FourGateFilter, composite_score
 from .graph import ALIASES, NODES
+from .ledger import check_ledger, read_ledger
 from .models import (
     AnomalyTier,
     Brief,
@@ -848,6 +850,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "have moved before correcting them via the PDX1_*_URL settings."
         ),
     )
+    parser.add_argument(
+        "--check-ledger",
+        dest="check_ledger",
+        action="store_true",
+        help=(
+            "Dead-man check: read the run ledger and exit 1 if the newest line is "
+            "missing, older than PDX1_LEDGER_MAX_AGE_HOURS, failed, dated in the "
+            "future, or a fixture replay. Harvests nothing and writes nothing. Run it "
+            "from a schedule other than the cycle's own -- a cycle that never started "
+            "cannot report itself."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1013,6 +1027,28 @@ def init_store(settings: Settings) -> int:
     return 0
 
 
+def check_ledger_health(settings: Settings, now: datetime | None = None) -> int:
+    """
+    Print the dead-man verdict as JSON and return 0 when healthy, 1 on any alert.
+
+    Reads the ledger file directly rather than opening a `DualWriteStore`: the check
+    must not create a store, so a host where the store path is wrong -- or missing --
+    reports ``missing`` instead of quietly initialising an empty one.
+    """
+    runs_path = settings.store_path.with_name(f"{settings.store_path.stem}_runs.jsonl")
+    health = check_ledger(
+        read_ledger(runs_path),
+        now or utcnow(),
+        max_age_hours=settings.ledger_max_age_hours,
+    )
+    report = health.to_dict()
+    report["ledger"] = str(runs_path)
+    print(json.dumps(report, indent=2))
+    if not health.ok:
+        print(f"pdx1: ledger check failed -- {', '.join(health.alerts)}", file=sys.stderr)
+    return 0 if health.ok else 1
+
+
 def _report(result: CycleResult, settings: Settings) -> None:
     """
     Print one cycle's summary.
@@ -1059,6 +1095,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check_endpoints:
         return check_endpoints(settings)
+
+    if args.check_ledger:
+        return check_ledger_health(settings)
 
     now = None
     if args.as_of:

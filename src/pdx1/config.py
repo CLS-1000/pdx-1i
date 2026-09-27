@@ -230,6 +230,9 @@ class Settings:
     publish_anomaly_tier: AnomalyTier = AnomalyTier.TIER_1
     trigger_weight_threshold: float = 3.0
     trigger_floor_days: int = 7
+    #: Dead-man window for `pdx1 --check-ledger`: the newest run-ledger line older than
+    #: this means a scheduled morning was missed.
+    ledger_max_age_hours: int = 26
 
     timezone: str = "America/Los_Angeles"
     cron_hour: int = 6
@@ -314,6 +317,7 @@ class Settings:
             publish_anomaly_tier=tier,
             trigger_weight_threshold=_env_float("PDX1_TRIGGER_WEIGHT_THRESHOLD", 3.0),
             trigger_floor_days=_env_int("PDX1_TRIGGER_FLOOR_DAYS", 7),
+            ledger_max_age_hours=max(1, _env_int("PDX1_LEDGER_MAX_AGE_HOURS", 26)),
             timezone=_env("PDX1_TIMEZONE", "America/Los_Angeles"),
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),
