@@ -156,3 +156,45 @@ def test_nothing_leaves_enacted():
     item = olis_actions.Item("HB1", states={"S": "enacted"})
     with pytest.raises(olis_actions.Halt):
         olis_actions.step(item, "veto_sustained", "S", "2025-01-01", "r", {})
+
+
+# ── Motions and conference rows are not measure votes ────────────────────────
+#
+# Each of these once set a measure's state, and a transition edge was widened to let
+# the wrong state through. The rows are real OLIS action text.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Motion to take and place consideration of action on concurrence to June 27 "
+        "calendar. Motion failed.",
+        "Motion to suspend the rules passed. Ayes, 55; Excused, 5--Alonso Leon, Bynum.",
+        "Conference Committee Report read in Senate.",
+    ],
+)
+def test_motion_and_report_rows_change_no_state(text):
+    emits, _ = olis_actions.parse_row(text)
+    assert emits, "the row must still be recognised, not fall through"
+    assert all(e.state is None for e in emits), [(e.rule_id, e.state) for e in emits]
+
+
+def test_appointing_conferees_puts_the_chamber_in_committee():
+    emits, _ = olis_actions.parse_row(
+        "Senators Dembrow, Girod, Riley appointed Senate conferees."
+    )
+    assert [(e.rule_id, e.state) for e in emits] == [("conferees_appointed", "committee")]
+
+
+@pytest.mark.parametrize(
+    ("frm", "to"),
+    [
+        ("passed", "failed"),
+        ("second_reading", "passed"),
+        ("third_reading", "signed_by_presiding"),
+        ("passed", "second_reading"),
+        ("second_reading", "signed_by_presiding"),
+    ],
+)
+def test_edges_that_only_papered_over_mapping_bugs_are_gone(frm, to):
+    assert to not in olis_actions.CHAMBER_FLOW[frm]

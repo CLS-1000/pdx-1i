@@ -95,6 +95,9 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("taken_from_calendar",        r"Taken from [^.]*Calendar[^.]*",    None, {"recalendared": True}),
     ("placed_on_calendar",         r"[Pp]laced on [^.]*Calendar[^.]*",  None, {"recalendared": True}),
     ("read_special_order",         r"Read as Special Order of Business", "third_reading", {}),
+    # "Motion to suspend the rules passed." is the motion passing, not the measure.
+    # (HB2341, HB2360, 2021R1)
+    ("motion_suspend_passed",      r"Motion to suspend the rules passed", None, {"rules_suspended": True}),
     ("passed",                     r"\bPassed\b",                       "passed", {}),
     ("adopted_cc_report",          r"(Senate|House) adopted Conference Committee Report[^.]*", "passed", {"conference": True}),
     ("repassed",                   r"[Rr]epassed( bill)?",              "passed", {"repassed": True}),
@@ -107,6 +110,9 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
     ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
     ("motion_carried_generic",     r"Motion to [^.]*carried[^.]*",      None, {"motion_carried": True}),
+    # "Motion to take and place ... Motion failed." -- a failed motion, not a failed
+    # measure. Longest match beats "failed". (SB554, 2021R1)
+    ("motion_failed_bare",         r"Motion failed",                    None, {"motion_failed": True}),
     ("failed",                     r"\bFailed\b",                       "failed", {}),
     ("refused_to_concur",          r"(House|Senate) refused to concur[^.]*", "committee", {"concurrence": "refused"}),
     ("adopted",                    r"\bAdopted\b",                      "adopted", {}),
@@ -157,9 +163,15 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("amendments_distributed",     r"\(Amendments distributed\.?\)",     None, {}),
     ("at_desk_adjournment",        r"At ((President's|Speaker's) desk|Desk) upon adjournment", None, {"location": "desk"}),
     ("governors_message_read",     r"Governor's message read[^.]*",     None, {}),
-    ("conferees_appointed",        r"[^.]*(appointed|discharged) (as )?(House|Senate) conferee[s]?[^.]*", None, {"conference": True}),
+    # Appointing conferees puts the measure in conference committee for that chamber.
+    # Recording it as a state is what lets a later "failed to adopt Conference Committee
+    # Report" fail the measure without a passed -> failed edge. (HB3242, 2023R1)
+    ("conferees_appointed",        r"[^.]*(appointed|discharged) (as )?(House|Senate) conferee[s]?[^.]*", "committee", {"conference": True}),
     ("conference_recommendation",  r"Conference Committee Recommendation:[^.]*", "committee", {"conference": True}),
     ("conference_report_dist",     r"Conference Committee Report distributed[^.]*", None, {"conference": True}),
+    # Reading the conference report into the record is not a third reading of the bill;
+    # the chamber's state is where its own last vote left it. (HB2312, HB2841, 2019R1)
+    ("conference_report_read",     r"Conference Committee Report read in (Senate|House)", None, {"conference": True}),
     ("vote_reconsideration",       r"Vote reconsideration (carried|failed)",      None, {"reconsidered": True}),
     ("rereferred_bare",            r"\bRereferred\b",                   "committee", {}),
     ("notice_reconsideration",     r"[^.]*reconsideration[^.]*", None, {}),
@@ -255,9 +267,9 @@ CHAMBER_FLOW = {
                        "second_reading", "third_reading"},
     "work_session": {"committee", "work_session", "public_hearing",
                      "second_reading", "third_reading"},
-    "second_reading": {"third_reading", "committee", "failed", "passed", "signed_by_presiding"},
-    "third_reading": {"passed", "adopted", "failed", "committee", "third_reading", "second_reading", "signed_by_presiding"},
-    "passed": {"signed_by_presiding", "passed", "committee", "third_reading", "tabled", "second_reading", "failed",
+    "second_reading": {"third_reading", "committee", "failed"},
+    "third_reading": {"passed", "adopted", "failed", "committee", "third_reading", "second_reading"},
+    "passed": {"signed_by_presiding", "passed", "committee", "third_reading", "tabled",
                "adopted", "veto_sustained", "veto_overridden"},
     "adopted": {"signed_by_presiding", "committee", "adopted", "third_reading", "passed"},
     "failed": {"committee", "failed", "second_reading", "third_reading", "passed", "adopted"},
@@ -349,7 +361,7 @@ def replay(measure_id: str, rows: list[dict]):
 #:
 #: Bump this deliberately when re-copying from proc_track. A failure here on a
 #: deliberate sync is expected and is the whole point: the copy cannot drift quietly.
-RULES_VERSION = "f08744a669f3"
+RULES_VERSION = "44887b1a71d0"
 
 #: States worth a Signal. These are the procedural facts a reader would call news:
 #: a measure moved, or it stopped moving.
