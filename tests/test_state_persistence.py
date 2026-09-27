@@ -202,3 +202,70 @@ def test_a_cycle_that_raises_still_leaves_a_line(settings, store, monkeypatch):
 def test_ledger_lives_beside_ground_truth(settings, store):
     assert store.runs_path.parent == settings.store_path.parent
     assert store.runs_path.name == "signals_runs.jsonl"
+
+
+# ── OLIS emitted transitions ─────────────────────────────────────────────────
+#
+# The daily cloud task rebuilds SQLite from JSONL on a fresh machine. While the
+# emitted-transition table lived only in SQLite, every run started believing no OLIS
+# transition had ever been emitted.
+
+_T = [
+    ("2025R1", "SB", 875, 101, "S", "vetoed"),
+    ("2025R1", "SB", 875, 102, "S", "veto_sustained"),
+    ("2026R1", "HB", 4177, 7, "H", "passed"),
+]
+
+
+def test_emitted_transitions_are_written_to_ground_truth(store):
+    assert store.record_olis_emitted(_T, "f08744a669f3") == 3
+    lines = list(store.iter_olis_emitted())
+    assert len(lines) == 3
+    assert {line["rules_version"] for line in lines} == {"f08744a669f3"}
+
+
+def test_recording_the_same_transition_twice_appends_nothing(store):
+    store.record_olis_emitted(_T, "aaaaaaaaaaaa")
+    assert store.record_olis_emitted(_T, "bbbbbbbbbbbb") == 0
+    lines = list(store.iter_olis_emitted())
+    assert len(lines) == 3
+    assert {line["rules_version"] for line in lines} == {"aaaaaaaaaaaa"}
+
+
+def test_a_fresh_database_rebuilt_from_jsonl_remembers_what_was_emitted(settings, tmp_path):
+    first = DualWriteStore(settings.store_path, settings.db_path)
+    first.record_olis_emitted(_T, "f08744a669f3")
+
+    # A new machine: same JSONL files, no database.
+    fresh = DualWriteStore(settings.store_path, tmp_path / "fresh.db")
+    assert fresh.olis_emitted_count() == 0
+    fresh.rebuild_from_jsonl()
+
+    assert fresh.olis_emitted("2025R1") == first.olis_emitted("2025R1")
+    assert fresh.olis_emitted_count() == 3
+
+
+def test_a_store_from_before_the_jsonl_file_is_backfilled_once(settings):
+    import sqlite3
+
+    store = DualWriteStore(settings.store_path, settings.db_path)
+    # Simulate an older store: rows in SQLite, no ground-truth file.
+    with sqlite3.connect(settings.db_path) as conn:
+        conn.execute(
+            "INSERT INTO olis_emitted VALUES (?,?,?,?,?,?,?,?)",
+            ("2025R1", "SB", 1, 1, "S", "introduced", "5d6c1b8bf766", "2026-09-01T00:00:00"),
+        )
+    store.olis_emitted_path.unlink(missing_ok=True)
+
+    reopened = DualWriteStore(settings.store_path, settings.db_path)
+    lines = list(reopened.iter_olis_emitted())
+    assert [(line["measure_number"], line["state"]) for line in lines] == [(1, "introduced")]
+
+    # Rebuilding now keeps the row instead of wiping it.
+    reopened.rebuild_from_jsonl()
+    assert reopened.olis_emitted_count() == 1
+
+
+def test_emitted_ledger_lives_beside_ground_truth(settings, store):
+    assert store.olis_emitted_path.name == "signals_olis_emitted.jsonl"
+    assert store.olis_emitted_path.parent == settings.store_path.parent
