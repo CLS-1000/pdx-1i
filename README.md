@@ -89,18 +89,21 @@ brief — is built; see *Not built yet* for what it does and refuses to do.
    OLIS and WA PDC through their APIs. What remains is confirming each alias table as
    far as its comment says, and the dead press and watch endpoints.
 
-2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
-   GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
-   endpoints they depend on exist; the work is front-end. The visual language is no
-   longer an open question across the board: `webmap.html` now holds the SPEC-1
+2. **Front-end completion.** The SPEC-1 District Map (projected GIS), Signal Feed
+   (per-record four-gate expansion), and Statistics views are available in
+   `ui/index.html` and use the existing graph and record endpoints. District boundaries
+   come from Oregon Metro's RLIS service; when it is unavailable, the map reports that
+   state rather than drawing substitute geometry. The views use a scoped SPEC-1
+   component palette without changing the existing Brief reader palette. The visual
+   language is no longer an open question across the board: `webmap.html` now holds the SPEC-1
    monochrome system (black canvas, white opacity hierarchy, `#00FF00`/`#FF0000`
    reserved for live status and declared as tokens), and `citizen-cognisance.html` is
    a deliberate exception, MCM Editorial rather than phosphor. The families, their
    tokens and the shared invariants are mapped in
-   [`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). What is undecided is `index.html`,
-   the brief reader, which carries a light multi-hue palette with no recorded
-   decision either way — the blueprint's §4 lays out the options and the fact that
-   the PDF already shares that palette.
+   [`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). The broader `index.html` Brief reader
+   convergence question remains undecided: its existing light palette is unchanged,
+   and the SPEC-1 component styles do not settle that decision. The blueprint's §4
+   lays out the options and the fact that the PDF already shares the Brief palette.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
