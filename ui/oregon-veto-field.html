@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A documented consistency check found Oregon's Vetoed field disagreed with bill action histories; the Legislature confirmed the correction.">
+  <title>Oregon's Veto Field Said “No” Since 2007. Then It Said “Yes.” · Notitia Civica</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #F5F1E8;
+      --card: #FBF8F1;
+      --ink: #1A1815;
+      --body: #3E3830;
+      --muted: #6B635A;
+      --rule: #DCD4C4;
+      --accent: #14625C;
+      --serif: Georgia, "Times New Roman", serif;
+      --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--body); font: 17px/1.7 var(--serif); }
+    a { color: var(--accent); text-underline-offset: .18em; }
+    a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    .masthead { border-bottom: 1px solid var(--rule); padding: 1rem max(1.25rem, calc((100% - 760px) / 2)); font: 600 .75rem/1.4 var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+    .masthead a { text-decoration: none; }
+    main { max-width: 760px; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+    .kicker, .meta, .label { font: 600 .75rem/1.5 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+    h1, h2 { color: var(--ink); line-height: 1.15; }
+    h1 { max-width: 700px; margin: .65rem 0 1rem; font-size: clamp(2.2rem, 7vw, 4rem); letter-spacing: -.035em; }
+    .dek { margin: 0 0 1.1rem; color: var(--body); font-size: 1.2rem; }
+    .meta { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: .8rem 0; letter-spacing: .035em; text-transform: none; }
+    .confidence { margin: 1.5rem 0 2.5rem; padding: 1rem 1.2rem; background: var(--card); border-left: 3px solid var(--accent); }
+    .confidence p { margin: 0; }
+    h2 { margin: 2.6rem 0 .8rem; font-size: 1.65rem; }
+    p { margin: 0 0 1.1rem; }
+    ul { padding-left: 1.35rem; margin: 0 0 1.25rem; }
+    li { margin: .4rem 0; }
+    blockquote { margin: 1rem 0; padding: .25rem 0 .25rem 1rem; border-left: 2px solid var(--rule); }
+    table { width: 100%; margin: 1.2rem 0 1.6rem; border-collapse: collapse; font: .92rem/1.5 var(--sans); }
+    th, td { border-bottom: 1px solid var(--rule); padding: .65rem .5rem; text-align: left; vertical-align: top; }
+    th { color: var(--ink); }
+    pre { overflow-wrap: anywhere; white-space: pre-wrap; margin: .8rem 0 1.2rem; padding: 1rem; background: var(--card); border: 1px solid var(--rule); font: .82rem/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .note { padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .9rem; color: var(--muted); }
+    footer { border-top: 1px solid var(--rule); padding: 1rem 1.25rem 2rem; text-align: center; font: .8rem/1.5 var(--sans); color: var(--muted); }
+    @media (max-width: 560px) {
+      body { font-size: 16px; }
+      main { padding-top: 2rem; }
+      table { font-size: .82rem; }
+      th, td { padding: .5rem .3rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead"><a href="./">Notitia Civica</a> · Civic Intelligence</header>
+  <main>
+    <article>
+      <p class="kicker">Civic data · Oregon Legislature</p>
+      <h1>Oregon's Veto Field Said “No” Since 2007. Then It Said “Yes.”</h1>
+      <p class="dek">A consistency check found that a structured field disagreed with bills’ own action histories. The Legislature confirmed both the numbers and the correction.</p>
+      <p class="meta"><strong>DRAFT — cleared for publication 2026-10-01</strong> · Legislature replied 2026-09-30</p>
+
+      <aside class="confidence" aria-label="Confidence and attribution">
+        <p><strong>Confidence:</strong> High on the before-and-after values. The Legislature confirmed the numbers and the correction (reply received 2026-09-30). Whether the update was made because of the report is unconfirmed in their words; the sequence is documented by both sides.</p>
+      </aside>
+
+      <h2>What happened</h2>
+      <p>The Oregon Legislature publishes a free public data service at <code>api.oregonlegislature.gov</code>. Every bill in it carries a yes-or-no field called <code>Vetoed</code>. Every bill also carries its own action history — a list of dated events such as “Governor vetoed.”</p>
+      <p>On <strong>27 September 2026</strong>, an automated consistency check compared the two across every session in the service.</p>
+      <ul>
+        <li><strong>27 measures</strong> have a “Governor vetoed.” action in their history, spread over 10 sessions from 2007 to 2026.</li>
+        <li>On <strong>26 of the 27</strong>, <code>Vetoed</code> was <code>false</code>.
+          <ul>
+            <li><strong>23</strong> of those are vetoes that stood. For them, the field contradicted the bill’s own record.</li>
+            <li><strong>3</strong> (SB 5520, SB 545 and SB 897, all from 2009) became law when the Legislature overrode the veto. <code>false</code> is defensible there.</li>
+          </ul>
+        </li>
+        <li>Only one bill, SB 215 from 2013, was marked <code>Vetoed = true</code>.</li>
+      </ul>
+      <p>The gap was not one bad session. It appeared in 9 of the 10 sessions that had vetoes, including all seven vetoes of 2025. Anyone who asked the service “which bills did the Governor veto?” got <strong>one</strong> bill back. The real answer — 24 vetoes that stood — existed only in free-text history rows.</p>
+      <p>On <strong>28 September</strong> we sent the finding, with a one-line query anyone could run, to the Legislature’s data helpdesk.</p>
+      <p>On <strong>29 September at 03:28 UTC</strong>, the same query showed <code>Vetoed = true</code> on <strong>all 27</strong> measures, including the three overrides. Across the whole service, asking for <code>Vetoed = true</code> now returns exactly those 27. Re-checked 30 September, 01:25 UTC: still exactly 27.</p>
+
+      <h2>The Legislature replied</h2>
+      <p>On <strong>30 September</strong>, Jack Martinis of the Legislative Help Desk replied, forwarding a response from a development-team member, Nagaraj. The reply:</p>
+      <ul>
+        <li><strong>Reproduced the numbers exactly</strong> — 27 measures with a “Governor vetoed.” action across 2007R1–2026R1, three overridden into law, the remaining 24 including all seven 2025R1 vetoes (HB 2596, HB 3795, SB 302, SB 736, SB 875, SB 976, SB 1047) and HB 4177 in 2026R1.</li>
+        <li><strong>Confirmed the correction</strong> — “The data has now been updated to ensure that all measures with a gubernatorial veto are accurately reflected. If a veto was later overridden, the measure will continue to display Vetoed = true, consistent with the historical record.”</li>
+      </ul>
+      <p>One honest wrinkle: the same message first describes the old values as correct — “the Vetoed field correctly displays false” for the 24 — and then announces the update. The field’s semantics were evidently ambiguous even inside the building, which is precisely why the check reports disagreement rather than error. The reply does not directly answer whether the update was made in response to the report; it documents that the report was received, forwarded to the development team, and followed by the update.</p>
+
+      <h2>Why the proof matters more than the bug</h2>
+      <p>Here is the thing about the “before” state: <strong>it’s gone.</strong> You cannot query the API today and see what it said on September 27. The live service shows only the present. If we had simply written down “it was wrong,” that would be our word against nobody’s — there would be nothing to check.</p>
+      <p>So before we reported it, we sealed it. Every measure’s record, the full request, the retrieval time — bound into a hash chain and signed with our key. Anyone can run a one-file verifier, offline, and confirm the records haven’t been edited since. The pack cannot prove what the API returned independently of us; only our records are sealed, not theirs. But it proves <em>we</em> haven’t changed our story, and it preserves a past state the live service has already overwritten.</p>
+      <p>That is what the proof layer is for. Not catching villains. Preserving the past against the present.</p>
+
+      <h2>What we can and can’t claim</h2>
+      <table>
+        <thead><tr><th scope="col">Claim</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Wrong on 26 of 27 on 09-27</th><td>Our retrieval that day, re-sealed 2026-10-01 in <code>or_veto_pack_2026-10-01</code> (56 records, 1 seal) under operator key <code>f7b1282a4a9ccf50</code>.</td></tr>
+          <tr><th scope="row">Reported 09-28</th><td>Our sent email to the Legislature’s data helpdesk.</td></tr>
+          <tr><th scope="row">Corrected on all 27 by 09-29 03:28 UTC</th><td>Live API, sealed in the pack with the full request for each measure.</td></tr>
+          <tr><th scope="row">Legislature confirmed the numbers and the correction on 09-30</th><td>Reply from the Legislative Help Desk with the development team’s response (Jack Martinis / Nagaraj).</td></tr>
+          <tr><th scope="row">Corrected <em>because of</em> our report</th><td><strong>Not stated in their words.</strong> The reply documents the sequence — report received, forwarded to the development team, update followed — but does not attribute cause.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Check it yourself</h2>
+      <p>This returns the 27 vetoed measures today:</p>
+      <pre><a href="https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$filter=Vetoed%20eq%20true&amp;$select=SessionKey,MeasurePrefix,MeasureNumber,Vetoed&amp;$format=json">https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$filter=Vetoed eq true&amp;$select=SessionKey,MeasurePrefix,MeasureNumber,Vetoed&amp;$format=json</a></pre>
+      <p>The sealed evidence pack — hash chain, signed, offline-verifiable — will be published with the publisher’s key. Anyone will then be able to confirm that neither the “before” nor the “after” records were edited after the fact.</p>
+
+      <h2>Why it matters beyond Oregon</h2>
+      <ul>
+        <li><strong>Machine-readable doesn’t mean correct.</strong> A reporter, a researcher or an app that trusted the structured field would have published the wrong number for nearly every session since 2007, with nothing to warn them.</li>
+        <li><strong>The truth was there, just not where software looks.</strong> The history rows were right the whole time. The field built to summarize them wasn’t. A status field drifting from the record it summarizes is worth checking in every public dataset that has both.</li>
+        <li><strong>Long-standing errors can close fast.</strong> Whatever the reason, a gap dating to 2007 closed within about a day of being reported.</li>
+      </ul>
+
+      <h2>What remains uncertain</h2>
+      <ul>
+        <li><strong>Whether it changed because of the report.</strong> The timing fits: a gap dating to 2007 closed after the report was forwarded to the development team, and the reply documents the sequence. But the Legislature’s reply does not attribute cause, so this piece still doesn’t claim it.</li>
+        <li><strong>The “before” values rest on our own retrieval.</strong> Today’s live service can’t show the old state. The sealed pack proves our records haven’t changed since we made them.</li>
+        <li><strong>The overrides.</strong> Marking the three overridden bills <code>true</code> is defensible — they were vetoed. But <code>Vetoed = true</code> no longer means “did not become law.” Anyone counting laws should check for overrides separately.</li>
+      </ul>
+
+      <h2>What to watch</h2>
+      <ul>
+        <li>Whether the field stays maintained or drifts again. The check reruns; the pack seals whatever it finds.</li>
+        <li>The same check on neighboring fields. Early work found that <code>CurrentLocation</code> scattered 2025’s seven vetoes across four different values, and the same action is recorded under different capitalizations within a single session.</li>
+        <li>Other states. Any legislature that publishes both a status field and an action history can be checked the same way.</li>
+      </ul>
+
+      <p class="note"><strong>Method:</strong> a procedural consistency check (<code>proc_track</code>) replays each measure’s recorded actions against the field values the service publishes, and flags disagreement between them. It reports disagreement, not error. An exception we don’t know about may explain any single case. Contact: <a href="mailto:spec1_ops@proton.me">spec1_ops@proton.me</a>.</p>
+    </article>
+  </main>
+  <footer><a href="./">PDX-1i · Portland Metro Intelligence</a></footer>
+</body>
+</html>
