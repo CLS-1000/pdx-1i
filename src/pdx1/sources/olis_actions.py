@@ -95,6 +95,9 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("taken_from_calendar",        r"Taken from [^.]*Calendar[^.]*",    None, {"recalendared": True}),
     ("placed_on_calendar",         r"[Pp]laced on [^.]*Calendar[^.]*",  None, {"recalendared": True}),
     ("read_special_order",         r"Read as Special Order of Business", "third_reading", {}),
+    # "Motion to suspend the rules passed." is the motion passing, not the measure.
+    # (HB2341, HB2360, 2021R1)
+    ("motion_suspend_passed",      r"Motion to suspend the rules passed", None, {"rules_suspended": True}),
     ("passed",                     r"\bPassed\b",                       "passed", {}),
     ("adopted_cc_report",          r"(Senate|House) adopted Conference Committee Report[^.]*", "passed", {"conference": True}),
     ("repassed",                   r"[Rr]epassed( bill)?",              "passed", {"repassed": True}),
@@ -107,6 +110,9 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
     ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
     ("motion_carried_generic",     r"Motion to [^.]*carried[^.]*",      None, {"motion_carried": True}),
+    # "Motion to take and place ... Motion failed." -- a failed motion, not a failed
+    # measure. Longest match beats "failed". (SB554, 2021R1)
+    ("motion_failed_bare",         r"Motion failed",                    None, {"motion_failed": True}),
     ("failed",                     r"\bFailed\b",                       "failed", {}),
     ("refused_to_concur",          r"(House|Senate) refused to concur[^.]*", "committee", {"concurrence": "refused"}),
     ("adopted",                    r"\bAdopted\b",                      "adopted", {}),
@@ -120,6 +126,10 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     # --- executive / post-passage ----------------------------------------
     ("president_signed",           r"President signed",                 "signed_by_presiding", {"signer": "president"}),
     ("speaker_signed",             r"Speaker signed",                   "signed_by_presiding", {"signer": "speaker"}),
+    # Signed into law with some items struck. The measure is enacted; a later "Veto
+    # sustained" row concerns the struck items, not the measure (see step()).
+    ("governor_signed_line_item",  r"Governor signed with line-item veto", "enacted_line_item_veto",
+                                                                        {"veto_type": "line_item"}),
     ("governor_signed",            r"Governor signed",                  "enacted", {}),
     ("art_v_time_allowed",         r"The time allowed by Article V[^.]*", None, {}),
     ("art_v_time_allowed",         r"The time allowed by Article V[^.]*", None, {}),
@@ -153,9 +163,15 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("amendments_distributed",     r"\(Amendments distributed\.?\)",     None, {}),
     ("at_desk_adjournment",        r"At ((President's|Speaker's) desk|Desk) upon adjournment", None, {"location": "desk"}),
     ("governors_message_read",     r"Governor's message read[^.]*",     None, {}),
-    ("conferees_appointed",        r"[^.]*(appointed|discharged) (as )?(House|Senate) conferee[s]?[^.]*", None, {"conference": True}),
+    # Appointing conferees puts the measure in conference committee for that chamber.
+    # Recording it as a state is what lets a later "failed to adopt Conference Committee
+    # Report" fail the measure without a passed -> failed edge. (HB3242, 2023R1)
+    ("conferees_appointed",        r"[^.]*(appointed|discharged) (as )?(House|Senate) conferee[s]?[^.]*", "committee", {"conference": True}),
     ("conference_recommendation",  r"Conference Committee Recommendation:[^.]*", "committee", {"conference": True}),
     ("conference_report_dist",     r"Conference Committee Report distributed[^.]*", None, {"conference": True}),
+    # Reading the conference report into the record is not a third reading of the bill;
+    # the chamber's state is where its own last vote left it. (HB2312, HB2841, 2019R1)
+    ("conference_report_read",     r"Conference Committee Report read in (Senate|House)", None, {"conference": True}),
     ("vote_reconsideration",       r"Vote reconsideration (carried|failed)",      None, {"reconsidered": True}),
     ("rereferred_bare",            r"\bRereferred\b",                   "committee", {}),
     ("notice_reconsideration",     r"[^.]*reconsideration[^.]*", None, {}),
@@ -251,21 +267,30 @@ CHAMBER_FLOW = {
                        "second_reading", "third_reading"},
     "work_session": {"committee", "work_session", "public_hearing",
                      "second_reading", "third_reading"},
-    "second_reading": {"third_reading", "committee", "failed", "passed", "signed_by_presiding"},
-    "third_reading": {"passed", "adopted", "failed", "committee", "third_reading", "second_reading", "signed_by_presiding"},
-    "passed": {"signed_by_presiding", "passed", "committee", "third_reading", "tabled", "second_reading", "failed",
+    "second_reading": {"third_reading", "committee", "failed"},
+    "third_reading": {"passed", "adopted", "failed", "committee", "third_reading", "second_reading"},
+    "passed": {"signed_by_presiding", "passed", "committee", "third_reading", "tabled",
                "adopted", "veto_sustained", "veto_overridden"},
     "adopted": {"signed_by_presiding", "committee", "adopted", "third_reading", "passed"},
     "failed": {"committee", "failed", "second_reading", "third_reading", "passed", "adopted"},
-    "signed_by_presiding": {"signed_by_presiding", "enacted", "vetoed", "committee"},
-    # proc_track repeats this key four times with an identical value, a copy-paste
-    # artifact. Collapsed to one here because ruff F601 is a hard CI gate; the built
-    # dict is identical either way, and `test_olis_actions_parity` asserts that.
-    "enacted": {"vetoed", "veto_sustained"},
+    "signed_by_presiding": {"signed_by_presiding", "enacted", "enacted_line_item_veto", "vetoed", "committee"},
+    # Enacted is final for the measure. proc_track used to allow enacted -> vetoed /
+    # veto_sustained, which only HB5050 (2019R1) and SB5506 (2023R1) ever used -- both
+    # line-item vetoes, and both law. That path is modelled below instead.
+    "enacted": set(),
+    "enacted_line_item_veto": {"line_item_veto_sustained"},
     "vetoed": {"tabled", "veto_sustained", "veto_overridden", "committee", "passed"},
     "tabled": {"veto_sustained", "veto_overridden"},
 }
-TERMINAL = {"veto_sustained", "veto_overridden"}
+TERMINAL = {"veto_sustained", "veto_overridden", "line_item_veto_sustained"}
+
+# After a line-item veto the measure is law. OLIS records the Legislature declining to
+# override the struck items with the same text as a full veto ("Veto sustained in
+# accordance with Art. V, sec. 15b"), so the row is read by where the measure stands:
+# from enacted_line_item_veto it means the item veto stood, not that the measure died.
+CONTEXTUAL_STATE = {
+    ("enacted_line_item_veto", "veto_sustained"): "line_item_veto_sustained",
+}
 
 
 class Halt(Exception):
@@ -288,6 +313,7 @@ class Item:
 
 def step(item: Item, to_state: str, chamber: str, occurred_at: str, rule_id: str, payload: dict):
     frm = item.states.get(chamber)
+    to_state = CONTEXTUAL_STATE.get((frm, to_state), to_state)
     # crossover: origin chamber passed -> second chamber introduction is legal
     if frm is None and to_state == "introduced":
         pass
@@ -335,7 +361,7 @@ def replay(measure_id: str, rows: list[dict]):
 #:
 #: Bump this deliberately when re-copying from proc_track. A failure here on a
 #: deliberate sync is expected and is the whole point: the copy cannot drift quietly.
-RULES_VERSION = "5d6c1b8bf766"
+RULES_VERSION = "44887b1a71d0"
 
 #: States worth a Signal. These are the procedural facts a reader would call news:
 #: a measure moved, or it stopped moving.
@@ -363,6 +389,8 @@ EMITTABLE: frozenset[str] = frozenset(
         "veto_overridden",
         "signed_by_presiding",
         "tabled",
+        "enacted_line_item_veto",
+        "line_item_veto_sustained",
     }
 )
 
@@ -412,7 +440,9 @@ def transitions(rows: list[dict]) -> tuple[Item, list[Transition]]:
                     action_id=int(r["MeasureHistoryId"]),
                     chamber=r["Chamber"],
                     from_state=before,
-                    to_state=e.state,
+                    # What step() actually recorded: CONTEXTUAL_STATE can reinterpret
+                    # the emitted state (a veto sustained after a line-item veto).
+                    to_state=item.states[r["Chamber"]],
                     action_text=r["ActionText"],
                     action_date=r["ActionDate"],
                     rule_id=e.rule_id,

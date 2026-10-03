@@ -95,9 +95,12 @@ brief — is built; see *Not built yet* for what it does and refuses to do.
    longer an open question across the board: `webmap.html` now holds the SPEC-1
    monochrome system (black canvas, white opacity hierarchy, `#00FF00`/`#FF0000`
    reserved for live status and declared as tokens), and `citizen-cognisance.html` is
-   a deliberate exception, MCM Editorial rather than phosphor. What is undecided is
-   `index.html`, the brief reader, which still carries a light multi-hue palette and
-   has no recorded decision either way.
+   a deliberate exception, MCM Editorial rather than phosphor. The families, their
+   tokens and the shared invariants are mapped in
+   [`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). What is undecided is `index.html`,
+   the brief reader, which carries a light multi-hue palette with no recorded
+   decision either way — the blueprint's §4 lays out the options and the fact that
+   the PDF already shares that palette.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
@@ -399,7 +402,9 @@ day after their own `ActionDate` — one of them 399.9 days after. An `ActionDat
 watermark would therefore work and be wrong: it would skip exactly those backdated
 inserts. The replay runs from scratch each cycle and the emitted set is diffed against
 an `olis_emitted` table, so a row backdated into the middle of a history shows up as a
-new transition even though nothing changed at the tail.
+new transition even though nothing changed at the tail. That table's ground truth is
+`pdx1_signals_olis_emitted.jsonl`, rebuilt into SQLite like the other streams; a host
+that starts each run on a fresh machine must carry that file forward too.
 
 **Sessions are resolved, not hardcoded.** Interim keys are dropped and what remains is
 filtered by `PDX1_OLIS_SESSION_LOOKBACK_DAYS`; the resolved list is logged at INFO every
@@ -528,7 +533,18 @@ Two streams are persisted, each with its own ground-truth file and its own table
 |---|---|---|
 | `IntelligenceRecord` | `pdx1_signals.jsonl` | `intelligence_records` |
 | `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
+| OLIS emitted transitions | `pdx1_signals_olis_emitted.jsonl` | `olis_emitted` |
 | run ledger | `pdx1_signals_runs.jsonl` | — (one JSON line per cycle, written even when no brief publishes or the cycle raises) |
+
+The run ledger is what the dead-man check reads:
+
+```bash
+pdx1 --check-ledger    # exit 1 if the newest line is missing, stale, failed, future-dated or a fixture replay
+```
+
+It prints the verdict as JSON and writes nothing. "Stale" means older than
+`PDX1_LEDGER_MAX_AGE_HOURS` (default 26: a daily run plus slack). Run it from a
+schedule other than the cycle's own: a cycle that never started cannot report itself.
 
 They are kept apart rather than interleaved so each file stays a homogeneous stream that
 reads back without discriminating on type. The briefs path is derived from the records

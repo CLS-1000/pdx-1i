@@ -52,8 +52,8 @@ engine publishes about real people and institutions.
    a quiet day and a cycle that raised. That line is the evidence for the thirty-day
    count; a missing line is what the alert looks for. Do not make it conditional.
 8. **State that must outlive the process is read from the store.** Novelty hashes,
-   rolling baselines and the trigger's last publication are all seeded from ground
-   truth at the start of a cycle. Something held only in memory resets every morning,
+   rolling baselines, the trigger's last publication and the OLIS emitted-transition
+   set are all seeded from ground truth at the start of a cycle. Something held only in memory resets every morning,
    because the scheduler starts a fresh process -- or a fresh machine.
 
 ## Layout

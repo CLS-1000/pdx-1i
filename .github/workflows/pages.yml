@@ -37,6 +37,7 @@ jobs:
           cp ui/citizen-cognisance.html _site/index.html
           cp ui/citizen-cognisance.html _site/citizen-cognisance.html
           cp ui/index.html              _site/brief.html
+          cp ui/oregon-veto-field.html  _site/oregon-veto-field.html
           cp ui/webmap.html             _site/webmap.html
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5

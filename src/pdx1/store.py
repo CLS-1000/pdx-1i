@@ -37,6 +37,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
+from .ledger import read_ledger
 from .models import Brief, IntelligenceRecord, utcnow
 
 logger = logging.getLogger(__name__)
@@ -136,8 +137,16 @@ class DualWriteStore:
         #: rather than a model: it is an operational log, and a run that crashed
         #: before building any model still has to leave a line.
         self.runs_path = self.jsonl_path.with_name(f"{self.jsonl_path.stem}_runs.jsonl")
+        #: Ground truth for which OLIS transitions have been emitted. Before this file
+        #: existed the table lived only in SQLite, so a host that rebuilds SQLite from
+        #: JSONL each run (the daily cloud task) started every morning believing no
+        #: transition had ever been emitted.
+        self.olis_emitted_path = self.jsonl_path.with_name(
+            f"{self.jsonl_path.stem}_olis_emitted.jsonl"
+        )
         self._ensure_paths()
         self._init_db()
+        self._backfill_olis_emitted_jsonl()
 
     def _ensure_paths(self) -> None:
         for path in (self.jsonl_path, self.db_path, self.briefs_path):
@@ -204,17 +213,7 @@ class DualWriteStore:
 
     def iter_runs(self) -> Iterator[dict]:
         """Every run-ledger line, oldest first. Blank or torn lines are skipped."""
-        if not self.runs_path.exists():
-            return
-        with self.runs_path.open(encoding="utf-8") as fh:
-            for raw in fh:
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    yield json.loads(raw)
-                except json.JSONDecodeError:
-                    logger.warning("runs ledger: skipped unreadable line")
+        return read_ledger(self.runs_path)
 
     def _append_jsonl(self, records: list[IntelligenceRecord]) -> None:
         with self.jsonl_path.open("a", encoding="utf-8") as fh:
@@ -419,33 +418,99 @@ class DualWriteStore:
         """
         Mark transitions as emitted. Returns the number of new rows.
 
-        `INSERT OR IGNORE` rather than a replace: a transition that is already recorded
-        keeps its original `emitted_at` and `rules_version`, which is what makes the
-        rules_version column worth reading later.
-
-        This table is a query-layer bookkeeping aid, not ground truth -- the Signals it
-        gates are written to JSONL by the normal path. It is therefore the one table
-        here that is not reconstructible from `rebuild_from_jsonl`; losing it costs a
-        re-bootstrap, not a record.
+        Same order as every other stream: new rows go to the JSONL file first
+        (flushed and fsynced), then to SQLite. A transition already recorded keeps its
+        original `emitted_at` and `rules_version` in both places, which is what makes
+        the rules_version column worth reading later.
         """
         stamp = emitted_at or utcnow().isoformat()
-        rows = [(s, p, n, a, c, st, rules_version, stamp) for s, p, n, a, c, st in transitions]
-        if not rows:
+        candidates = {}
+        for s, p, n, a, c, st in transitions:
+            candidates.setdefault((s, p, int(n), int(a), st), (s, p, int(n), int(a), c, st))
+        if not candidates:
             return 0
         with closing(self._connect()) as conn:
-            before = conn.execute("SELECT count(*) FROM olis_emitted").fetchone()[0]
+            sessions = {key[0] for key in candidates}
+            existing = {
+                (r["session_key"], r["measure_prefix"], int(r["measure_number"]),
+                 int(r["action_id"]), r["state"])
+                for session in sessions
+                for r in conn.execute(
+                    "SELECT session_key, measure_prefix, measure_number, action_id, state "
+                    "FROM olis_emitted WHERE session_key = ?",
+                    (session,),
+                )
+            }
+        fresh = [row for key, row in sorted(candidates.items()) if key not in existing]
+        if not fresh:
+            return 0
+        lines = [
+            {
+                "session_key": s, "measure_prefix": p, "measure_number": n,
+                "action_id": a, "chamber": c, "state": st,
+                "rules_version": rules_version, "emitted_at": stamp,
+            }
+            for s, p, n, a, c, st in fresh
+        ]
+        self._append_olis_emitted_jsonl(lines)
+        self._insert_olis_emitted(lines)
+        return len(fresh)
+
+    def _append_olis_emitted_jsonl(self, lines: list[dict]) -> None:
+        with self.olis_emitted_path.open("a", encoding="utf-8") as fh:
+            for line in lines:
+                fh.write(json.dumps(line, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def _insert_olis_emitted(self, lines: list[dict]) -> None:
+        with closing(self._connect()) as conn:
             conn.executemany(
                 """
                 INSERT OR IGNORE INTO olis_emitted
                     (session_key, measure_prefix, measure_number, action_id,
                      chamber, state, rules_version, emitted_at)
-                VALUES (?,?,?,?,?,?,?,?)
+                VALUES (:session_key, :measure_prefix, :measure_number, :action_id,
+                        :chamber, :state, :rules_version, :emitted_at)
                 """,
-                rows,
+                lines,
             )
             conn.commit()
-            after = conn.execute("SELECT count(*) FROM olis_emitted").fetchone()[0]
-        return int(after - before)
+
+    def iter_olis_emitted(self) -> Iterator[dict]:
+        """Every emitted-transition line in ground truth. Torn lines are skipped."""
+        if not self.olis_emitted_path.exists():
+            return
+        with self.olis_emitted_path.open(encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    yield json.loads(raw)
+                except json.JSONDecodeError:
+                    logger.warning("olis_emitted ledger: skipped unreadable line")
+
+    def _backfill_olis_emitted_jsonl(self) -> None:
+        """
+        One-time migration for stores created before the JSONL file existed.
+
+        If SQLite holds emitted transitions and the file does not, write them out, so
+        the next `rebuild_from_jsonl` keeps them instead of wiping them.
+        """
+        if self.olis_emitted_path.exists():
+            return
+        with closing(self._connect()) as conn:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT session_key, measure_prefix, measure_number, action_id, "
+                "chamber, state, rules_version, emitted_at FROM olis_emitted "
+                "ORDER BY emitted_at, session_key, measure_prefix, measure_number, action_id"
+            )]
+        if rows:
+            self._append_olis_emitted_jsonl(rows)
+            logger.info(
+                "olis_emitted: backfilled %d row(s) to %s", len(rows), self.olis_emitted_path
+            )
 
     def olis_emitted_count(self, session_key: str | None = None) -> int:
         """How many transitions are on record, for a session or overall."""
@@ -624,12 +689,13 @@ class DualWriteStore:
         """
         Drop and repopulate SQLite from ground truth. Returns the record count.
 
-        Rebuilds both streams -- records and briefs. The return value counts records
-        only, for backwards compatibility; use `brief_count()` for the other.
+        Rebuilds records, briefs and the OLIS emitted-transition table. The return
+        value counts records only, for backwards compatibility.
         """
         with closing(self._connect()) as conn:
             conn.execute("DELETE FROM intelligence_records")
             conn.execute("DELETE FROM briefs")
+            conn.execute("DELETE FROM olis_emitted")
             conn.commit()
 
         records = list(self.iter_jsonl())
@@ -639,6 +705,10 @@ class DualWriteStore:
         briefs = list(self.iter_briefs())
         for brief in briefs:
             self._insert_brief(brief)
+
+        emitted = list(self.iter_olis_emitted())
+        if emitted:
+            self._insert_olis_emitted(emitted)
 
         logger.info(
             "rebuilt %s: %d record(s) from %s, %d brief(s) from %s",

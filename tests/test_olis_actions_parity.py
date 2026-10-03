@@ -47,20 +47,25 @@ def test_every_rule_compiles_and_is_shaped_right():
 
 
 def test_every_emittable_state_is_reachable_from_some_rule():
-    """A state in EMITTABLE that no rule can produce is dead configuration."""
+    """A state in EMITTABLE that no rule can produce is dead configuration.
+
+    CONTEXTUAL_STATE is a producer too: `line_item_veto_sustained` comes from no rule
+    directly, only from reinterpreting `veto_sustained` after a line-item signing.
+    """
     produced = {state for _rid, _pat, state, _pl in olis_actions.RULES if state}
+    produced |= set(olis_actions.CONTEXTUAL_STATE.values())
 
     assert olis_actions.EMITTABLE <= produced, olis_actions.EMITTABLE - produced
 
 
 def test_chamber_flow_matches_the_upstream_table():
     """
-    proc_track repeats four CHAMBER_FLOW keys with identical values; the copy collapses
-    them so ruff's F601 gate passes. Deduplication must not have changed the table --
-    a dict literal keeps the last value for a repeated key, so this only holds while
-    the repeats really are identical.
+    proc_track used to repeat the "enacted" key four times, which is why this copy had
+    to collapse it. Upstream now has one key with no outgoing edges (enacted is final;
+    the line-item veto path is modelled separately), so the copy matches it directly.
     """
-    assert olis_actions.CHAMBER_FLOW["enacted"] == {"vetoed", "veto_sustained"}
+    assert olis_actions.CHAMBER_FLOW["enacted"] == set()
+    assert olis_actions.CHAMBER_FLOW["enacted_line_item_veto"] == {"line_item_veto_sustained"}
     # Every state a rule can produce must be reachable, or replay halts on it.
     produced = {state for _rid, _pat, state, _pl in olis_actions.RULES if state}
     known = set(olis_actions.CHAMBER_FLOW) | {

@@ -453,17 +453,19 @@ def test_wa_pdc_reads_only_the_recent_window_in_a_stable_order(tmp_path):
     Without `$where` every cycle walked the full history from the top; without
     `$order`, `$offset` paging could skip or repeat rows.
     """
-    from datetime import date, timedelta
+    from datetime import datetime, timedelta, timezone
 
+    before = datetime.now(timezone.utc)
     with patch("httpx.get", return_value=_response(payload=[_SOCRATA_ROW])) as mock_get:
         WaPdcAdapter(live=True, cache_dir=tmp_path, lookback_days=3).safe_fetch()
+    after = datetime.now(timezone.utc)
 
     params = mock_get.call_args.kwargs["params"]
     assert params["$order"] == ":id"
-    since = (date.today() - timedelta(days=3)).isoformat()
-    # Allow for the UTC date differing from the local one around midnight.
-    earlier = (date.today() - timedelta(days=4)).isoformat()
-    assert params["$where"] in (
-        f"receipt_date >= '{since}T00:00:00'",
-        f"receipt_date >= '{earlier}T00:00:00'",
-    )
+    # The window is computed in UTC. Comparing against the local date instead made this
+    # fail every evening in Pacific time, once UTC had rolled over to the next day.
+    expected = {
+        f"receipt_date >= '{(t - timedelta(days=3)).date().isoformat()}T00:00:00'"
+        for t in (before, after)
+    }
+    assert params["$where"] in expected

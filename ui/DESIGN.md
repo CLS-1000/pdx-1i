@@ -1,8 +1,10 @@
 # CITIZEN COGNISANCE · pdx-1i — MCM Editorial design system
 
 Design language for the **public** surfaces of the pdx-1i product. The phosphor
-terminal palette in `ui/webmap.html` and `ui/index.html` belongs to SWITCHBOARD
-(internal ops) and is not used here.
+terminal palette in `ui/webmap.html` belongs to SWITCHBOARD (internal ops) and is
+not used here; `ui/index.html` carries the Brief palette, shared with the PDF. How
+the families relate — and which surface belongs to which — is mapped in
+[`ui/DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md); this document is the MCM Editorial spec.
 
 MCM Editorial is a mid-century-modern editorial system: structured, authoritative,
 slightly warm. Hierarchy is carried by type and rule weight, not by decoration.

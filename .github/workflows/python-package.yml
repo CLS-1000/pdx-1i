@@ -8,6 +8,11 @@ on:
   # without this workflow ever running.
   pull_request:
 
+# The job only reads the repo and runs tests. Without this block the token gets the
+# repository's default permissions, which may include write.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

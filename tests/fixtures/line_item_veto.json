@@ -1,0 +1,496 @@
+{
+ "2023R1:SB5506": [
+  {
+   "MeasureHistoryId": 554036,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-02-02T11:15:57",
+   "ActionText": "Introduction and first reading. Referred to President's desk.",
+   "CreatedDate": "2023-02-02T11:16:23"
+  },
+  {
+   "MeasureHistoryId": 554143,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-02-02T12:02:13",
+   "ActionText": "Referred to Ways and Means.",
+   "CreatedDate": "2023-02-02T12:04:26"
+  },
+  {
+   "MeasureHistoryId": 587316,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-02-02T12:53:00",
+   "ActionText": "Assigned to Subcommittee On Capital Construction.",
+   "CreatedDate": "2023-06-20T10:33:38"
+  },
+  {
+   "MeasureHistoryId": 571985,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-04-08T10:01:00",
+   "ActionText": "Public Hearing held.",
+   "CreatedDate": "2023-04-10T12:59:36"
+  },
+  {
+   "MeasureHistoryId": 575185,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-04-14T17:01:00",
+   "ActionText": "Public Hearing held.",
+   "CreatedDate": "2023-04-24T10:10:01"
+  },
+  {
+   "MeasureHistoryId": 575184,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-04-21T17:01:00",
+   "ActionText": "Public Hearing held.",
+   "CreatedDate": "2023-04-24T10:09:23"
+  },
+  {
+   "MeasureHistoryId": 576678,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-04-28T17:01:00",
+   "ActionText": "Public Hearing held.",
+   "CreatedDate": "2023-05-01T17:14:28"
+  },
+  {
+   "MeasureHistoryId": 577261,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-05-03T17:01:00",
+   "ActionText": "Public Hearing held.",
+   "CreatedDate": "2023-05-03T19:44:29"
+  },
+  {
+   "MeasureHistoryId": 587318,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-20T09:02:00",
+   "ActionText": "Work Session held.",
+   "CreatedDate": "2023-06-20T10:33:38"
+  },
+  {
+   "MeasureHistoryId": 587659,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-20T14:02:00",
+   "ActionText": "Work Session held.",
+   "CreatedDate": "2023-06-20T16:18:20"
+  },
+  {
+   "MeasureHistoryId": 587317,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-20T14:03:00",
+   "ActionText": "Returned to Full Committee.",
+   "CreatedDate": "2023-06-20T10:33:38"
+  },
+  {
+   "MeasureHistoryId": 589266,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-23T09:53:31",
+   "ActionText": "Recommendation: Do pass with amendments.  (Printed A-Eng.)",
+   "CreatedDate": "2023-06-23T09:57:11"
+  },
+  {
+   "MeasureHistoryId": 590107,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-24T14:13:50",
+   "ActionText": "Second reading.",
+   "CreatedDate": "2023-06-24T14:14:13"
+  },
+  {
+   "MeasureHistoryId": 590579,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-25T10:28:49",
+   "ActionText": "Third reading.  Carried by Steiner.  Passed.",
+   "CreatedDate": "2023-06-25T10:28:53"
+  },
+  {
+   "MeasureHistoryId": 603111,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-25T10:29:49",
+   "ActionText": "Vote explanation(s) filed by Knopp.",
+   "CreatedDate": "2023-08-07T15:07:04"
+  },
+  {
+   "MeasureHistoryId": 590601,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "H",
+   "ActionDate": "2023-06-25T10:53:14",
+   "ActionText": "First reading. Referred to Speaker's desk.",
+   "CreatedDate": "2023-06-25T10:53:19"
+  },
+  {
+   "MeasureHistoryId": 590622,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "H",
+   "ActionDate": "2023-06-25T11:56:04",
+   "ActionText": "Referred to Ways and Means.",
+   "CreatedDate": "2023-06-25T11:56:06"
+  },
+  {
+   "MeasureHistoryId": 590643,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "H",
+   "ActionDate": "2023-06-25T12:24:35",
+   "ActionText": "Recommendation: Do pass.",
+   "CreatedDate": "2023-06-25T12:26:36"
+  },
+  {
+   "MeasureHistoryId": 590722,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "H",
+   "ActionDate": "2023-06-25T12:57:46",
+   "ActionText": "Rules suspended. Second reading.",
+   "CreatedDate": "2023-06-25T12:57:51"
+  },
+  {
+   "MeasureHistoryId": 590724,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "H",
+   "ActionDate": "2023-06-25T13:03:27",
+   "ActionText": "Rules suspended. Third reading. Carried by Sanchez. Passed.",
+   "CreatedDate": "2023-06-25T13:03:37"
+  },
+  {
+   "MeasureHistoryId": 600324,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-06-27T11:21:00",
+   "ActionText": "President signed.",
+   "CreatedDate": "2023-06-29T11:23:16"
+  },
+  {
+   "MeasureHistoryId": 601952,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "H",
+   "ActionDate": "2023-07-06T11:22:59",
+   "ActionText": "Speaker signed.",
+   "CreatedDate": "2023-07-06T11:23:32"
+  },
+  {
+   "MeasureHistoryId": 603053,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-08-04T14:05:00",
+   "ActionText": "Governor signed with line-item veto.",
+   "CreatedDate": "2023-08-07T09:29:24"
+  },
+  {
+   "MeasureHistoryId": 603318,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-08-22T09:04:26",
+   "ActionText": "Chapter 605, 2023 Laws.",
+   "CreatedDate": "2023-08-22T09:04:47"
+  },
+  {
+   "MeasureHistoryId": 603328,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2023-08-22T09:05:53",
+   "ActionText": "Effective date, August 4, 2023.",
+   "CreatedDate": "2023-08-22T09:06:37"
+  },
+  {
+   "MeasureHistoryId": 612042,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2024-02-05T09:06:00",
+   "ActionText": "Motion to lay bill, together with Governor's message, on the table carried.",
+   "CreatedDate": "2024-04-03T12:05:46"
+  },
+  {
+   "MeasureHistoryId": 612043,
+   "SessionKey": "2023R1",
+   "MeasurePrefix": "SB",
+   "MeasureNumber": 5506,
+   "Chamber": "S",
+   "ActionDate": "2024-03-07T09:07:00",
+   "ActionText": "Veto sustained in accordance with Art. V, sec. 15b, Oregon Constitution.",
+   "CreatedDate": "2024-04-03T12:07:22"
+  }
+ ],
+ "2019R1:HB5050": [
+  {
+   "MeasureHistoryId": 437518,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-01-14T08:54:51",
+   "ActionText": "First reading. Referred to Speaker's desk.",
+   "CreatedDate": "2019-01-14T08:55:34"
+  },
+  {
+   "MeasureHistoryId": 439325,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-01-15T15:56:58",
+   "ActionText": "Referred to Ways and Means.",
+   "CreatedDate": "2019-01-15T16:00:09"
+  },
+  {
+   "MeasureHistoryId": 477259,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-24T16:26:00",
+   "ActionText": "Assigned to Subcommittee On Capital Construction.",
+   "CreatedDate": "2019-06-25T13:51:09"
+  },
+  {
+   "MeasureHistoryId": 477261,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-25T13:02:00",
+   "ActionText": "Work Session held.",
+   "CreatedDate": "2019-06-25T13:51:09"
+  },
+  {
+   "MeasureHistoryId": 477260,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-25T13:05:00",
+   "ActionText": "Returned to Full Committee.",
+   "CreatedDate": "2019-06-25T13:51:09"
+  },
+  {
+   "MeasureHistoryId": 477322,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-25T17:32:00",
+   "ActionText": "Work Session held.",
+   "CreatedDate": "2019-06-26T07:34:12"
+  },
+  {
+   "MeasureHistoryId": 477359,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-26T14:09:11",
+   "ActionText": "Recommendation: Do pass with amendments and be printed A-Engrossed.",
+   "CreatedDate": "2019-06-26T14:17:36"
+  },
+  {
+   "MeasureHistoryId": 477751,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-29T13:25:54",
+   "ActionText": "Second reading.",
+   "CreatedDate": "2019-06-29T13:32:25"
+  },
+  {
+   "MeasureHistoryId": 478241,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-30T14:39:00",
+   "ActionText": "Potential conflict(s) of interest declared by Hayden, Smith G.",
+   "CreatedDate": "2019-06-30T14:39:37"
+  },
+  {
+   "MeasureHistoryId": 478243,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-30T14:51:31",
+   "ActionText": "Third reading. Carried by Rayfield. Passed.",
+   "CreatedDate": "2019-06-30T14:51:32"
+  },
+  {
+   "MeasureHistoryId": 478351,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-06-30T14:52:00",
+   "ActionText": "Vote explanation(s) filed by Keny-Guyer, Sanchez.",
+   "CreatedDate": "2019-07-01T12:05:57"
+  },
+  {
+   "MeasureHistoryId": 478250,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-06-30T15:05:45",
+   "ActionText": "First reading. Referred to President's desk.",
+   "CreatedDate": "2019-06-30T15:05:57"
+  },
+  {
+   "MeasureHistoryId": 478268,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-06-30T15:59:14",
+   "ActionText": "Referred to Ways and Means.",
+   "CreatedDate": "2019-06-30T16:02:55"
+  },
+  {
+   "MeasureHistoryId": 478276,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-06-30T16:31:02",
+   "ActionText": "Recommendation: Do pass the A-Eng. bill.",
+   "CreatedDate": "2019-06-30T16:31:37"
+  },
+  {
+   "MeasureHistoryId": 478278,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-06-30T16:39:31",
+   "ActionText": "Second reading.",
+   "CreatedDate": "2019-06-30T16:39:42"
+  },
+  {
+   "MeasureHistoryId": 478280,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-06-30T16:47:56",
+   "ActionText": "Rules suspended. Third reading.  Carried by Johnson.  Passed.",
+   "CreatedDate": "2019-06-30T16:50:31"
+  },
+  {
+   "MeasureHistoryId": 481893,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-06-30T16:48:56",
+   "ActionText": "Vote explanation filed by Golden.",
+   "CreatedDate": "2019-07-10T13:28:40"
+  },
+  {
+   "MeasureHistoryId": 478664,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-07-02T15:16:59",
+   "ActionText": "Speaker signed.",
+   "CreatedDate": "2019-07-02T15:18:58"
+  },
+  {
+   "MeasureHistoryId": 478834,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "S",
+   "ActionDate": "2019-07-03T14:51:02",
+   "ActionText": "President signed.",
+   "CreatedDate": "2019-07-03T15:01:59"
+  },
+  {
+   "MeasureHistoryId": 482328,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-08-09T16:55:00",
+   "ActionText": "Governor signed with line-item veto.",
+   "CreatedDate": "2019-08-09T17:03:22"
+  },
+  {
+   "MeasureHistoryId": 482455,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2019-08-14T14:32:36",
+   "ActionText": "Chapter 644, (2019 Laws): Effective date August 9, 2019.",
+   "CreatedDate": "2019-08-14T14:38:27"
+  },
+  {
+   "MeasureHistoryId": 489459,
+   "SessionKey": "2019R1",
+   "MeasurePrefix": "HB",
+   "MeasureNumber": 5050,
+   "Chamber": "H",
+   "ActionDate": "2020-03-08T23:59:00",
+   "ActionText": "Veto sustained in accordance with Article V, Section 15a, Oregon Constitution.",
+   "CreatedDate": "2020-04-17T15:08:39"
+  }
+ ]
+}
