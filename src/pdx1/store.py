@@ -37,82 +37,11 @@ from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 
+from . import db
 from .ledger import read_ledger
 from .models import Brief, IntelligenceRecord, utcnow
 
 logger = logging.getLogger(__name__)
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS intelligence_records (
-    record_id     TEXT PRIMARY KEY,
-    run_id        TEXT NOT NULL,
-    source        TEXT NOT NULL,
-    source_type   TEXT NOT NULL,
-    pattern       TEXT NOT NULL,
-    outcome       TEXT NOT NULL,
-    priority      TEXT NOT NULL,
-    confidence    REAL NOT NULL,
-    tier          TEXT NOT NULL,
-    sigma         REAL,
-    anomaly_tier  TEXT,
-    entity_ids    TEXT NOT NULL,
-    signal_id     TEXT NOT NULL,
-    url           TEXT,
-    published_at  TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    payload       TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_records_run     ON intelligence_records(run_id);
-CREATE INDEX IF NOT EXISTS idx_records_outcome ON intelligence_records(outcome);
-CREATE INDEX IF NOT EXISTS idx_records_source  ON intelligence_records(source);
-
-CREATE TABLE IF NOT EXISTS briefs (
-    brief_id     TEXT PRIMARY KEY,
-    run_id       TEXT NOT NULL,
-    date         TEXT NOT NULL,
-    headline     TEXT NOT NULL,
-    confidence   REAL NOT NULL,
-    section_count INTEGER NOT NULL,
-    produced_at  TEXT NOT NULL,
-    payload      TEXT NOT NULL,
-    -- Audit trail from the observation-only checks, flattened out of `payload` so it
-    -- can be queried without JSON extraction. Defaulted, so a database written before
-    -- observations existed opens without a rewrite.
-    observations TEXT NOT NULL DEFAULT '[]',
-    observation_count INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_briefs_produced ON briefs(produced_at);
-CREATE INDEX IF NOT EXISTS idx_briefs_run      ON briefs(run_id);
-
--- Procedural transitions the OLIS adapter has already emitted a Signal for.
---
--- A transition set rather than a final-state map, because OLIS rows are inserted and
--- edited retroactively: in 2025R1, 7.1% of rows carry a ModifiedDate and 2,188 were
--- created at least a day after their own ActionDate, one of them 399.9 days after.
--- The adapter replays each measure from scratch every cycle, so a row backdated into
--- the middle of a history changes the computed transitions and shows up in the diff
--- even though nothing new appeared at the tail. A final-state comparison misses that,
--- and also collapses several emittable transitions landing in one cycle into one.
---
--- session_key is part of the primary key because measure numbers repeat across
--- sessions -- SB 976 exists in both 2019R1 and 2025R1.
---
--- rules_version is recorded but deliberately not part of the key: it is there so that
--- when a rule patch changes historical output you can see which rows were produced
--- under which ruleset instead of guessing.
-CREATE TABLE IF NOT EXISTS olis_emitted (
-  session_key    TEXT    NOT NULL,
-  measure_prefix TEXT    NOT NULL,
-  measure_number INTEGER NOT NULL,
-  action_id      INTEGER NOT NULL,
-  chamber        TEXT    NOT NULL,
-  state          TEXT    NOT NULL,
-  rules_version  TEXT    NOT NULL,
-  emitted_at     TEXT    NOT NULL,
-  PRIMARY KEY (session_key, measure_prefix, measure_number, action_id, state)
-);
-CREATE INDEX IF NOT EXISTS idx_olis_emitted_session ON olis_emitted(session_key);
-"""
 
 
 class DualWriteStore:
@@ -153,33 +82,10 @@ class DualWriteStore:
             path.parent.mkdir(parents=True, exist_ok=True)
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return db.connect(self.db_path)
 
     def _init_db(self) -> None:
-        with closing(self._connect()) as conn:
-            conn.executescript(SCHEMA)
-            self._migrate(conn)
-            conn.commit()
-
-    @staticmethod
-    def _migrate(conn: sqlite3.Connection) -> None:
-        """
-        Bring an existing database up to the current schema.
-
-        `CREATE TABLE IF NOT EXISTS` leaves an already-created table alone, so columns
-        added later have to be applied by hand. Each is defaulted, so rows written
-        before the column existed stay readable -- ground truth is the JSONL either
-        way, and this table is a query layer that can be rebuilt from it.
-        """
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(briefs)")}
-        for column, ddl in (
-            ("observations", "TEXT NOT NULL DEFAULT '[]'"),
-            ("observation_count", "INTEGER NOT NULL DEFAULT 0"),
-        ):
-            if column not in existing:
-                conn.execute(f"ALTER TABLE briefs ADD COLUMN {column} {ddl}")
+        db.migrate(self.db_path)
 
     # ── Writing ──────────────────────────────────────────────────────────────
 
@@ -256,6 +162,10 @@ class DualWriteStore:
                 """,
                 rows,
             )
+            conn.executemany(
+                "INSERT OR IGNORE INTO record_entities (record_id, entity_id) VALUES (?,?)",
+                [(r.record_id, e) for r in records for e in dict.fromkeys(r.entity_ids)],
+            )
             conn.commit()
 
     # ── Reading ──────────────────────────────────────────────────────────────
@@ -292,26 +202,27 @@ class DualWriteStore:
         `build_network_drawing` lays out on sorted ids, and an unstable order here
         would put a stable layout behind an unstable input.
 
-        Matched in Python rather than through a generated `IN (?,?,...)` clause, for
-        the same two reasons `entity_record_counts` tallies this column in Python: the
-        SQL stays a fixed string that no future edit can make injectable, and it does
-        not run into SQLite's cap on host parameters when a brief cites more records
-        than the driver will bind at once. The record set is one metro's public
-        filings, not a firehose; if that stops being true this wants a join table.
+        Resolved through the `record_entities` link table (migration 2) rather than by
+        scanning and decoding every record's JSON `entity_ids`.
         """
         wanted = set(record_ids)
         if not wanted:
             return []
 
-        with closing(self._connect()) as conn:
-            rows = conn.execute(
-                "SELECT record_id, entity_ids FROM intelligence_records"
-            ).fetchall()
-
+        # Resolved through the indexed record_entities link table. Parameters are
+        # bound in chunks to stay under SQLite's host-parameter cap; the SQL text is
+        # built only from a count of "?" placeholders, never from the ids.
         found: set[str] = set()
-        for row in rows:
-            if row["record_id"] in wanted:
-                found.update(json.loads(row["entity_ids"]))
+        ids = sorted(wanted)
+        with closing(self._connect()) as conn:
+            for i in range(0, len(ids), 500):
+                chunk = ids[i : i + 500]
+                marks = ",".join("?" * len(chunk))
+                rows = conn.execute(
+                    f"SELECT DISTINCT entity_id FROM record_entities WHERE record_id IN ({marks})",  # nosec B608
+                    chunk,
+                ).fetchall()
+                found.update(row["entity_id"] for row in rows)
         return sorted(found)
 
     def count_query(
@@ -693,6 +604,7 @@ class DualWriteStore:
         value counts records only, for backwards compatibility.
         """
         with closing(self._connect()) as conn:
+            conn.execute("DELETE FROM record_entities")
             conn.execute("DELETE FROM intelligence_records")
             conn.execute("DELETE FROM briefs")
             conn.execute("DELETE FROM olis_emitted")
