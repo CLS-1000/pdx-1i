@@ -40,7 +40,7 @@ def test_signal_feed_renders_expandable_four_gate_record_details():
     gate_renderer = source[source.index("function gateRows"):source.index("function anomalyText")]
     for gate in ("credibility", "volume", "velocity", "novelty"):
         assert f'"{gate}"' in source
-        assert gate in gate_renderer
+    assert "GATES.map(name =>" in gate_renderer
     assert "record.gates" in gate_renderer
     assert "gates.detail" in gate_renderer
     assert "record.run_id" in source

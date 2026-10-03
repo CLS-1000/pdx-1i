@@ -188,7 +188,7 @@ browser:
 4. **Structural encodings.** Every node group and tie kind the API can serve has a
    declared style, so a new kind fails visibly instead of rendering invisibly.
 
-A new SPEC-1 panel (District Map, Signal Feed, Statistics — the three the README
-lists as absent) should land with this test file from its first commit. If the Brief
-family is codified (§4), `index.html` and the PDF styles get the same treatment with
-their own allowlist.
+The SPEC-1 daily panels (District Map, Signal Feed, Statistics) are guarded by
+`tests/test_daily_brief_ui.py`; the existing webmap checks remain independent. If the
+Brief family is codified (§4), the original Brief reader and PDF styles get the same
+treatment with their own allowlist.

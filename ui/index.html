@@ -553,12 +553,17 @@ const App = (() => {
     }).join("");
   }
 
+  function displayNumber(value, decimals = 2) {
+    if (value == null || value === "") return "—";
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(decimals) : "—";
+  }
+
   function anomalyText(anomaly) {
     if (!anomaly) return "";
-    const n = Number(anomaly.sample_size);
-    return `${Number(anomaly.observed).toFixed(2)} against a ${escHtml(anomaly.window_days)}-day baseline of ` +
-      `${Number(anomaly.baseline_mean).toFixed(2)} (sd ${Number(anomaly.baseline_stddev).toFixed(2)}, ` +
-      `n=${Number.isFinite(n) ? n : "—"}); ${Number(anomaly.sigma).toFixed(1)} sigma`;
+    return `${displayNumber(anomaly.observed)} against a ${displayNumber(anomaly.window_days, 0)}-day baseline of ` +
+      `${displayNumber(anomaly.baseline_mean)} (sd ${displayNumber(anomaly.baseline_stddev)}, ` +
+      `n=${displayNumber(anomaly.sample_size, 0)}); ${displayNumber(anomaly.sigma, 1)} sigma`;
   }
 
   async function loadSignalFeed() {
@@ -581,7 +586,7 @@ const App = (() => {
           <div class="record-meta">
             <span>${escHtml(record.outcome || "—")}</span>
             <span>${escHtml(record.source || "—")}</span>
-            <span>confidence ${Number(record.confidence).toFixed(2)}</span>
+            <span>confidence ${displayNumber(record.confidence)}</span>
             <span>${fmt(record.published_at)}</span>
             <span>run ${escHtml(record.run_id || "—")}</span>
           </div>
@@ -632,9 +637,10 @@ const App = (() => {
           ? coordinates.flat(1)
           : geometry.type === "Polygon" ? coordinates : [];
       }
-      const projected = rings.map(ring => ring.map(mercator)).filter(ring => ring.length >= 3);
+      const projected = rings.map(ring => ring.map(mercator))
+        .filter(ring => ring.length >= 3 && ring.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y)));
       const attributes = feature.attributes || feature.properties || {};
-      const key = Object.keys(attributes).find(k => /^(district|district_?no|district_?number|district_?name|name|label)$/i.test(k));
+      const key = Object.keys(attributes).find(k => /^district(?:_?(?:no|number|name|nbr|num))?$/i.test(k));
       const value = key ? String(attributes[key]).trim() : "";
       const label = value ? (/district/i.test(value) ? value : `District ${value}`) : `Boundary ${index + 1}`;
       return { label, rings: projected };
