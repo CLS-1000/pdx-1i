@@ -24,6 +24,7 @@ def spec_styles(source: str) -> str:
 
 def test_daily_views_use_existing_endpoints_and_keep_brief_palette_separate():
     source = page()
+    assert re.search(r"nav\s*\{[^}]*flex-wrap:\s*wrap", source)
     for view in ("district-map", "signal-feed", "statistics"):
         assert f'data-view="{view}"' in source
         assert f'id="view-{view}"' in source
