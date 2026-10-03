@@ -142,6 +142,9 @@
   <button data-view="intel">Intel Records</button>
   <button data-view="leads">Leads</button>
   <button data-view="brief">Brief</button>
+  <button data-view="district-map">District Map</button>
+  <button data-view="signal-feed">Signal Feed</button>
+  <button data-view="statistics">Statistics</button>
 </nav>
 
 <main>
@@ -198,7 +201,114 @@
     <div id="brief-error"></div>
     <div id="brief-container"></div>
   </section>
+
+  <!-- SPEC-1 daily brief panels; the existing Brief palette remains unchanged. -->
+  <section id="view-district-map" class="view spec1-view">
+    <div class="spec-toolbar">
+      <div><h2>District Map</h2><p>Metro Council boundaries · official RLIS projected GIS</p></div>
+      <button onclick="App.loadDistrictMap()">Load map</button>
+      <span id="district-map-status" class="spec-status">not loaded</span>
+    </div>
+    <div id="district-map-error" aria-live="polite"></div>
+    <div class="district-layout">
+      <div class="spec-panel map-panel">
+        <svg id="district-map-svg" viewBox="0 0 1000 600" role="img" aria-label="Metro Council district boundaries"></svg>
+        <p class="spec-note">Geometry: Oregon Metro RLIS · Metro Council District Boundaries · coordinates requested in EPSG:3857.</p>
+      </div>
+      <div id="district-roster" class="spec-panel">
+        <h3>Role-based seats</h3>
+        <p class="spec-note">Load the jurisdiction roster to view seats by role.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-signal-feed" class="view spec1-view">
+    <div class="spec-toolbar">
+      <div><h2>Signal Feed</h2><p>Stored intelligence records with their four-gate results</p></div>
+      <select id="feed-outcome" aria-label="Filter signal records by outcome">
+        <option value="">All outcomes</option>
+        <option value="ESCALATE">ESCALATE</option>
+        <option value="CORROBORATED">CORROBORATED</option>
+        <option value="INVESTIGATE">INVESTIGATE</option>
+        <option value="MONITOR">MONITOR</option>
+        <option value="ARCHIVE">ARCHIVE</option>
+      </select>
+      <button onclick="App.loadSignalFeed()">Load records</button>
+      <span id="feed-count" class="spec-status"></span>
+    </div>
+    <div id="feed-error" aria-live="polite"></div>
+    <div id="feed-container"></div>
+  </section>
+
+  <section id="view-statistics" class="view spec1-view">
+    <div class="spec-toolbar">
+      <div><h2>Statistics</h2><p>Counts from stored records, the graph registry, and district roster</p></div>
+      <button onclick="App.loadStatistics()">Load statistics</button>
+      <span id="statistics-status" class="spec-status">not loaded</span>
+    </div>
+    <div id="statistics-error" aria-live="polite"></div>
+    <div id="statistics-container"></div>
+  </section>
 </main>
+
+<style id="spec1-daily-views">
+  .spec1-view {
+    --spec-bg: #000;
+    --spec-fg: #fff;
+    --spec-fg2: #ccc;
+    --spec-fg3: #999;
+    --spec-muted: #666;
+    --spec-line: rgba(255,255,255,.20);
+    --spec-line-soft: rgba(255,255,255,.12);
+    --spec-pass: #00ff00;
+    --spec-alert: #ff0000;
+    color: var(--spec-fg); background: var(--spec-bg); min-height: 70vh;
+    padding: 1.25rem; font-family: "IBM Plex Mono", "Courier New", monospace;
+  }
+  .spec-toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .spec-toolbar h2 { font-size: 1rem; letter-spacing: .08em; }
+  .spec-toolbar p, .spec-note { color: var(--spec-muted); font-size: .75rem; margin-top: .3rem; line-height: 1.5; }
+  .spec1-view button, .spec1-view select {
+    border: 1px solid var(--spec-line); background: var(--spec-bg); color: var(--spec-fg2);
+    padding: .45rem .7rem; font: inherit; font-size: .75rem;
+  }
+  .spec1-view button { cursor: pointer; }
+  .spec1-view button:hover, .spec1-view button:focus-visible { color: var(--spec-fg); border-color: var(--spec-fg); }
+  .spec-status { color: var(--spec-muted); font-size: .7rem; margin-left: auto; }
+  .spec-status.online { color: var(--spec-pass); }
+  .spec-status.offline { color: var(--spec-alert); }
+  .spec-panel, .record-card, .stat-card { border: 1px solid var(--spec-line); background: rgba(10,10,10,.94); padding: 1rem; }
+  .district-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); gap: 1rem; }
+  .map-panel { min-width: 0; }
+  #district-map-svg { display: block; width: 100%; min-height: 300px; background: #000; }
+  .district-shape { fill: rgba(255,255,255,.08); stroke: rgba(255,255,255,.8); stroke-width: 1.5; fill-rule: evenodd; }
+  .district-shape:hover, .district-shape:focus { fill: rgba(255,255,255,.2); stroke: #fff; outline: none; }
+  .district-label { fill: #fff; font: 15px "IBM Plex Mono", "Courier New", monospace; text-anchor: middle; }
+  .spec-panel h3, .stat-card h3 { font-size: .75rem; color: var(--spec-fg3); letter-spacing: .1em; text-transform: uppercase; margin-bottom: .8rem; }
+  .jurisdiction { border-top: 1px solid var(--spec-line-soft); padding: .65rem 0; }
+  .jurisdiction strong { color: var(--spec-fg); font-size: .75rem; }
+  .jurisdiction p { color: var(--spec-fg2); font-size: .7rem; line-height: 1.6; margin-top: .25rem; }
+  .record-list, .stat-grid { display: grid; gap: .75rem; }
+  .record-card { color: var(--spec-fg2); }
+  .record-title { color: var(--spec-fg); font-size: .85rem; line-height: 1.45; }
+  .record-meta { display: flex; flex-wrap: wrap; gap: .7rem; color: var(--spec-muted); font-size: .68rem; margin-top: .5rem; }
+  .record-card details { border-top: 1px solid var(--spec-line-soft); margin-top: .7rem; padding-top: .55rem; }
+  .record-card summary { color: var(--spec-fg2); font-size: .72rem; cursor: pointer; }
+  .gate-row { display: grid; grid-template-columns: 110px 1fr auto; gap: .6rem; align-items: center; padding: .45rem 0; border-bottom: 1px solid var(--spec-line-soft); font-size: .7rem; }
+  .gate-result { color: var(--spec-fg); }
+  .gate-result.failed { color: var(--spec-fg3); }
+  .gate-detail { grid-column: 2 / 4; color: var(--spec-muted); font-size: .66rem; }
+  .record-anomaly { color: var(--spec-fg2); border-left: 2px solid var(--spec-line); padding-left: .6rem; margin-top: .6rem; font-size: .7rem; }
+  .stat-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .stat-value { color: var(--spec-fg); font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+  .stat-label { color: var(--spec-muted); font-size: .68rem; margin-top: .35rem; }
+  .spec-empty, .spec-error { color: var(--spec-fg3); border: 1px solid var(--spec-line); padding: 1rem; font-size: .75rem; }
+  .spec-error { color: var(--spec-fg2); }
+  @media (max-width: 760px) {
+    .district-layout { grid-template-columns: 1fr; }
+    .gate-row { grid-template-columns: 90px 1fr auto; }
+  }
+</style>
 
 <script>
 const App = (() => {
@@ -416,6 +526,238 @@ const App = (() => {
     }
   }
 
+  // ── SPEC-1 daily views ────────────────────────────────────────────────────
+
+  const GATES = ["credibility", "volume", "velocity", "novelty"];
+  const DISTRICT_GIS_URL =
+    "https://rlisdiscovery.oregonmetro.gov/server/rest/services/OpenData/BoundaryDataWebMerc/MapServer/2/query";
+
+  function setSpecStatus(id, text, state = "") {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = `spec-status ${state}`;
+  }
+
+  function gateRows(record) {
+    const gates = record.gates || {};
+    return GATES.map(name => {
+      const passed = gates[name] === true;
+      const result = gates[name] === true ? "CLEARED" : gates[name] === false ? "NOT CLEARED" : "NOT AVAILABLE";
+      const detail = gates.detail?.[name];
+      return `<div class="gate-row">
+        <span>${name.toUpperCase()}</span>
+        <span class="gate-result ${passed ? "" : "failed"}">${result}</span>
+        <span>${passed ? "yes" : gates[name] === false ? "no" : "—"}</span>
+        ${detail ? `<span class="gate-detail">${escHtml(detail)}</span>` : ""}
+      </div>`;
+    }).join("");
+  }
+
+  function anomalyText(anomaly) {
+    if (!anomaly) return "";
+    const n = Number(anomaly.sample_size);
+    return `${Number(anomaly.observed).toFixed(2)} against a ${escHtml(anomaly.window_days)}-day baseline of ` +
+      `${Number(anomaly.baseline_mean).toFixed(2)} (sd ${Number(anomaly.baseline_stddev).toFixed(2)}, ` +
+      `n=${Number.isFinite(n) ? n : "—"}); ${Number(anomaly.sigma).toFixed(1)} sigma`;
+  }
+
+  async function loadSignalFeed() {
+    const container = document.getElementById("feed-container");
+    container.innerHTML = '<div class="spec-empty">Loading stored records…</div>';
+    document.getElementById("feed-error").innerHTML = "";
+    const outcome = document.getElementById("feed-outcome").value;
+    const params = new URLSearchParams({ limit: "100" });
+    if (outcome) params.set("outcome", outcome);
+    try {
+      const data = await apiFetch("/intel?" + params);
+      document.getElementById("feed-count").textContent = `${data.items.length} records shown`;
+      if (!data.items.length) {
+        container.innerHTML = '<div class="spec-empty">No stored records match.</div>';
+        return;
+      }
+      container.innerHTML = `<div class="record-list">${data.items.map(record => `
+        <article class="record-card">
+          <div class="record-title">${escHtml(record.pattern || "(no record text)")}</div>
+          <div class="record-meta">
+            <span>${escHtml(record.outcome || "—")}</span>
+            <span>${escHtml(record.source || "—")}</span>
+            <span>confidence ${Number(record.confidence).toFixed(2)}</span>
+            <span>${fmt(record.published_at)}</span>
+            <span>run ${escHtml(record.run_id || "—")}</span>
+          </div>
+          <details>
+            <summary>Four-gate detail</summary>
+            ${gateRows(record)}
+          </details>
+          ${record.anomaly ? `<div class="record-anomaly">${anomalyText(record.anomaly)}</div>` : ""}
+          ${record.url ? `<div class="record-meta"><a href="${escHtml(record.url)}" target="_blank" rel="noopener noreferrer">${escHtml(record.url)}</a></div>` : ""}
+        </article>`).join("")}</div>`;
+    } catch (e) {
+      container.innerHTML = "";
+      document.getElementById("feed-error").innerHTML = `<div class="spec-error">${escHtml(e.message)}</div>`;
+      document.getElementById("feed-count").textContent = "";
+    }
+  }
+
+  function projectedWkid(data) {
+    const wkid = Number(data.spatialReference?.latestWkid || data.spatialReference?.wkid || 0);
+    if (wkid) return wkid;
+    const crsName = data.crs?.properties?.name || "";
+    const match = String(crsName).match(/(?:EPSG(?:::|:|\/))(\d+)/i);
+    return match ? Number(match[1]) : 4326;
+  }
+
+  function geoFeatures(data) {
+    const wkid = projectedWkid(data);
+    const geographic = !wkid || [4326, 4269].includes(wkid);
+    if (!geographic && ![3857, 102100, 102113].includes(wkid)) {
+      throw new Error(`Unsupported boundary coordinate reference EPSG:${wkid}.`);
+    }
+    const features = data.features || [];
+    const mercator = ([x, y]) => {
+      if (!geographic) return [Number(x), Number(y)];
+      const radius = 6378137;
+      const latitude = Math.max(-85.05112878, Math.min(85.05112878, Number(y)));
+      return [
+        radius * Number(x) * Math.PI / 180,
+        radius * Math.log(Math.tan(Math.PI / 4 + latitude * Math.PI / 360)),
+      ];
+    };
+    return features.map((feature, index) => {
+      const geometry = feature.geometry || {};
+      let rings = geometry.rings;
+      if (!rings) {
+        const coordinates = geometry.coordinates || [];
+        rings = geometry.type === "MultiPolygon"
+          ? coordinates.flat(1)
+          : geometry.type === "Polygon" ? coordinates : [];
+      }
+      const projected = rings.map(ring => ring.map(mercator)).filter(ring => ring.length >= 3);
+      const attributes = feature.attributes || feature.properties || {};
+      const key = Object.keys(attributes).find(k => /^(district|district_?no|district_?number|district_?name|name|label)$/i.test(k));
+      const value = key ? String(attributes[key]).trim() : "";
+      const label = value ? (/district/i.test(value) ? value : `District ${value}`) : `Boundary ${index + 1}`;
+      return { label, rings: projected };
+    }).filter(feature => feature.rings.length);
+  }
+
+  function renderDistrictMap(data) {
+    const features = geoFeatures(data);
+    if (!features.length) throw new Error("The GIS service returned no district boundaries.");
+    const points = features.flatMap(feature => feature.rings.flat());
+    const xs = points.map(point => point[0]), ys = points.map(point => point[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const width = 1000, height = 600, padding = 38;
+    const scale = Math.min((width - padding * 2) / (maxX - minX || 1), (height - padding * 2) / (maxY - minY || 1));
+    const offsetX = (width - (maxX - minX) * scale) / 2;
+    const offsetY = (height - (maxY - minY) * scale) / 2;
+    const xy = ([x, y]) => `${(x - minX) * scale + offsetX},${(maxY - y) * scale + offsetY}`;
+    document.getElementById("district-map-svg").innerHTML = features.map(feature => {
+      const path = feature.rings.map(ring => `M${ring.map(xy).join("L")}Z`).join("");
+      const center = feature.rings[0].reduce((sum, point) => [sum[0] + point[0], sum[1] + point[1]], [0, 0]);
+      const label = [center[0] / feature.rings[0].length, center[1] / feature.rings[0].length];
+      return `<path class="district-shape" d="${path}" tabindex="0" role="img" aria-label="${escHtml(feature.label)}"><title>${escHtml(feature.label)}</title></path>
+        <text class="district-label" x="${(label[0] - minX) * scale + offsetX}" y="${(maxY - label[1]) * scale + offsetY}">${escHtml(feature.label)}</text>`;
+    }).join("");
+  }
+
+  function renderDistrictRoster(districts) {
+    const roster = document.getElementById("district-roster");
+    if (!districts.length) {
+      roster.innerHTML = '<h3>Role-based seats</h3><p class="spec-note">No jurisdiction roster returned.</p>';
+      return;
+    }
+    roster.innerHTML = `<h3>Role-based seats</h3>${districts.map(j => `
+      <div class="jurisdiction">
+        <strong>${escHtml(j.name)} · ${escHtml(j.state)}</strong>
+        <p>${(j.seats || []).map(seat => `${escHtml(seat.district)} — ${escHtml(seat.role)} (${escHtml(seat.status)})`).join("<br>") || "No seat details available."}</p>
+      </div>`).join("")}`;
+  }
+
+  async function loadDistrictMap() {
+    const mapStatus = document.getElementById("district-map-status");
+    const error = document.getElementById("district-map-error");
+    error.innerHTML = "";
+    setSpecStatus("district-map-status", "loading");
+    const query = new URLSearchParams({
+      where: "1=1", outFields: "*", returnGeometry: "true", outSR: "3857", f: "json",
+    });
+    const [rosterResult, gisResult] = await Promise.allSettled([
+      apiFetch("/graph/districts"),
+      fetch(`${DISTRICT_GIS_URL}?${query}`).then(response => {
+        if (!response.ok) throw new Error(`GIS service returned HTTP ${response.status}.`);
+        return response.json();
+      }),
+    ]);
+    if (rosterResult.status === "fulfilled") renderDistrictRoster(rosterResult.value);
+    else document.getElementById("district-roster").innerHTML =
+      `<h3>Role-based seats</h3><p class="spec-note">Roster unavailable: ${escHtml(rosterResult.reason.message)}</p>`;
+    if (gisResult.status === "fulfilled") {
+      try {
+        if (gisResult.value.error) throw new Error(gisResult.value.error.message || "GIS service returned an error.");
+        renderDistrictMap(gisResult.value);
+        setSpecStatus("district-map-status", "GIS data loaded", "online");
+      } catch (e) {
+        document.getElementById("district-map-svg").innerHTML = "";
+        setSpecStatus("district-map-status", "GIS unavailable", "offline");
+        error.innerHTML = `<div class="spec-error">${escHtml(e.message)}</div>`;
+      }
+    } else {
+      document.getElementById("district-map-svg").innerHTML = "";
+      setSpecStatus("district-map-status", "GIS unavailable", "offline");
+      error.innerHTML = `<div class="spec-error">Could not load official RLIS boundaries: ${escHtml(gisResult.reason.message)}. No substitute geometry is drawn.</div>`;
+    }
+    if (rosterResult.status === "rejected" && !error.innerHTML) {
+      error.innerHTML = `<div class="spec-error">Roster unavailable: ${escHtml(rosterResult.reason.message)}</div>`;
+    }
+    return mapStatus.textContent;
+  }
+
+  async function loadAllIntel() {
+    const limit = 500, records = [];
+    for (let offset = 0; ; offset += limit) {
+      const page = await apiFetch(`/intel?limit=${limit}&offset=${offset}`);
+      records.push(...(page.items || []));
+      if (!page.items || page.items.length < limit) return records;
+    }
+  }
+
+  async function loadStatistics() {
+    const container = document.getElementById("statistics-container");
+    container.innerHTML = '<div class="spec-empty">Loading records and registry counts…</div>';
+    document.getElementById("statistics-error").innerHTML = "";
+    setSpecStatus("statistics-status", "loading");
+    try {
+      const [records, graph, districts] = await Promise.all([
+        loadAllIntel(), apiFetch("/graph"), apiFetch("/graph/districts"),
+      ]);
+      const outcomes = new Map(), gateCounts = Object.fromEntries(GATES.map(gate => [gate, 0]));
+      for (const record of records) {
+        outcomes.set(record.outcome || "Unspecified", (outcomes.get(record.outcome || "Unspecified") || 0) + 1);
+        for (const gate of GATES) if (record.gates?.[gate] === true) gateCounts[gate]++;
+      }
+      const seats = districts.reduce((total, jurisdiction) => total + (jurisdiction.seats || []).length, 0);
+      const cards = [
+        ["Stored records", records.length],
+        ["Graph nodes", graph.node_count ?? graph.nodes?.length ?? "—"],
+        ["Graph ties", graph.tie_count ?? graph.ties?.length ?? "—"],
+        ["Jurisdictions", districts.length],
+        ["Listed seats", seats],
+        ...[...outcomes.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => [`Outcome · ${name}`, count]),
+        ...GATES.map(name => [`${name} cleared`, `${gateCounts[name]} / ${records.length}`]),
+      ];
+      container.innerHTML = `<div class="stat-grid">${cards.map(([label, value]) => `
+        <div class="stat-card"><h3>${escHtml(label)}</h3><div class="stat-value">${escHtml(value)}</div>
+          <div class="stat-label">${GATES.some(g => String(label).startsWith(`${g} cleared`)) ? "records with gate result true" : "current stored data"}</div></div>`).join("")}</div>`;
+      setSpecStatus("statistics-status", "loaded", "online");
+    } catch (e) {
+      container.innerHTML = "";
+      document.getElementById("statistics-error").innerHTML = `<div class="spec-error">${escHtml(e.message)}</div>`;
+      setSpecStatus("statistics-status", "unavailable", "offline");
+    }
+  }
+
   // ── Nav ───────────────────────────────────────────────────────────────────
 
   function initNav() {
@@ -431,7 +773,7 @@ const App = (() => {
 
   document.addEventListener("DOMContentLoaded", initNav);
 
-  return { loadSignals, loadIntel, loadLeads, runCycle, loadBrief };
+  return { loadSignals, loadIntel, loadLeads, runCycle, loadBrief, loadDistrictMap, loadSignalFeed, loadStatistics };
 })();
 </script>
 </body>

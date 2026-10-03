@@ -104,8 +104,10 @@ remains the authority for anything the engine publishes.
 **Status: uncodified. The convergence question is undecided, and this section
 documents the situation rather than settling it.**
 
-`ui/index.html` (the brief reader) carries a light multi-hue palette the README
-lists as having "no recorded decision either way":
+The original Brief reader in `ui/index.html` carries a light multi-hue palette. The
+District Map, Signal Feed, and Statistics views added there use a scoped SPEC-1
+component palette; this does not decide whether the existing Brief reader should
+converge:
 
 | Token | Value | | Token | Value |
 |---|---|---|---|---|
