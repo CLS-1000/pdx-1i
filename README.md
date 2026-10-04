@@ -70,37 +70,42 @@ daily PDF brief, a JSON API, and two single-page viewers: a brief reader and a
 force-directed political web. A daily cron cycle drives the whole thing. Six
 infrastructure-watch monitors run alongside the record feeds and feed the same pipeline.
 
-As of the current build, the transport, scoring, storage, and publication machinery
-are fully exercised. Live connectivity is partial but no longer marginal: **10 of 15
-registered endpoints answer**, measured 2026-09-22. Two of the four record feeds return
-real rows — OLIS gives 307 measures plus 1,283 procedural transitions with its field
-mapping verified against a real payload, and WA PDC gives 6.37M rows, of which the
-adapter parses 49,350 signals across 3,907 distinct dates. ORESTAR has no bulk
-file but is read through its public search export, and SEI through OGEC's EFS records
-pages; both measured live 2026-09-26.
+The transport, scoring, storage, and publication machinery are exercised. The latest
+documented endpoint-wide probe found **10 of 15 registered endpoints answering**
+(2026-09-22); later feed-specific checks confirmed all four record feeds can return live
+rows. OLIS returned 307 measures plus 1,283 procedural transitions, with its mapping
+verified against a real payload. WA PDC returned 6.37M rows, of which the adapter parsed
+49,350 signals across 3,907 distinct dates. On 2026-09-26, ORESTAR returned 67 signals
+for a two-day window and SEI returned 8 Metro filings. These are dated measurements, not
+a claim that every registered endpoint is currently healthy; see
+[`SHIPPING.md`](SHIPPING.md) for the evidence and remaining feed work.
 
 ### What it will be
 
-Two bodies of work remain, in priority order. A third — network diagrams in the PDF
-brief — is built; see *Not built yet* for what it does and refuses to do.
+Two bodies of work remain within the frozen delivery scope: complete feed-mapping
+verification and run the unattended daily brief for thirty consecutive days. The
+measured run count and acceptance criteria are in [`SHIPPING.md`](SHIPPING.md).
 
-1. **Feed alias passes.** All four record feeds return live rows as of 2026-09-26:
-   ORESTAR through its public search export, SEI through OGEC's EFS records pages,
-   OLIS and WA PDC through their APIs. What remains is confirming each alias table as
-   far as its comment says, and the dead press and watch endpoints.
+1. **Feed verification.** All four record feeds returned live rows in the latest
+   documented checks: ORESTAR through its public search export, SEI through OGEC's EFS
+   records pages, OLIS and WA PDC through their services. What remains is confirming
+   each alias table as far as its comment says, and addressing dead press and watch
+   endpoints.
 
-2. **Front-end completion.** Three SPEC-1 panels are absent: District Map (projected
-   GIS), Signal Feed (per-record four-gate expansion), and Statistics. The API
-   endpoints they depend on exist; the work is front-end. The visual language is no
-   longer an open question across the board: `webmap.html` now holds the SPEC-1
-   monochrome system (black canvas, white opacity hierarchy, `#00FF00`/`#FF0000`
-   reserved for live status and declared as tokens), and `citizen-cognisance.html` is
-   a deliberate exception, MCM Editorial rather than phosphor. The families, their
-   tokens and the shared invariants are mapped in
-   [`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). What is undecided is `index.html`,
-   the brief reader, which carries a light multi-hue palette with no recorded
-   decision either way — the blueprint's §4 lays out the options and the fact that
-   the PDF already shares that palette.
+2. **Thirty clean unattended runs.** The scope is the daily brief at 06:00 Pacific;
+   the run ledger and count table in [`SHIPPING.md`](SHIPPING.md) track this finish
+   condition.
+
+The front-end panels are implemented in `ui/index.html`: the District Map uses Oregon
+Metro's projected RLIS geometry, the Signal Feed expands each record's four-gate
+results, and Statistics reads stored records and the graph registry. If RLIS is
+unavailable, the map reports the failure rather than drawing substitute geometry. The
+`webmap.html` viewer uses the SPEC-1 monochrome palette, with `#00FF00` and `#FF0000`
+reserved for live status; `citizen-cognisance.html` remains a deliberate MCM Editorial
+exception. Palette families and shared invariants are documented in
+[`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). Whether the broader Brief reader should
+converge on the SPEC-1 palette remains undecided; its existing light palette is
+unchanged.
 
 None of these require changes to the scoring logic, the gate thresholds, the neutrality
 layer, or the publication trigger. The engine's guarantees — traceability, role-based
@@ -226,9 +231,17 @@ pdx1-api                          # or: python -m pdx1.api.app
 # Run the daily cycle on a cron schedule (default 06:00 PT)
 pdx1-scheduler
 
+# Include per-stage timing and record-count diagnostics
+python -m pdx1.pipeline --verbose
+
 # See every stage's work — what each adapter returned, which gate dropped what
 python -m pdx1.demos.walkthrough
 ```
+
+`--verbose` enables DEBUG logging and emits correlated stage metrics for harvest,
+parse, score, analyze, store, and publish. Each stage event includes the `run_id`,
+elapsed time, input/output counts, and relevant extra counts such as failed adapters
+or gate drops. Leave it off for the normal, less detailed log output.
 
 Output lands in `pdx1_signals.jsonl` (ground truth) and `pdx1.db` (query layer).
 
@@ -265,10 +278,10 @@ different:
 
 | Adapter | Live shape |
 |---|---|
-| **ORESTAR** | a ZIP containing one CSV, unwrapped by `_decode`, with `feed_url` carrying a `{year}` the adapter resolves. That is the shape the adapter implements — but **no published export of that shape was found**, and the registered URL 404s. See *Not built yet*. The ZIP and CSV handling is independent of the URL and stays valid if a bulk file appears. |
+| **ORESTAR** | no bulk file is published. Live mode searches a rolling date window with `cneSearch.do`, then downloads the `XcelCNESearch` Excel export in the same session and parses it as CSV. Windows over the 5,000-row cap are split into smaller requests. |
 | **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
 | **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
-| **SEI** | **no API exists.** OGEC publishes periodic downloads from a landing page, so live mode here means pointing `fixture_path` at an export. `parse` accepts JSON, JSONL or a wrapper object. |
+| **SEI** | no bulk API or export exists. Live mode walks OGEC's public EFS jurisdiction, filer, profile, and report endpoints; `parse` also accepts JSON, JSONL, or a wrapper object. The adapter does not read or cache personal account details embedded in report pages. |
 | **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled fewer. |
 
 The four record feeds map field names through an alias table, so correcting a name is a
@@ -323,9 +336,9 @@ rather than a release:
 | `PDX1_WA_PDC_URL` | the Socrata dataset |
 | `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
 
-**Field names are confirmed for OLIS and remain unconfirmed for the other three.** A
-live pull on **2026-09-07** read 304 measures and 3,912 action rows from the 2026R1
-session, so OLIS's spellings are now checked against a real payload rather than
+**Field-name verification is partial and feed-specific.** OLIS was verified against a
+live pull on **2026-09-07**, which read 304 measures and 3,912 action rows from the
+2026R1 session, so OLIS's spellings are now checked against a real payload rather than
 inherited from two prior PDX-1i implementations. That check corrected three of them:
 `CurrentCommitteeName` does not exist (the real names are `CurrentCommitteeCode` and
 `CurrentSubCommittee`, so the committee field had been resolving to "not stated" on
@@ -333,18 +346,21 @@ every live row), and neither `CurrentStatus` nor `CurrentAction` exists either. 
 found that `MeasureNumber` is served as a *string* by `Measures` and an *int* by
 `MeasureHistoryActions`, which the join now coerces.
 
-WA PDC has since been corrected and verified. The dataset id was wrong — `tijg-9uu3`
-is not in the `data.wa.gov` catalogue and appears to be a corruption of `tijg-9zyp`,
+WA PDC has since been corrected and its aliases checked against a live response. The
+dataset id was wrong — `tijg-9uu3` is not in the `data.wa.gov` catalogue and appears to
+be a corruption of `tijg-9zyp`,
 which is *expenditures* — and contributions are `kv7h-kjye`. Against a live response
 (29 columns) 13 of the 14 canonical fields resolve through the existing alias table.
 The exception is `aggregate`: Washington carries no running cycle total on the
 contribution row, so the engine now states no aggregate rather than restating the
 single contribution as one.
 
-ORESTAR and SEI still return nothing, and that is not URL rot. Oregon publishes no
-machine-readable feed for either: `data.oregon.gov` holds no ORESTAR dataset, and the
-public transaction search is a session-bound POST form. Getting Oregon to parity with
-Washington needs a harvester or a records request, not a corrected URL.
+The old statement that ORESTAR and SEI returned nothing is superseded by the
+2026-09-26 live checks. Oregon has no ORESTAR bulk dataset, but the adapter now reads the
+public transaction search and its session-bound Excel export. SEI has no API, but OGEC's
+public EFS endpoints are usable and returned filings. The ORESTAR field mapping was
+checked against a live export on 2026-09-22; see the source alias-table notes for the
+verification limits on each feed.
 
 Portland Press is the exception to all of this: RSS is a standard format, so there is
 nothing to verify beyond the URLs themselves.
@@ -784,9 +800,9 @@ does not quietly disappear.
   nothing for fewer than two known nodes or when those nodes share no tie, because an
   empty frame would read as "these bodies are unconnected" — a claim the data does not
   make. See `src/pdx1/publication/network_diagram.py`.
-- **The remaining SPEC-1 panels** — District Map over real projected GIS, Signal Feed
-  with per-record four-gate expansion, Statistics. All depend on graph and record
-  endpoints that mostly exist; the work is front-end.
+- ~~**The remaining SPEC-1 panels.**~~ **Built.** `ui/index.html` includes the District
+  Map over projected RLIS GIS, the per-record four-gate Signal Feed, and Statistics
+  backed by the graph registry and stored records.
 - **SPEC-1 visual language on `index.html`** — monochrome `#000` canvas, hierarchy by
   white opacity ramp, brightness rather than hue for emphasis, `#00FF00`/`#FF0000`
   reserved for live status only. This is now scoped to the brief reader alone.

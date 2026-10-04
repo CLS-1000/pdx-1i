@@ -104,8 +104,10 @@ remains the authority for anything the engine publishes.
 **Status: uncodified. The convergence question is undecided, and this section
 documents the situation rather than settling it.**
 
-`ui/index.html` (the brief reader) carries a light multi-hue palette the README
-lists as having "no recorded decision either way":
+The original Brief reader in `ui/index.html` carries a light multi-hue palette. The
+District Map, Signal Feed, and Statistics views added there use a scoped SPEC-1
+component palette; this does not decide whether the existing Brief reader should
+converge:
 
 | Token | Value | | Token | Value |
 |---|---|---|---|---|
@@ -186,7 +188,7 @@ browser:
 4. **Structural encodings.** Every node group and tie kind the API can serve has a
    declared style, so a new kind fails visibly instead of rendering invisibly.
 
-A new SPEC-1 panel (District Map, Signal Feed, Statistics — the three the README
-lists as absent) should land with this test file from its first commit. If the Brief
-family is codified (§4), `index.html` and the PDF styles get the same treatment with
-their own allowlist.
+The SPEC-1 daily panels (District Map, Signal Feed, Statistics) are guarded by
+`tests/test_daily_brief_ui.py`; the existing webmap checks remain independent. If the
+Brief family is codified (§4), the original Brief reader and PDF styles get the same
+treatment with their own allowlist.
