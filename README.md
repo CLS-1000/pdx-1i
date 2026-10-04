@@ -1,828 +1,211 @@
 # PDX-1i — Portland Metro Intelligence
 
-> **SCOPE FROZEN — 2026-08-21.** This repo is finishing one thing: the daily
-> brief, running unattended at 06:00 Pacific against live adapters, for thirty
-> consecutive days. The finish condition and the run count are in
-> [SHIPPING.md](SHIPPING.md); everything deferred to get there is in
-> [PARKED.md](PARKED.md). Work that is not required for an unattended daily run
-> to produce a correct brief belongs in PARKED.md, not in a commit.
+PDX-1i is an open-source intelligence (OSINT) engine for public records about
+politics and civic infrastructure in the bi-state Portland metro: Multnomah,
+Washington, and Clackamas counties in Oregon, and Clark County in Washington.
+It ingests campaign-finance filings, legislative records, statements of economic
+interest, local press, and infrastructure-watch feeds.
 
-Open-source intelligence (OSINT) engine for Portland-area politics and civic
-infrastructure, covering the bi-state metro: Multnomah, Washington and Clackamas
-counties in Oregon, and Clark County in Washington.
+The pipeline normalizes source data, applies deterministic credibility, volume,
+velocity, and novelty gates, resolves entities against a role-based registry,
+measures surviving records against a rolling baseline, and stores traceable
+intelligence records. A brief is assembled when the publication trigger fires;
+each run can complete even when an individual source fails.
 
-PDX-1i is the regional module of the SPEC-1 architecture. It harvests public records,
-scored through a four-gate deterministic filter, resolves the entities they name,
-measures them against a rolling baseline, and writes structured intelligence records —
-then assembles a neutrality-gated brief when publication triggers.
+The engine reports structure and timing, not motive or findings. Attribution is
+enforced: published sections must cite records held by the engine. Tone and
+hedging checks are recorded as observations, not publication gates. Officials in
+the engine's graph are role-based seats rather than named people.
 
-Around that core sit four surfaces: an HTTP API, a cron scheduler for the daily cycle,
-a PDF renderer for the brief, and two single-page viewers — the daily brief and the
-force-directed political web. What is not built is listed at the bottom.
+## Architecture
 
-## At a glance
-
-PDX-1i is a deterministic OSINT pipeline for the Portland metro. It harvests public
-records, resolves the offices and institutions they mention, applies a strict four-gate
-filter, measures each surviving signal against a rolling baseline, and publishes only
-what can be traced to a stored record.
-
-The system is built to do three things well:
-
-- collect and normalize public records from the metro footprint
-- identify the institutions, jurisdictions, and seats those records reference
-- report whether a pattern is materially new, materially large, and materially time-sensitive
-
-It is not built to speculate, attribute motive, or present anonymous conclusions as fact.
-The neutrality layer is a real editorial constraint, not a decorative one.
-
----
-
-## Executive Summary
-
-### What it was
-
-PDX-1i began as a research prototype: a set of harvesting scripts pointed at
-Portland-metro public-records endpoints, producing flat files that had to be read
-manually. There was no scoring logic, no entity resolution, no anomaly detection, and
-no publication pipeline. The outputs were raw and unannotated — useful only to someone
-who already knew what to look for. The UI did not exist. The record of what had been
-fetched lived only on whoever's laptop ran the scripts.
-
-### What it is
-
-A deterministic, reproducible OSINT engine covering the bi-state Portland metro
-(Multnomah, Washington, Clackamas, Clark). It ingests five public-record feeds —
-ORESTAR, OLIS, SEI, WA PDC, and Portland Press — runs every signal through a
-four-gate filter (credibility, volume, velocity, novelty), resolves named entities
-against a role-based registry of jurisdictions and seats, and measures each surviving
-signal against a 90-day rolling baseline. Anomalies are reported as sigma measurements,
-not adjectives. Every published line traces to the run that produced it.
-
-A neutrality layer applies before publication: attribution is a hard gate (a section
-that cites nothing does not publish); tone and hedging are observation-only (flagged and
-carried into the store, not suppressed — because the check cannot distinguish a
-newspaper reporting a conviction from the engine alleging one, and suppression is worse
-than annotation).
-
-The outputs are a structured JSONL ground-truth store, a queryable SQLite layer, a
-daily PDF brief, a JSON API, and two single-page viewers: a brief reader and a
-force-directed political web. A daily cron cycle drives the whole thing. Six
-infrastructure-watch monitors run alongside the record feeds and feed the same pipeline.
-
-The transport, scoring, storage, and publication machinery are exercised. The latest
-documented endpoint-wide probe found **10 of 15 registered endpoints answering**
-(2026-09-22); later feed-specific checks confirmed all four record feeds can return live
-rows. OLIS returned 307 measures plus 1,283 procedural transitions, with its mapping
-verified against a real payload. WA PDC returned 6.37M rows, of which the adapter parsed
-49,350 signals across 3,907 distinct dates. On 2026-09-26, ORESTAR returned 67 signals
-for a two-day window and SEI returned 8 Metro filings. These are dated measurements, not
-a claim that every registered endpoint is currently healthy; see
-[`SHIPPING.md`](SHIPPING.md) for the evidence and remaining feed work.
-
-### What it will be
-
-Two bodies of work remain within the frozen delivery scope: complete feed-mapping
-verification and run the unattended daily brief for thirty consecutive days. The
-measured run count and acceptance criteria are in [`SHIPPING.md`](SHIPPING.md).
-
-1. **Feed verification.** All four record feeds returned live rows in the latest
-   documented checks: ORESTAR through its public search export, SEI through OGEC's EFS
-   records pages, OLIS and WA PDC through their services. What remains is confirming
-   each alias table as far as its comment says, and addressing dead press and watch
-   endpoints.
-
-2. **Thirty clean unattended runs.** The scope is the daily brief at 06:00 Pacific;
-   the run ledger and count table in [`SHIPPING.md`](SHIPPING.md) track this finish
-   condition.
-
-The front-end panels are implemented in `ui/index.html`: the District Map uses Oregon
-Metro's projected RLIS geometry, the Signal Feed expands each record's four-gate
-results, and Statistics reads stored records and the graph registry. If RLIS is
-unavailable, the map reports the failure rather than drawing substitute geometry. The
-`webmap.html` viewer uses the SPEC-1 monochrome palette, with `#00FF00` and `#FF0000`
-reserved for live status; `citizen-cognisance.html` remains a deliberate MCM Editorial
-exception. Palette families and shared invariants are documented in
-[`ui/DESIGN_SYSTEM.md`](ui/DESIGN_SYSTEM.md). Whether the broader Brief reader should
-converge on the SPEC-1 palette remains undecided; its existing light palette is
-unchanged.
-
-None of these require changes to the scoring logic, the gate thresholds, the neutrality
-layer, or the publication trigger. The engine's guarantees — traceability, role-based
-attribution, sigma-scaled anomaly reporting, fault-tolerant cycle — are stable.
-
----
-
-## What it does, and what it refuses to do
-
-The engine reports **structure and timing**. It makes conflict-of-interest structure
-visible and legible; it does not allege anything, and a tie in the graph is not a
-finding.
-
-Two constraints are enforced in code — a section that breaks either does not publish:
-
-- **Every claim traces to a record.** The attribution gate rejects any section that
-  cites nothing, cites a record the engine does not hold, or uses vague sourcing.
-- **Officials are role-based seats**, never named individuals — "Metro Councilor · D2",
-  not a person. A seat can be described structurally without characterising whoever
-  holds it.
-
-Two more are **observed and recorded, not enforced.** They annotate; they do not
-withhold:
-
-- **Descriptive, not prosecutorial.** The tone check
-  (`src/pdx1/neutrality/tone.py`) matches prosecutorial vocabulary, motive attribution
-  and loaded framing.
-- **No implication without a claim.** The hedging check
-  (`src/pdx1/neutrality/hedging.py`) matches prose that characterises by insinuation —
-  "raises questions", "appears to", "clearly". Such a sentence asserts nothing, so
-  neither of the other checks can see it.
-
-Both attach an `observation` to the published section, carried into the store:
-
-```json
-{"gate": "tone_gate", "rule": "observation_only", "severity": "info",
- "matched_terms": ["fraud", "fraudulent", "guilty"],
- "note": "Prosecutorial or subjective vocabulary detected in source text."}
+```text
+public feeds → normalize and parse → four gates → entity resolution
+             → baseline and analysis → JSONL + SQLite → triggered brief
 ```
 
-**This is a deliberate trade, and it is worth understanding before relying on the
-engine's neutrality.** These two were gates until a live run showed the flaw: they scan
-the assembled section body, and a record's `pattern` carries harvested source text into
-it — so a newspaper reporting that someone pleaded guilty to fraud tripped exactly what
-the engine alleging fraud would. The check cannot tell those apart, and withholding the
-section suppressed the report in order to prevent the accusation.
+Source adapters and six infrastructure-watch monitors live in `src/pdx1/sources/`
+and `src/pdx1/watch/`. `pipeline.py` orchestrates each cycle; `gates.py`,
+`resolver.py`, `anomaly.py`, and `trigger.py` implement scoring and state.
+`store.py` writes append-only JSONL ground truth before updating SQLite.
+`publication/` assembles briefs, and `api/` serves records and graph data.
 
-What is given up: nothing in code now stops prosecutorial or insinuating language
-reaching a reader. Editorial judgement sits with whoever reads the observations. The
-engine still *detects* everything it detected before, and says so on the record.
+## Requirements and installation
 
-Anomalies are reported as measurements, never adjectives: "3.0 sigma against a 90-day
-baseline of 5.00 (sd 2.00, n=8)", not "unusually high".
-
-## The pipeline
-
-Seven stages, run in sequence. Each is independently fault-tolerant — a dead feed is
-recorded and skipped, and the cycle still completes and still writes.
-
-```
-01 Harvest      adapters pull raw payloads
-02 Parse        clean text, extract registry entities
-03 Score        four-gate filter + composite score
-04 Investigate  generate a hypothesis for surviving opportunities
-05 Verify       measure against the rolling baseline
-06 Analyze      assign outcome, priority, confidence tier
-07 Store        dual-write JSONL + SQLite, then assemble a brief if triggered
-```
-
-### The four gates
-
-Every signal clears all four or it does not survive. No partial credit, no weighted
-override. Thresholds are inclusive and configurable via `.env`.
-
-| Gate | Criterion | Default |
-|---|---|---|
-| Credibility | source weight | ≥ 0.5 |
-| Volume | word count | ≥ 50 words |
-| Velocity | recency | ≤ 48 hours |
-| Novelty | content-hash dedup | not previously seen |
-
-Novelty is seeded from the store at the start of each cycle, so content republished
-across cycles is still recognised as a duplicate.
-
-### Confidence tiers
-
-| Tier | Meaning |
-|---|---|
-| `HARD_RECORD` | a filed public record states it — ORESTAR, OLIS, SEI, WA PDC |
-| `REPORTED` | a published source reports it — press feeds |
-| `INFERRED` | the engine derived it by correlating records |
-
-## Installation
+Python 3.12 or later is required. Install the capabilities you plan to use:
 
 ```bash
-git clone https://github.com/cls-1000/pdx-1i.git
-cd pdx-1i
-pip install -e ".[dev]"
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-**Requires Python 3.12+.** The core engine needs only `pydantic`, `feedparser` and
-`python-dotenv`; storage uses the standard library's `sqlite3`. Optional extras add the
-surfaces built on top of it:
+Optional extras:
 
-| Extra | Adds |
+| Extra | Provides |
 |---|---|
-| `live` | HTTP fetching for the adapters and watch monitors (`httpx`, `requests`, `bs4`, `lxml`) |
-| `api` | the FastAPI surface and the APScheduler cron (`fastapi`, `uvicorn`, `apscheduler`) |
-| `pdf` | PDF brief output (`reportlab`) |
-| `llm` | optional written explanations. Not used by scoring, which stays deterministic |
+| `live` | HTTP clients and parsing support for fetching live feeds |
+| `api` | FastAPI, Uvicorn, and the APScheduler daily scheduler |
+| `pdf` | PDF rendering for published briefs |
+| `dev` | Test and development tools |
 
-`pip install -e ".[dev]"` pulls the extras needed to run the full test suite.
-
-## Quick start
+For example, install live fetching, the scheduler/API, and PDF support with:
 
 ```bash
-# Run one full cycle over the checked-in fixtures
-pdx1                              # or: python -m pdx1, or python -m pdx1.pipeline
+python -m pip install -e ".[live,api,pdf]"
+```
 
-# Serve the API on :8000
-pdx1-api                          # or: python -m pdx1.api.app
+Configuration is read from process environment variables and, when present, `.env`.
+Start from the checked-in defaults:
 
-# Run the daily cycle on a cron schedule (default 06:00 PT)
+```bash
+cp .env.example .env
+```
+
+Review `.env.example` for all settings. In particular, it sets
+`PDX1_ENVIRONMENT=development` and `PDX1_LIVE=false`: cycles use checked-in
+fixtures by default and make no network requests. For live fetching, install the
+`live` extra and set `PDX1_LIVE=true`. Production must explicitly set both
+`PDX1_ENVIRONMENT=production` and `PDX1_LIVE=true` (or explicitly choose
+`PDX1_LIVE=false`); it will not silently default to fixture replay.
+
+## Run a cycle
+
+Run one complete cycle locally with the fixture data:
+
+```bash
+python -m pdx1
+```
+
+This is equivalent to `pdx1` and `python -m pdx1.pipeline`. The fixture cycle
+anchors its velocity gate to the newest harvested signal, so replay remains
+repeatable as the fixture dates age. Use `--as-of` to choose an explicit anchor,
+or `--verbose` for stage timing and counts:
+
+```bash
+python -m pdx1 --as-of 2026-05-28T12:00:00+00:00
+python -m pdx1 --verbose
+```
+
+For a live one-off cycle, first install `.[live]` and set `PDX1_LIVE=true` in
+`.env` or the process environment, then run the same command. Live records use
+their real timestamps. Adapters isolate fetch errors, report them in the cycle
+result, and continue with available sources. The first run against a new OLIS
+session needs a live bootstrap to record existing transitions without emitting
+them as new signals:
+
+```bash
+PDX1_LIVE=true python -m pdx1 --bootstrap
+```
+
+### Schedule recurring cycles
+
+`pdx1-scheduler` runs the cycle using APScheduler. Its default schedule is daily
+at 06:00 in `America/Los_Angeles`; configure it with `PDX1_CRON_HOUR`,
+`PDX1_CRON_MINUTE`, and `PDX1_TIMEZONE`. It is a long-running process, so run it
+under a process manager or on a host that keeps it running:
+
+```bash
+# Set PDX1_ENVIRONMENT=production and PDX1_LIVE=true in .env first.
 pdx1-scheduler
-
-# Include per-stage timing and record-count diagnostics
-python -m pdx1.pipeline --verbose
-
-# See every stage's work — what each adapter returned, which gate dropped what
-python -m pdx1.demos.walkthrough
 ```
 
-`--verbose` enables DEBUG logging and emits correlated stage metrics for harvest,
-parse, score, analyze, store, and publish. Each stage event includes the `run_id`,
-elapsed time, input/output counts, and relevant extra counts such as failed adapters
-or gate drops. Leave it off for the normal, less detailed log output.
+The scheduler refuses to start if `PDX1_ENVIRONMENT` is not explicitly declared.
+It can optionally serve the API in the same process with
+`PDX1_SCHEDULER_EMBEDDED_API=true`; otherwise start `pdx1-api` separately. This
+repository does not provide a deployed recurring job: its GitHub workflows run
+tests or publish the static UI, not the daily cycle.
 
-Output lands in `pdx1_signals.jsonl` (ground truth) and `pdx1.db` (query layer).
+### Cycle outputs
 
-```python
-from pdx1.sources.portland_press import PortlandPressAdapter
+These are the default paths; the brief, OLIS transition, and cache files are
+populated only when applicable:
 
-press = PortlandPressAdapter(fixture_path="tests/fixtures/portland_press.xml")
-result = press.safe_fetch()
-print(len(result), "signals", "ok" if result.ok else result.errors)
-```
-
-### Fixture replay vs live fetch
-
-Adapters default to replaying checked-in fixtures, so a cycle is reproducible and CI
-needs no connectivity. Set `PDX1_LIVE=true` (and install the `live` extra) to fetch over
-HTTP instead.
-
-A live read resolves in three tiers, in order:
-
-| Tier | Source | When |
-|---|---|---|
-| 1 | `fixture_path` | an explicit local payload; wins over everything |
-| 2 | live HTTP | the registered `feed_url`; writes a last-good cache on success |
-| 3 | last-good cache | the previous successful body, when the live fetch fails |
-
-Tier 3 is why a cycle survives a feed outage with real data rather than none. It does
-not weaken the velocity gate: a cached payload carries its original timestamps, so
-stale records are dropped downstream exactly as they would be if the feed had served
-them. The cache makes an outage non-fatal; it does not make old records publishable.
-Set the location with `PDX1_CACHE_DIR`.
-
-Every adapter now reads its real payload shape, and each feed needed something
-different:
-
-| Adapter | Live shape |
+| Path | Contents |
 |---|---|
-| **ORESTAR** | no bulk file is published. Live mode searches a rolling date window with `cneSearch.do`, then downloads the `XcelCNESearch` Excel export in the same session and parses it as CSV. Windows over the 5,000-row cap are split into smaller requests. |
-| **OLIS** | the OData service — rows under `value`, paged via `odata.nextLink`. Two collections: `Measures` for titles and `MeasureHistoryActions` for procedural state. |
-| **WA PDC** | a Socrata dataset on `data.wa.gov`, paged with `$limit`/`$offset`. Washington's disclosure regime exposes a real API where Oregon's does not. |
-| **SEI** | no bulk API or export exists. Live mode walks OGEC's public EFS jurisdiction, filer, profile, and report endpoints; `parse` also accepts JSON, JSONL, or a wrapper object. The adapter does not read or cache personal account details embedded in report pages. |
-| **Portland Press** | RSS, which needed no mapping — `feedparser` reads a real feed the same way it reads the fixture. What it needed was *all five* tracked feeds; live mode previously polled fewer. |
+| `pdx1_signals.jsonl` | Append-only intelligence records; ground truth |
+| `pdx1.db` | SQLite query layer, rebuildable from JSONL |
+| `pdx1_signals_briefs.jsonl` | Published briefs, when the trigger fires |
+| `pdx1_signals_runs.jsonl` | One run-ledger entry per cycle, including quiet or failed runs |
+| `pdx1_signals_olis_emitted.jsonl` | Live OLIS transitions already emitted, used to avoid repeats |
+| `cache/pdx1/` | Last-good payloads from live fetching |
 
-The four record feeds map field names through an alias table, so correcting a name is a
-one-line change in one place, and a name matching nothing leaves its field empty and
-logs rather than raising. Alias resolution reads the union of every row's keys, because
-exports omit empty optional columns per row and reading only the first row would drop a
-field for every record on the strength of whichever sorted first.
+Set `PDX1_STORE_PATH`, `PDX1_DB_PATH`, `PDX1_BRIEFS_PATH`, and `PDX1_CACHE_DIR`
+to change the corresponding paths. The brief file is separate because a cycle
+does not publish a brief every time; publication follows the configured trigger.
 
-#### What a live run actually reached
-
-`PDX1_LIVE=true` was run against the real endpoints on **2026-08-06**. The cycle
-completed and published a brief, which is the fault-tolerance design working as
-intended — but most endpoints answered 404. Recorded here and in the source so nobody
-re-derives it:
-
-| Endpoint | Result |
-|---|---|
-| OLIS | **200** — URL and OData envelope confirmed; field names and paging since verified against real rows on 2026-09-07 |
-| SEI landing page | **200 HTML**, rejected by `parse` as designed |
-| OregonLive · KOIN | **200** |
-| TriMet watch | **200** |
-| ORESTAR bulk export | 404 — path or filename convention is wrong |
-| WA PDC dataset | 404 at the time — wrong dataset id. Corrected to `kv7h-kjye` and **200** since 2026-09-25 |
-| Willamette Week · NW Politics | 404 |
-| Pamplin Media | SSL handshake failure |
-| OHSU · PPB · NW Natural · Water Bureau | 404 |
-| PGE watch | DNS failure |
-
-That table is a record of one dated run, not current status. Several of its rows have
-since been corrected and the fixes are registered: WA PDC now answers on a working
-dataset id, and four of the five dead watch feeds were re-pointed on **2026-09-22**.
-ORESTAR is the one confirmed to have no replacement. Current per-endpoint status lives
-in [`SHIPPING.md`](SHIPPING.md); `pdx1 --check-endpoints` measures it directly.
-
-Two things follow from that run, both aimed at making the next correction cheap:
+Useful operational checks:
 
 ```bash
-pdx1 --check-endpoints    # probe every registered URL, print its status, exit non-zero on failure
+pdx1 --check-endpoints   # Probe registered live feed URLs; requires the live extra
+pdx1 --check-ledger      # Check the latest run; fixture replays do not pass this check
+pdx1 --init-store        # Initialize the configured JSONL and SQLite store
 ```
 
-It harvests nothing and writes nothing — it exists because a dead endpoint is
-otherwise quiet by design, recorded as an adapter error while the cycle carries on.
+## API and web UI
 
-Every endpoint is then overridable from `.env`, so a publisher moving one costs a line
-rather than a release:
-
-| Setting | Overrides |
-|---|---|
-| `PDX1_ORESTAR_URL` | the bulk export (may contain `{year}`) |
-| `PDX1_OLIS_URL` | the OData service |
-| `PDX1_SEI_URL` | the OGEC landing page |
-| `PDX1_WA_PDC_URL` | the Socrata dataset |
-| `PDX1_PORTLAND_PRESS_URL` | the primary press feed |
-
-**Field-name verification is partial and feed-specific.** OLIS was verified against a
-live pull on **2026-09-07**, which read 304 measures and 3,912 action rows from the
-2026R1 session, so OLIS's spellings are now checked against a real payload rather than
-inherited from two prior PDX-1i implementations. That check corrected three of them:
-`CurrentCommitteeName` does not exist (the real names are `CurrentCommitteeCode` and
-`CurrentSubCommittee`, so the committee field had been resolving to "not stated" on
-every live row), and neither `CurrentStatus` nor `CurrentAction` exists either. It also
-found that `MeasureNumber` is served as a *string* by `Measures` and an *int* by
-`MeasureHistoryActions`, which the join now coerces.
-
-WA PDC has since been corrected and its aliases checked against a live response. The
-dataset id was wrong — `tijg-9uu3` is not in the `data.wa.gov` catalogue and appears to
-be a corruption of `tijg-9zyp`,
-which is *expenditures* — and contributions are `kv7h-kjye`. Against a live response
-(29 columns) 13 of the 14 canonical fields resolve through the existing alias table.
-The exception is `aggregate`: Washington carries no running cycle total on the
-contribution row, so the engine now states no aggregate rather than restating the
-single contribution as one.
-
-The old statement that ORESTAR and SEI returned nothing is superseded by the
-2026-09-26 live checks. Oregon has no ORESTAR bulk dataset, but the adapter now reads the
-public transaction search and its session-bound Excel export. SEI has no API, but OGEC's
-public EFS endpoints are usable and returned filings. The ORESTAR field mapping was
-checked against a live export on 2026-09-22; see the source alias-table notes for the
-verification limits on each feed.
-
-Portland Press is the exception to all of this: RSS is a standard format, so there is
-nothing to verify beyond the URLs themselves.
-
-#### OLIS procedural state
-
-`Measures` returns one row per bill carrying a `CurrentLocation` field, and that field
-cannot be trusted to say what happened to a measure. It reports one current position,
-not the sequence that produced it, and the positions are written in the vocabulary of
-whichever desk the paper is sitting on: a vetoed bill can read "Senate - Tabled". The
-adjacent `Vetoed` boolean is no better — HB 4177 in 2026R1 was vetoed by the Governor
-and carries `Vetoed: false`.
-
-So procedural state is derived instead, by replaying each measure's full action history
-from `MeasureHistoryActions` through a table of ~100 regex rules and a chamber-aware
-state machine (`sources/olis_actions.py`). The rules come from the `proc_track` project
-and are copied in rather than imported; `RULES_VERSION` digests the table and
-`tests/test_olis_actions_parity.py` fails if the copy is edited without bumping it.
-That detects drift; it does not prevent it.
-
-Replay coverage, measured live on 2026-09-07 across eleven sessions:
-
-| Sessions | Measures | Replayed to completion |
-|---|---|---|
-| 2019R1, 2021R1, 2023R1, 2025R1 (long) | 11,723 | 11,722 |
-| 2026R1, 2024R1, 2022R1 (short) | 870 | 870 |
-| 2020S1–S3, 2025S1 (special) | 49 | 49 |
-| **total** | **12,642** | **12,641 (99.99%)** |
-
-The single halt is SB 579 in 2023R1, whose "Rescission of the subsequent referral denied
-by Order of the President" no rule claims. A measure that halts is tallied, logged at
-WARNING and skipped; the cycle completes. One anomalous measure must not take down a
-feed.
-
-**What gets emitted.** One signal per procedural *transition* not previously emitted —
-not one per measure, and not one per measure whose final state changed. A measure can
-cross several reportable states in one cycle, and a final-state comparison collapses
-those into one line. Emittable states are `introduced`, `passed`, `adopted`, `failed`,
-`enacted`, `vetoed`, `veto_sustained`, `veto_overridden`, `signed_by_presiding` and
-`tabled`. Committee churn — `committee`, `public_hearing`, `work_session` — is never
-emitted; it fires many times per measure and would bury the gates in referral traffic.
-`carried_over` is not emitted either: the rule that matches it cannot separate the
-end-of-session outcome from routine floor-calendar carryover, and 2026R1 has 94 rows
-where most are the latter.
-
-Each signal carries its state as structured data on `Signal.meta` — `from_state`,
-`to_state`, `action_id`, the verbatim `action_text` and `rules_version` — rather than
-only as prose, so downstream consumers filter on a field instead of re-parsing a
-sentence. Burying it in the text would reproduce the `CurrentLocation` problem one
-layer down.
-
-**Why the whole session is pulled every cycle.** OLIS edits history after the fact. In
-2025R1, 1,946 of 27,488 rows carry a `ModifiedDate` and 2,188 were created at least a
-day after their own `ActionDate` — one of them 399.9 days after. An `ActionDate`
-watermark would therefore work and be wrong: it would skip exactly those backdated
-inserts. The replay runs from scratch each cycle and the emitted set is diffed against
-an `olis_emitted` table, so a row backdated into the middle of a history shows up as a
-new transition even though nothing changed at the tail. That table's ground truth is
-`pdx1_signals_olis_emitted.jsonl`, rebuilt into SQLite like the other streams; a host
-that starts each run on a fresh machine must carry that file forward too.
-
-**Sessions are resolved, not hardcoded.** Interim keys are dropped and what remains is
-filtered by `PDX1_OLIS_SESSION_LOOKBACK_DAYS`; the resolved list is logged at INFO every
-cycle. The service's `DefaultSession` flag is deliberately ignored — it currently points
-at the `2025I1` interim, which carries no measure actions, so an adapter that followed
-it would report healthy forever and harvest nothing.
-
-**The first run against a new session must be a bootstrap run.**
+Install the `api` extra and start the local API:
 
 ```bash
-PDX1_LIVE=true pdx1 --bootstrap    # replay, record every transition, emit nothing
+pdx1-api
 ```
 
-2025R1 alone holds 3,466 measures; a first cycle against an empty table would push
-thousands of signals through the gates at once. Bootstrap records what already happened
-so the next ordinary cycle emits only genuine movement.
+It listens on `127.0.0.1:8000` by default. Check `GET /health`; useful routes
+include `GET /signals`, `/intel`, `/brief`, and `/graph`, plus `POST /cycle/run`
+to start a cycle through the API. Set `PDX1_API_KEY` to require an `X-API-Key`
+header. The API key is not set by default, which is suitable only for local use.
+Set `PDX1_API_HOST` and `PDX1_CORS_ORIGINS` deliberately when configuring access
+from elsewhere.
 
-#### Why tone and hedging stopped being gates
-
-That same run dropped a section:
-
-```
-section 'Under Review' rejected -- tone gate: prosecutorial language
-  ['fraud', 'fraudulent', 'guilty']
-```
-
-Those words came from **press headlines the engine had harvested**, not from anything
-the engine wrote. A newspaper reporting that someone pleaded guilty to fraud is stating
-a court outcome; the tone gate could not tell that apart from the engine alleging
-fraud, because it scans the assembled section body and a record's `pattern` carries the
-source text into it. Withholding the section suppressed the report in order to prevent
-the accusation.
-
-Both checks are now observation-only. The same run produces:
-
-```
-  [info] section 'Under Review' observation: tone_gate matched
-         ['fraud', 'fraudulent', 'guilty']
-```
-
-and the section publishes with that note attached. Withheld sections still print as
-`[warn]`; only attribution can withhold one now.
-
-The trade is stated under *What it does, and what it refuses to do* — detection is
-unchanged, enforcement is gone, and editorial judgement moves to whoever reads the
-observations. `PDX1_TONE_GATE=false` now means "do not annotate" rather than "do not
-withhold", since nothing is withheld either way.
-
-Records that cannot be dated are dropped rather than dated to now. Defaulting to the
-current time would make an undated record look fresh and slip it past the velocity
-gate, which is the record the gate exists to drop. OLIS logs a warning when every
-fetched row is undated, so a broken date mapping cannot read as a quiet session.
-
-Because the fixtures carry fixed dates, `run_cycle` anchors the velocity gate to the
-**newest harvested signal** rather than wall-clock time — otherwise a replay would drop
-everything on velocity as the fixtures age. Override with `--as-of`:
+The static pages are in `ui/`. `index.html` reads the brief and graph endpoints;
+`webmap.html` renders the graph from `GET /graph`. Serve the pages locally and
+point the web map at the API:
 
 ```bash
-python -m pdx1.pipeline --as-of 2026-05-28T12:00:00+00:00
+python -m http.server 8300 --directory ui
+# Open http://localhost:8300/webmap.html?api=http://localhost:8000
 ```
 
-Live runs should pass the real clock.
+The public landing page is `citizen-cognisance.html`. GitHub Pages publishes
+static UI files only; it does not host the API or run cycles. See
+[`ui/DESIGN.md`](ui/DESIGN.md) for UI conventions.
 
-## HTTP API
+PDF brief routes are available through the API when the `pdf` extra is
+installed. They render the latest stored brief; they do not create a new brief.
 
-`pdx1-api` serves the store over HTTP.
+## Troubleshooting
 
-| Endpoint | Returns |
-|---|---|
-| `GET /health` | liveness probe |
-| `GET /signals` | harvested signals, paginated |
-| `GET /intel` | intelligence records, filterable by outcome and source |
-| `GET /leads` | the analyst queue — everything above `MONITOR` (`ESCALATE`, `CORROBORATED`, `INVESTIGATE`), confidence-sorted |
-| `GET /brief` | the most recently published brief |
-| `GET /brief/archive` | every published brief, newest first, paginated |
-| `GET /brief/{brief_id}` | one brief by ID |
-| `GET /brief/pdf` | the latest brief rendered in the SPEC-1 WorldStateBrief format |
-| `GET /brief/{brief_id}/pdf` | one archived brief, same format |
-| `GET /graph` | the political web — every node and tie, with record activity |
-| `GET /graph/districts` | the district roster, for the District Map |
-| `GET /graph/{node_id}` | one node, its ties, its neighbours, and the records touching it |
-| `POST /cycle/run` | drives a full cycle and returns its summary |
+- **Production config error:** set `PDX1_ENVIRONMENT=production` and explicitly
+  set `PDX1_LIVE=true` for live operation (or `false` to intentionally replay
+  fixtures).
+- **Scheduler exits at startup:** install `.[api]` and declare
+  `PDX1_ENVIRONMENT`; the scheduler requires it even for local use.
+- **No records or no brief:** a successful cycle can yield no records after the
+  gates, and briefs are trigger-based. Review the cycle summary and
+  `pdx1_signals_runs.jsonl`; fixture data also becomes old, but replay anchors
+  velocity to the newest fixture signal.
+- **Live source errors:** run `pdx1 --check-endpoints`, confirm the live extra is
+  installed, and review adapter errors in the cycle summary or logs. A source
+  failure does not itself stop the cycle.
+- **API unreachable from a UI page:** confirm the API is running, set the page's
+  `?api=` URL, and allow the page origin in `PDX1_CORS_ORIGINS`. If an API key is
+  configured, the web map supports it through `?key=`.
+- **Missing PDF support:** install `python -m pip install -e ".[pdf]"`.
 
-Set `PDX1_API_KEY` to require an `X-API-Key` header on every request; leave it blank and
-auth is bypassed, which is appropriate for local use only. `PDX1_CORS_ORIGINS` controls
-the allowed origins.
-
-`GET /brief` reads the store rather than process memory, so a brief assembled by
-`python -m pdx1.pipeline` or by `pdx1-scheduler` is served here, and survives a restart.
-It 404s only when no cycle has ever published one.
-
-The two `/pdf` routes serve that same brief in the SPEC-1 WorldStateBrief format —
-`title · date`, synopsis, verified-signal count, `[i/total]` sections, and a footer
-carrying the `run_id`. It is a rendering, not a second assembly: the renderer writes no
-prose of its own, so the PDF and the JSON are the same document in two formats, and
-both read a brief that a cycle already published and the attribution gate already
-cleared.
-
-They also append the network diagram, which is the reason these live behind an endpoint
-rather than in the caller. `render_brief_pdf` takes `entity_ids` as a parameter because
-a `Brief` carries *record* ids and resolving them to the bodies named needs the store;
-the route is the layer holding both, and resolves one to the other via
-`entity_ids_for_records`. The diagram is still skipped when it would claim nothing —
-fewer than two known nodes, or no tie between them.
-
-PDF rendering needs the `pdf` extra. Without reportlab installed these routes return
-**503**, not 500: the feature is unconfigured rather than broken, and the distinction
-is the difference between an `.env` fix and a bug hunt.
-
-## Storage
-
-JSONL is append-only and authoritative. SQLite exists to answer questions quickly and
-can be rebuilt from the JSONL at any time.
-
-There is no transaction spanning a file append and a database commit, and the module
-does not pretend otherwise. Writes go to JSONL first (flushed and fsynced), then to
-SQLite. If the second step fails, ground truth still holds the record and
-`rebuild_from_jsonl()` restores the database. The reverse order could leave SQLite
-holding a record ground truth never saw, which is the failure worth avoiding.
-
-Writes are idempotent — re-running a cycle over the same input adds nothing.
-
-Two streams are persisted, each with its own ground-truth file and its own table:
-
-| Stream | Ground truth | Table |
-|---|---|---|
-| `IntelligenceRecord` | `pdx1_signals.jsonl` | `intelligence_records` |
-| `Brief` | `pdx1_signals_briefs.jsonl` | `briefs` |
-| OLIS emitted transitions | `pdx1_signals_olis_emitted.jsonl` | `olis_emitted` |
-| run ledger | `pdx1_signals_runs.jsonl` | — (one JSON line per cycle, written even when no brief publishes or the cycle raises) |
-
-The run ledger is what the dead-man check reads:
+## Development
 
 ```bash
-pdx1 --check-ledger    # exit 1 if the newest line is missing, stale, failed, future-dated or a fixture replay
-```
-
-It prints the verdict as JSON and writes nothing. "Stale" means older than
-`PDX1_LEDGER_MAX_AGE_HOURS` (default 26: a daily run plus slack). Run it from a
-schedule other than the cycle's own: a cycle that never started cannot report itself.
-
-They are kept apart rather than interleaved so each file stays a homogeneous stream that
-reads back without discriminating on type. The briefs path is derived from the records
-path; override it with `PDX1_BRIEFS_PATH`.
-
-Briefs are persisted because they are the product. A brief assembled by the 06:00
-scheduler has to outlive the process that built it, and a re-run cannot recreate one —
-the novelty gate correctly drops signals already stored, so a second cycle over the same
-input yields no records and therefore no brief.
-
-## Repository layout
-
-```
-pdx-1i/
-├── src/pdx1/                  45 modules
-│   ├── config.py              settings; every PDX1_* key in .env.example
-│   ├── models.py              Pydantic schemas — Signal → IntelligenceRecord
-│   ├── gates.py               the four-gate filter
-│   ├── resolver.py            EntityResolver — exact, token-sort, substring
-│   ├── anomaly.py             RollingBaseline — 90-day rolling sigma
-│   ├── trigger.py             TriggerState — weight | TIER_1 | floor cadence
-│   ├── store.py               dual-write JSONL + SQLite
-│   ├── graph.py               jurisdictions, seats, entities, ties (data only)
-│   ├── pipeline.py            stage orchestration + CLI
-│   ├── scheduler.py           APScheduler cron — daily cycle, default 06:00 PT
-│   ├── sources/               ORESTAR · OLIS · SEI · WA PDC · Portland Press
-│   ├── watch/                 6 infrastructure monitors
-│   ├── neutrality/            tone · hedging · attribution gates
-│   ├── publication/           IssueBuilder · BriefPublisher · PDF renderer
-│   ├── api/                   FastAPI app, routes (incl. /graph), API-key auth
-│   └── demos/                 runnable walkthrough
-├── ui/                        index.html (brief) · webmap.html (political web)
-│                              citizen-cognisance.html (public landing) · DESIGN.md
-├── scripts/                   patch_citizen_weights.py — topic weight sliders
-├── tests/                     39 test files, 701 tests
-│   └── fixtures/              source payloads replayed by the adapters
-├── .github/workflows/         CI — ruff, bandit, pytest, coverage (Python 3.12)
-└── pyproject.toml
-```
-
-## Data sources
-
-| Source | Type | Adapter | Credibility |
-|---|---|---|---|
-| **ORESTAR** | OR campaign finance | `OrestarAdapter` | 0.90 |
-| **OLIS** | OR legislation, hearings, markup timing | `OlisAdapter` | 0.90 |
-| **SEI** | OR statements of economic interest (OGEC) | `SeiAdapter` | 0.85 |
-| **WA PDC** | WA cross-border contributions | `WaPdcAdapter` | 0.85 |
-| **Portland Press** | Local news RSS, 5 feeds | `PortlandPressAdapter` | 0.60 |
-
-Filed records outrank press on credibility because a filing is the primary artifact;
-press establishes that something was reported, not that it happened.
-
-## The political web
-
-`graph.py` holds the node and tie registry: 8 jurisdictions, 10 official seats, 13
-monitored entities.
-
-| Node | Meaning |
-|---|---|
-| Jurisdiction | a governing body — Metro, the counties, City of Portland, TriMet Board, the Port |
-| Official | a seat, connected to the body it sits on |
-| Entity | a utility, agency or private organisation the system tracks |
-
-| Tie | Meaning |
-|---|---|
-| `seat` | an official occupies a seat on a jurisdiction |
-| `tie` | a general affiliation |
-| `regulates` | a jurisdiction sets rules or rates over an entity |
-| `operates` | a jurisdiction runs or directly controls the entity |
-| `disclosure` | a declared interest linking an official to an entity |
-
-A disclosure is a completed legal obligation, not a finding. `validate()` runs in CI to
-catch dangling ties — a record linked to a node that does not exist must never reach
-publication.
-
-### Serving the graph
-
-`GET /graph` returns the whole registry — small and fixed, so it ships in one response
-and a renderer can lay it out without a second round trip:
-
-```json
-{
-  "nodes": [{"id": "pge", "label": "Portland General Electric", "group": "E",
-             "weight": 0.9, "flag": null, "record_count": 1}],
-  "ties":  [{"source": "mcp", "target": "pge", "kind": "disclosure", "flagged": true}],
-  "node_count": 31, "tie_count": 40
-}
-```
-
-`group` drives node shape, `kind` drives line style, and `disclosure` ties render dashed.
-`record_count` is how many stored records mention that node, so the map reflects actual
-activity rather than a static diagram — and it is a count, nothing more. It says how
-often a body appears in the record set and nothing about why, which is the same
-discipline the neutrality gates enforce on published prose.
-
-`GET /graph/{node_id}` returns one node with its ties, its neighbours and the records
-touching it — what a click on the map needs. `GET /graph/districts` returns the seat
-roster for the District Map.
-
-### Drawing it
-
-`ui/webmap.html` renders the graph: a force-directed layout where node shape carries
-`group` (diamond jurisdiction, square seat, circle entity), line style carries `kind`,
-declared interests are dashed, and node size grows with `record_count`. Clicking a node
-pins a panel showing its ties, its neighbours and the records that mention it.
-
-```bash
-pdx1-api                                  # terminal 1
-python -m http.server 8300 --directory ui # terminal 2
-# open http://localhost:8300/webmap.html?api=http://localhost:8000
-```
-
-Set `PDX1_CORS_ORIGINS` to the page's origin, and pass `?key=` if `PDX1_API_KEY` is set.
-
-The page has no built-in dataset. If the API is unreachable it says so and draws nothing,
-rather than falling back to baked-in nodes that would drift from the store while still
-looking authoritative. `tests/test_webmap_ui.py` pins that, along with the neutrality
-constraints — no names of individuals, no affiliation labels, no characterising language,
-and no hue beyond the vacancy signal.
-
-## Testing
-
-```bash
-pytest tests/ -v
-pytest --cov=src --cov-report=term-missing tests/
+python -m pip install -e ".[dev]"
+pytest tests/ -q
 ruff check src/ tests/
 bandit -r src/ -ll
 ```
 
-701 tests. The suite leans on boundary conditions — a signal at exactly 0.5
-credibility, exactly 50 words, exactly 48 hours old — because an off-by-one in a gate
-silently changes what the engine publishes.
-
-All four commands are hard gates in CI. None of them are allowed to fail soft.
-
-## Configuration
-
-Copy `.env.example` to `.env`. Every key is read by `pdx1.config.Settings` except the
-`ANTHROPIC_API_KEY` / `PDX1_LLM_MODEL` pair, which is reserved for optional written
-explanations and is not consumed by scoring.
-
-## UI
-
-`ui/index.html` is a single self-contained page that reads the API and renders the
-current brief. It is a brief viewer, not the SPEC-1 console — it does not implement the
-five political-intelligence panels (Overview, District Map, Web Map, Signal Feed,
-Statistics), and its palette does not follow the SPEC-1 monochrome design system.
-
-### The public landing page
-
-`ui/citizen-cognisance.html` is the CITIZEN COGNISANCE landing page — the public face of
-pdx-1i, wrapping the political web in an MCM Editorial shell: warm neutrals, one accent
-(deep teal), typographic hierarchy over decoration. It is deliberately *not* the phosphor
-palette of `ui/webmap.html`, which is an internal ops surface. The design system —
-palette, type scale, component specs — is written up in [`ui/DESIGN.md`](ui/DESIGN.md).
-
-```bash
-python -m http.server 8300 --directory ui
-# open http://localhost:8300/citizen-cognisance.html
-```
-
-It is published as the site's front page by `.github/workflows/pages.yml` on every push
-to `main` that touches `ui/` — at <https://cls-1000.github.io/pdx-1i/>, with the brief
-viewer at `brief.html` and the political web at `webmap.html`. Pages serves no API, so
-the live site draws the static fallback and says so; append `?api=https://<host>` to
-point it at a running engine (that host must list the Pages origin in
-`PDX1_CORS_ORIGINS`). The public front page therefore carries the fallback dataset's
-named officeholders, which is the confined exception described below.
-
-Node colour is signal freshness (LIVE < 6h, RECENT < 24h, STALE beyond), node shape is
-category, node size is relationship degree, and edge colour is relationship type. Below
-768px the force graph is replaced by the same nodes as a list ranked by freshness, since
-a force layout is unreadable on a phone.
-
-Two things separate it from `ui/webmap.html`, and both are deliberate:
-
-- **It carries a static fallback dataset** (48 nodes, 131 ties) so the map still draws
-  with the API down, where `webmap.html` draws nothing by design. The trade-off is real:
-  a baked-in dataset can drift from what the engine holds. It is confined to structure —
-  freshness, gate scores, summaries and coverage links come from
-  `GET /api/v1/nodes/{id}/signal` and are never synthesised locally. A node the engine
-  has nothing on renders hollow and says so.
-- **That dataset names individual officeholders**, where the engine's own registry
-  (`src/pdx1/graph.py`) is role-based by design — seats, never people. The two are not
-  interchangeable, and the role-based registry remains the authority for anything the
-  engine publishes.
-
-#### Topic weight sliders are applied, not shipped
-
-The page as committed ranks the list by signal freshness and carries no sliders.
-`scripts/patch_citizen_weights.py` adds them — a five-topic weight bar (housing, civic
-money, public safety, environment, state politics) that re-ranks the list by a weighted
-score while any slider sits off 1.0, and falls back to freshness when they are all at
-1.0.
-
-```bash
-python scripts/patch_citizen_weights.py --dry-run   # print the diff, write nothing
-python scripts/patch_citizen_weights.py             # apply, after a timestamped backup
-```
-
-It is idempotent: every injection is guarded by a sentinel drawn from its own text, so a
-second run reports `No changes needed (already patched).` rather than stacking a copy. A
-missing anchor aborts before any write and leaves the file byte-identical. `--file`
-targets a copy.
-
-Kept out of the committed page deliberately. Two independent implementations of this
-feature once landed at the same time and both were applied to the file, which put two
-`TOPIC_WEIGHTS` declarations in one script scope and stopped the whole `<script>` block
-parsing — taking the map and filters down with it, not just the sliders. Keeping the
-page pristine and the feature in a tested patcher is what prevents a repeat;
-`tests/test_patch_citizen_weights.py` asserts the committed file carries no patcher
-output and references no helper the patcher defines.
-
-**The weighting is unverified against live data.** Its matchers read `pattern`,
-`source_type` and `confidence` off the signal payload, and no other code on the page
-reads those three fields. The `/api/v1/nodes/{id}/signal` endpoint is not served from
-this repo, so whether they arrive has never been checked. If they do not, every matcher
-returns false and the ranking quietly degrades to a recency ordering — the sliders move
-and nothing much changes. Worth confirming against a real payload before relying on it.
-
-## Not built yet
-
-Each of these is a clean follow-on. Every entry not struck through is genuinely absent —
-if a capability is described anywhere above, it exists and has tests. A struck-through
-entry has since been built and is kept here, marked, so the record of what was promised
-does not quietly disappear.
-
-- ~~**Working endpoints for the remaining feeds.**~~ **Built 2026-09-26.** ORESTAR has
-  no bulk file, so the adapter drives the public transaction search and its Excel
-  export in one session; SEI walks OGEC's EFS public-records pages. Both measured
-  live from a cloud sandbox; see [`SHIPPING.md`](SHIPPING.md). What remains is the
-  dead press and watch endpoints.
-- ~~**Network diagrams in the PDF.**~~ **Built.** `render_brief_pdf` takes an optional
-  `entity_ids` and appends a diagram of the registry ties among them, drawn from the
-  role-based registry with shape carrying `group` and a disclosure tie dashed. It draws
-  nothing for fewer than two known nodes or when those nodes share no tie, because an
-  empty frame would read as "these bodies are unconnected" — a claim the data does not
-  make. See `src/pdx1/publication/network_diagram.py`.
-- ~~**The remaining SPEC-1 panels.**~~ **Built.** `ui/index.html` includes the District
-  Map over projected RLIS GIS, the per-record four-gate Signal Feed, and Statistics
-  backed by the graph registry and stored records.
-- **SPEC-1 visual language on `index.html`** — monochrome `#000` canvas, hierarchy by
-  white opacity ramp, brightness rather than hue for emphasis, `#00FF00`/`#FF0000`
-  reserved for live status only. This is now scoped to the brief reader alone.
-  `webmap.html` already holds it, enforced by `tests/test_webmap_ui.py`: an allowlist
-  of the SPEC-1 palette, plus a check that both status hues resolve through a custom
-  property so an inlined `rgba(255,0,0,…)` cannot slip a third colour past the hex
-  scan. `citizen-cognisance.html` is out of scope by choice, not omission — it is MCM
-  Editorial, and the exception is documented above. Whether `index.html` should
-  converge at all is undecided; it is listed here as an open question rather than as
-  agreed work.
+The tests replay checked-in fixtures and do not require network access. CI runs
+the linter, Bandit, and test suite on Python 3.12. See
+[`SHIPPING.md`](SHIPPING.md) for measured feed status and daily-run progress, and
+[`PARKED.md`](PARKED.md) for deferred work.
 
 ## License
 
-MIT — see LICENSE.
-
-## Contact
-
-CLS-1000 — Portland Metro Intelligence Project
-https://github.com/cls-1000/pdx-1i
-
----
-
-*PDX-1i is the regional module of the SPEC-1 OSINT architecture.*
+MIT — see [LICENSE](LICENSE).
