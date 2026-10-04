@@ -83,9 +83,16 @@ def _log_stage(
     **details: int | str,
 ) -> None:
     """Emit an opt-in structured stage event without adding noise to compact runs."""
+    detail_text = " ".join(f"{key}={value}" for key, value in sorted(details.items()))
     logger.debug(
-        "pipeline stage complete: %s",
+        "pipeline stage complete stage=%s run_id=%s elapsed_s=%.3f "
+        "input_count=%d output_count=%d%s",
         stage,
+        run_id,
+        elapsed_s,
+        input_count,
+        output_count,
+        f" {detail_text}" if detail_text else "",
         extra={
             "run_id": run_id,
             "pipeline_stage": stage,

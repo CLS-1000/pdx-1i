@@ -78,6 +78,8 @@ def test_verbose_stage_logs_include_run_context_and_counts(
         assert record.elapsed_s >= 0
         assert record.input_count >= 0
         assert record.output_count >= 0
+        assert f"run_id={result.run_id}" in record.getMessage()
+        assert "elapsed_s=" in record.getMessage()
     assert stages["harvest"].failed_adapters == 0
     assert stages["score"].dropped_count == sum(result.dropped.values())
 
