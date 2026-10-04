@@ -28,6 +28,7 @@ import sys
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 
 from .anomaly import BaselineRegistry
 from .config import ConfigError, Settings
@@ -71,6 +72,37 @@ from .watch import WATCH_TARGETS, WatchAdapter
 logger = logging.getLogger(__name__)
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
+def _log_stage(
+    run_id: str,
+    stage: str,
+    elapsed_s: float,
+    input_count: int,
+    output_count: int,
+    **details: int | str,
+) -> None:
+    """Emit an opt-in structured stage event without adding noise to compact runs."""
+    detail_text = " ".join(f"{key}={value}" for key, value in sorted(details.items()))
+    logger.debug(
+        "pipeline stage complete stage=%s run_id=%s elapsed_s=%.3f "
+        "input_count=%d output_count=%d%s",
+        stage,
+        run_id,
+        elapsed_s,
+        input_count,
+        output_count,
+        f" {detail_text}" if detail_text else "",
+        extra={
+            "run_id": run_id,
+            "pipeline_stage": stage,
+            "elapsed_s": elapsed_s,
+            "input_count": input_count,
+            "output_count": output_count,
+            **details,
+        },
+    )
+
 
 #: Filed public records establish a fact directly; press establishes that something was
 #: reported. That distinction is what ConfidenceTier encodes.
@@ -447,6 +479,7 @@ def _run_cycle(
     # Each adapter is isolated: `safe_fetch` has already turned any failure into an
     # error on its result, so nothing here can abort the cycle. What this loop adds is
     # that a failure is *recorded* rather than merely survived.
+    stage_started = perf_counter()
     signals: list[Signal] = []
     errors: list[str] = []
     fetched: list[FetchResult] = []
@@ -470,6 +503,14 @@ def _run_cycle(
         # visible in the journal without reading the brief.
         level = logging.INFO if (outcome.ok and not outcome.empty) else logging.WARNING
         logger.log(level, "harvest %s", outcome.describe())
+    _log_stage(
+        run_id,
+        "harvest",
+        perf_counter() - stage_started,
+        len(adapters),
+        len(signals),
+        failed_adapters=sum(not outcome.ok for outcome in outcomes),
+    )
 
     result = CycleResult(
         run_id=run_id,
@@ -481,10 +522,15 @@ def _run_cycle(
     )
 
     # ── 02 Parse ──
+    stage_started = perf_counter()
     parsed_signals = [parse_signal(s, resolver) for s in signals]
     result.parsed = len(parsed_signals)
+    _log_stage(
+        run_id, "parse", perf_counter() - stage_started, len(signals), result.parsed
+    )
 
     # ── 03 Score ──
+    stage_started = perf_counter()
     gate_filter = FourGateFilter(settings.gates, seen_hashes=store.known_signal_hashes())
     opportunities: list[Opportunity] = []
     dropped: dict[str, int] = {}
@@ -506,8 +552,17 @@ def _run_cycle(
 
     result.opportunities = len(opportunities)
     result.dropped = dropped
+    _log_stage(
+        run_id,
+        "score",
+        perf_counter() - stage_started,
+        len(parsed_signals),
+        result.opportunities,
+        dropped_count=sum(dropped.values()),
+    )
 
     # ── 04 Investigate / 05 Verify / 06 Analyze ──
+    stage_started = perf_counter()
     records: list[IntelligenceRecord] = []
     for opportunity in opportunities:
         generate_investigation(opportunity)
@@ -547,9 +602,20 @@ def _run_cycle(
         trigger.note_anomaly(reading.tier, record.record_id)
 
     result.records = records
+    _log_stage(
+        run_id,
+        "analyze",
+        perf_counter() - stage_started,
+        len(opportunities),
+        len(records),
+    )
 
     # ── 07 Store ──
+    stage_started = perf_counter()
     result.written = store.write(records)
+    _log_stage(
+        run_id, "store", perf_counter() - stage_started, len(records), result.written
+    )
 
     _decide(result, records, run_id, now, settings, store, trigger, errors)
     return result
@@ -566,6 +632,7 @@ def _decide(
     errors: list[str],
 ) -> None:
     """Evaluate the trigger, publish if it fires, and record why when nothing did."""
+    stage_started = perf_counter()
     decision = trigger.evaluate(now)
     result.trigger_reasons = decision.reasons
     if not records:
@@ -580,6 +647,14 @@ def _decide(
         _publish(result, records, run_id, now, settings, store, trigger, errors)
         if result.brief is None:
             result.no_brief_reason = "every section was withheld by the attribution gate"
+    _log_stage(
+        run_id,
+        "publish",
+        perf_counter() - stage_started,
+        len(records),
+        len(result.brief.sections) if result.brief else 0,
+        published=int(result.brief is not None),
+    )
 
 
 def seed_state(
@@ -811,6 +886,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "ISO timestamp anchoring the velocity gate. Defaults to the newest "
             "harvested signal, which is what makes a fixture replay deterministic."
         ),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Include per-stage timing and record-count diagnostics in the logs.",
     )
     parser.add_argument(
         "--fixtures",
@@ -1097,7 +1177,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     logging.basicConfig(
-        level=getattr(logging, settings.log_level, logging.INFO),
+        level=logging.DEBUG if args.verbose else getattr(logging, settings.log_level, logging.INFO),
         format="%(levelname)s %(name)s :: %(message)s",
     )
 

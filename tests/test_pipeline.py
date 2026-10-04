@@ -7,6 +7,7 @@ stores in parity, and a brief that only contains gate-cleared sections.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -58,6 +59,29 @@ def test_cycle_harvests_every_feed(settings, store, fixture_dir):
     assert result.harvested == 12
     assert result.parsed == 12
     assert result.errors == [] or all("dropped" in e for e in result.errors)
+
+
+def test_verbose_stage_logs_include_run_context_and_counts(
+    settings, store, fixture_dir, caplog
+):
+    with caplog.at_level(logging.DEBUG, logger="pdx1.pipeline"):
+        result = _cycle(settings, store, fixture_dir)
+
+    stages = {
+        record.pipeline_stage: record
+        for record in caplog.records
+        if hasattr(record, "pipeline_stage")
+    }
+    assert set(stages) == {"harvest", "parse", "score", "analyze", "store", "publish"}
+    for record in stages.values():
+        assert record.run_id == result.run_id
+        assert record.elapsed_s >= 0
+        assert record.input_count >= 0
+        assert record.output_count >= 0
+        assert f"run_id={result.run_id}" in record.getMessage()
+        assert "elapsed_s=" in record.getMessage()
+    assert stages["harvest"].failed_adapters == 0
+    assert stages["score"].dropped_count == sum(result.dropped.values())
 
 
 def test_cycle_writes_records_to_both_stores(settings, store, fixture_dir):
