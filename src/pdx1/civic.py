@@ -205,36 +205,48 @@ class JurisdictionRef(BaseModel):
 
     @model_validator(mode="after")
     def _scope(self) -> JurisdictionRef:
-        lvl = self.level
-        if lvl == GovernmentLevel.STATE:
-            if self.region_id or self.county_ids or self.city_id or self.district_ids:
-                raise ValueError(
-                    "state scope cannot carry region, county, city or district"
-                )
-        elif lvl == GovernmentLevel.REGIONAL:
-            if not self.region_id or self.city_id or self.district_ids:
-                raise ValueError(
-                    "regional scope requires region_id and no city/district"
-                )
-        elif lvl == GovernmentLevel.COUNTY:
-            if (
-                len(self.county_ids) != 1
-                or self.city_id
-                or self.district_ids
-                or self.region_id
-            ):
-                raise ValueError(
-                    "county scope requires exactly one county and nothing else"
-                )
-        elif lvl == GovernmentLevel.CITY:
-            if not self.city_id or not self.county_ids or self.district_ids:
-                raise ValueError(
-                    "city scope requires a city and its one-or-more counties"
-                )
-        elif lvl == GovernmentLevel.DISTRICT:
-            if not self.district_ids:
-                raise ValueError("district scope requires at least one district ID")
+        validators = {
+            GovernmentLevel.STATE: self._validate_state_scope,
+            GovernmentLevel.REGIONAL: self._validate_regional_scope,
+            GovernmentLevel.COUNTY: self._validate_county_scope,
+            GovernmentLevel.CITY: self._validate_city_scope,
+            GovernmentLevel.DISTRICT: self._validate_district_scope,
+        }
+        validators[self.level]()
         return self
+
+    def _validate_state_scope(self) -> None:
+        if self.region_id or self.county_ids or self.city_id or self.district_ids:
+            raise ValueError(
+                "state scope cannot carry region, county, city or district"
+            )
+
+    def _validate_regional_scope(self) -> None:
+        if not self.region_id or self.city_id or self.district_ids:
+            raise ValueError(
+                "regional scope requires region_id and no city/district"
+            )
+
+    def _validate_county_scope(self) -> None:
+        if (
+            len(self.county_ids) != 1
+            or self.city_id
+            or self.district_ids
+            or self.region_id
+        ):
+            raise ValueError(
+                "county scope requires exactly one county and nothing else"
+            )
+
+    def _validate_city_scope(self) -> None:
+        if not self.city_id or not self.county_ids or self.district_ids:
+            raise ValueError(
+                "city scope requires a city and its one-or-more counties"
+            )
+
+    def _validate_district_scope(self) -> None:
+        if not self.district_ids:
+            raise ValueError("district scope requires at least one district ID")
 
     @property
     def canonical_id(self) -> str:
