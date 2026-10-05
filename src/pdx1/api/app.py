@@ -27,11 +27,12 @@ import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ..config import Settings
 from ..store import DualWriteStore
+from .auth import require_api_key
 from .routes import brief, cycle, graph, intel, leads, signals
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,11 @@ def create_app() -> FastAPI:
     app.include_router(cycle.router)
     app.include_router(graph.router)
 
-    @app.get("/health", tags=["meta"])
+    @app.get(
+        "/health",
+        tags=["meta"],
+        dependencies=[Depends(require_api_key)],
+    )
     def health() -> dict[str, str]:
         """Liveness probe."""
         return {"status": "ok"}

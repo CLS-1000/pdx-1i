@@ -11,6 +11,7 @@ should be changed deliberately.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,8 +33,8 @@ def _env_int(key: str, default: int) -> int:
         return default
     try:
         return int(raw)
-    except ValueError:
-        return default
+    except ValueError as exc:
+        raise ConfigError(f"{key}={raw!r} must be an integer.") from exc
 
 
 def _env_float(key: str, default: float) -> float:
@@ -41,9 +42,12 @@ def _env_float(key: str, default: float) -> float:
     if raw is None or not raw.strip():
         return default
     try:
-        return float(raw)
-    except ValueError:
-        return default
+        value = float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{key}={raw!r} must be a number.") from exc
+    if not math.isfinite(value):
+        raise ConfigError(f"{key}={raw!r} must be a finite number.")
+    return value
 
 
 def _env_list(key: str) -> list[str] | None:
@@ -62,7 +66,7 @@ def _env_list(key: str) -> list[str] | None:
 
 
 #: Spellings accepted for a boolean environment variable. Anything else is a typo,
-#: and a typo must not resolve to a silent default -- see `_env_bool_strict`.
+#: and a typo must not resolve to a silent default.
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
@@ -81,7 +85,49 @@ def _env_bool(key: str, default: bool) -> bool:
     raw = os.environ.get(key)
     if raw is None or not raw.strip():
         return default
-    return raw.strip().lower() in _TRUE
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    raise ConfigError(
+        f"{key}={raw!r} is not a recognised boolean. "
+        f"Use one of {sorted(_TRUE)} or {sorted(_FALSE)}."
+    )
+
+
+def _require_int(
+    key: str,
+    value: int,
+    *,
+    minimum: int,
+    maximum: int | None = None,
+) -> None:
+    if type(value) is not int or value < minimum or (maximum is not None and value > maximum):
+        bounds = f"at least {minimum}"
+        if maximum is not None:
+            bounds = f"between {minimum} and {maximum}"
+        raise ConfigError(f"{key} must be an integer {bounds}; got {value!r}.")
+
+
+def _require_number(
+    key: str,
+    value: float,
+    *,
+    minimum: float,
+    maximum: float | None = None,
+) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < minimum
+        or (maximum is not None and value > maximum)
+    ):
+        bounds = f"at least {minimum}"
+        if maximum is not None:
+            bounds = f"between {minimum} and {maximum}"
+        raise ConfigError(f"{key} must be a finite number {bounds}; got {value!r}.")
 
 
 def _env_bool_strict(key: str) -> bool | None:
@@ -262,20 +308,82 @@ class Settings:
     #: remains enforced.
     tone_gate: bool = True
 
+    def __post_init__(self) -> None:
+        """Reject settings that would silently disable gates or break scheduling."""
+        _require_number(
+            "PDX1_GATE_MIN_CREDIBILITY",
+            self.gates.min_credibility,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        _require_int("PDX1_GATE_MIN_WORDS", self.gates.min_words, minimum=0)
+        _require_int("PDX1_GATE_MAX_AGE_HOURS", self.gates.max_age_hours, minimum=1)
+
+        for key, timeout in (
+            ("ORESTAR_TIMEOUT", self.timeouts.orestar),
+            ("OLIS_TIMEOUT", self.timeouts.olis),
+            ("SEI_TIMEOUT", self.timeouts.sei),
+            ("WA_PDC_TIMEOUT", self.timeouts.wa_pdc),
+            ("PDX911_TIMEOUT", self.timeouts.pdx911),
+        ):
+            _require_int(key, timeout, minimum=1)
+
+        _require_int("PDX1_RETRY_MAX_ATTEMPTS", self.retry.max_attempts, minimum=1)
+        _require_number("PDX1_RETRY_BACKOFF_S", self.retry.backoff_s, minimum=0.0)
+        _require_number("PDX1_RETRY_BUDGET_S", self.retry.budget_s, minimum=0.0)
+        _require_int("PDX1_BASELINE_WINDOW_DAYS", self.baseline_window_days, minimum=1)
+        _require_number(
+            "PDX1_TRIGGER_WEIGHT_THRESHOLD",
+            self.trigger_weight_threshold,
+            minimum=0.0,
+        )
+        _require_int("PDX1_TRIGGER_FLOOR_DAYS", self.trigger_floor_days, minimum=0)
+        _require_int("PDX1_LEDGER_MAX_AGE_HOURS", self.ledger_max_age_hours, minimum=1)
+        _require_int("PDX1_CRON_HOUR", self.cron_hour, minimum=0, maximum=23)
+        _require_int("PDX1_CRON_MINUTE", self.cron_minute, minimum=0, maximum=59)
+        _require_int(
+            "PDX1_OLIS_SESSION_LOOKBACK_DAYS",
+            self.olis_session_lookback_days,
+            minimum=0,
+        )
+        _require_int("PDX1_API_PORT", self.api_port, minimum=1, maximum=65535)
+
+        if not isinstance(self.publish_anomaly_tier, AnomalyTier):
+            raise ConfigError(
+                "PDX1_PUBLISH_ANOMALY_TIER must be one of "
+                f"{[tier.value for tier in AnomalyTier]}; got {self.publish_anomaly_tier!r}."
+            )
+        for key, value in (
+            ("PDX1_PUBLISH_ON_CHANGE", self.publish_on_change),
+            ("PDX1_SCHEDULER_EMBEDDED_API", self.scheduler_embedded_api),
+            ("PDX1_LIVE", self.live_fetch),
+            ("PDX1_TONE_GATE", self.tone_gate),
+        ):
+            if type(value) is not bool:
+                raise ConfigError(f"{key} must be a boolean; got {value!r}.")
+
     @classmethod
     def from_env(cls) -> Settings:
         """Build settings from the current environment."""
         tier_raw = _env("PDX1_PUBLISH_ANOMALY_TIER", AnomalyTier.TIER_1.value).upper()
         try:
             tier = AnomalyTier(tier_raw)
-        except ValueError:
-            tier = AnomalyTier.TIER_1
+        except ValueError as exc:
+            raise ConfigError(
+                f"PDX1_PUBLISH_ANOMALY_TIER={tier_raw!r} is not recognised. "
+                f"Use one of {[item.value for item in AnomalyTier]}."
+            ) from exc
 
         # Defaults to development on purpose: the CLI, the API and the test suite all
         # build Settings, and none of them should need a variable set to run. The
         # scheduler is the process that must not guess, and it enforces that itself
         # via `require_declared_environment()` -- see scheduler.py.
-        environment = _env("PDX1_ENVIRONMENT", "development")
+        environment = _env("PDX1_ENVIRONMENT", "development").strip().lower()
+        if environment not in {"development", "production"}:
+            raise ConfigError(
+                f"PDX1_ENVIRONMENT={environment!r} is not recognised. "
+                "Use 'development' or 'production'."
+            )
 
         return cls(
             store_path=Path(_env("PDX1_STORE_PATH", "pdx1_signals.jsonl")),
@@ -308,16 +416,16 @@ class Settings:
                 pdx911=_env_int("PDX911_TIMEOUT", 60),
             ),
             retry=RetryPolicy(
-                max_attempts=max(1, _env_int("PDX1_RETRY_MAX_ATTEMPTS", 3)),
-                backoff_s=max(0.0, _env_float("PDX1_RETRY_BACKOFF_S", 2.0)),
-                budget_s=max(0.0, _env_float("PDX1_RETRY_BUDGET_S", 120.0)),
+                max_attempts=_env_int("PDX1_RETRY_MAX_ATTEMPTS", 3),
+                backoff_s=_env_float("PDX1_RETRY_BACKOFF_S", 2.0),
+                budget_s=_env_float("PDX1_RETRY_BUDGET_S", 120.0),
             ),
             baseline_window_days=_env_int("PDX1_BASELINE_WINDOW_DAYS", 90),
             publish_on_change=_env_bool("PDX1_PUBLISH_ON_CHANGE", False),
             publish_anomaly_tier=tier,
             trigger_weight_threshold=_env_float("PDX1_TRIGGER_WEIGHT_THRESHOLD", 3.0),
             trigger_floor_days=_env_int("PDX1_TRIGGER_FLOOR_DAYS", 7),
-            ledger_max_age_hours=max(1, _env_int("PDX1_LEDGER_MAX_AGE_HOURS", 26)),
+            ledger_max_age_hours=_env_int("PDX1_LEDGER_MAX_AGE_HOURS", 26),
             timezone=_env("PDX1_TIMEZONE", "America/Los_Angeles"),
             cron_hour=_env_int("PDX1_CRON_HOUR", 6),
             cron_minute=_env_int("PDX1_CRON_MINUTE", 0),

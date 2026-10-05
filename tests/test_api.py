@@ -43,6 +43,14 @@ def test_health_endpoint(client):
     assert r.json()["status"] == "ok"
 
 
+def test_health_requires_the_configured_api_key(client_with_key):
+    assert client_with_key.get("/health").status_code == 401
+    response = client_with_key.get(
+        "/health", headers={"X-API-Key": "test-secret-key"}
+    )
+    assert response.status_code == 200
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 
@@ -100,6 +108,23 @@ def test_intel_outcome_filter_is_accepted(client):
     assert r.status_code == 200
 
 
+def test_intel_pagination_reports_total_matching_records(client):
+    from pdx1.models import Outcome
+    from test_store import make_record
+
+    records = [
+        make_record(i).model_copy(update={"outcome": Outcome.ESCALATE})
+        for i in range(3)
+    ]
+    client.app.state.store.write(records)
+
+    response = client.get("/intel?outcome=ESCALATE&limit=1")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 3
+    assert len(response.json()["items"]) == 1
+
+
 # ── /leads ────────────────────────────────────────────────────────────────────
 
 
@@ -107,6 +132,18 @@ def test_leads_returns_empty_on_empty_store(client):
     r = client.get("/leads")
     assert r.status_code == 200
     assert r.json()["items"] == []
+
+
+def test_leads_pagination_includes_records_beyond_old_query_cap(client):
+    from test_store import make_record
+
+    client.app.state.store.write([make_record(i) for i in range(501)])
+
+    response = client.get("/leads?limit=50&offset=500")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 501
+    assert len(response.json()["items"]) == 1
 
 
 # ── /brief ────────────────────────────────────────────────────────────────────

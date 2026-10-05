@@ -9,9 +9,6 @@ from ..schemas import RecordPage
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
-_LEAD_OUTCOMES = {"INVESTIGATE", "ESCALATE", "CORROBORATED"}
-
-
 @router.get("", response_model=RecordPage, dependencies=[Depends(require_api_key)])
 def list_leads(
     request: Request,
@@ -25,12 +22,6 @@ def list_leads(
     threshold -- the analyst queue.
     """
     store = request.app.state.store
-    leads = []
-    for outcome in ("ESCALATE", "CORROBORATED", "INVESTIGATE"):
-        leads.extend(store.query(outcome=outcome, limit=500))
-
-    # Sort by confidence descending, then published_at descending.
-    leads.sort(key=lambda r: (r.confidence, r.published_at), reverse=True)
-
-    page = leads[offset : offset + limit]
-    return RecordPage(total=len(leads), limit=limit, offset=offset, items=page)
+    total = store.count_leads()
+    leads = store.query_leads(limit=limit, offset=offset)
+    return RecordPage(total=total, limit=limit, offset=offset, items=leads)

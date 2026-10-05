@@ -243,6 +243,36 @@ class DualWriteStore:
                 ).fetchone()[0]
             )
 
+    def count_leads(self) -> int:
+        """Return the total number of records exposed by the analyst queue."""
+        with closing(self._connect()) as conn:
+            return int(
+                conn.execute(
+                    """
+                    SELECT count(*) FROM intelligence_records
+                     WHERE outcome IN ('ESCALATE', 'CORROBORATED', 'INVESTIGATE')
+                    """
+                ).fetchone()[0]
+            )
+
+    def query_leads(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[IntelligenceRecord]:
+        """Read one confidence-ranked page of the analyst queue."""
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT payload FROM intelligence_records
+                 WHERE outcome IN ('ESCALATE', 'CORROBORATED', 'INVESTIGATE')
+                 ORDER BY confidence DESC, published_at DESC
+                 LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+        return [IntelligenceRecord.model_validate_json(row["payload"]) for row in rows]
+
     def jsonl_count(self) -> int:
         if not self.jsonl_path.exists():
             return 0
