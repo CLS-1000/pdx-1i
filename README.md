@@ -1,5 +1,7 @@
 # PDX-1i — Portland Metro Intelligence
 
+[Open Citizen Cognisance](https://cls-1000.github.io/pdx-1i/) — the static public landing page.
+
 PDX-1i is an open-source intelligence (OSINT) engine for public records about
 politics and civic infrastructure in the bi-state Portland metro: Multnomah,
 Washington, and Clackamas counties in Oregon, and Clark County in Washington.
