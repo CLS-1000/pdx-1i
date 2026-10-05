@@ -20,6 +20,6 @@ def list_intel(
 ) -> RecordPage:
     """Return IntelligenceRecords from the store, newest first."""
     store = request.app.state.store
-    records = store.query(outcome=outcome, source=source, limit=limit + offset)
-    page = records[offset : offset + limit]
-    return RecordPage(total=len(records), limit=limit, offset=offset, items=page)
+    total = store.count_query(outcome=outcome, source=source)
+    records = store.query(outcome=outcome, source=source, limit=limit, offset=offset)
+    return RecordPage(total=total, limit=limit, offset=offset, items=records)

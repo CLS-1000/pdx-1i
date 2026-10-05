@@ -252,7 +252,7 @@ def default_adapters(
         ]
         for target in WATCH_TARGETS:
             adapters.append(
-                WatchAdapter(target, timeout=60, live=True, cache_dir=cache, **r)
+                WatchAdapter(target, timeout=t.pdx911, live=True, cache_dir=cache, **r)
             )
         return adapters
 
