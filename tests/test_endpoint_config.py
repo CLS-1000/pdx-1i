@@ -19,9 +19,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pdx1.config import Settings, SourceUrls
+from pdx1.config import Settings, SourceTimeouts, SourceUrls
 from pdx1.pipeline import check_endpoints, default_adapters
 from pdx1.sources import OlisAdapter, PortlandPressAdapter
+from pdx1.watch import WATCH_TARGETS, WatchAdapter
 
 
 def _live(**urls) -> Settings:
@@ -34,6 +35,17 @@ def _live(**urls) -> Settings:
 def test_an_adapter_uses_its_registered_url_by_default():
     adapters = {a.name: a for a in default_adapters(_live())}
     assert adapters["OLIS"].feed_url == OlisAdapter.feed_url
+
+
+def test_watch_adapters_use_the_configured_timeout():
+    timeout = 47
+    settings = replace(_live(), timeouts=SourceTimeouts(pdx911=timeout))
+
+    adapters = default_adapters(settings)
+    watch_adapters = [adapter for adapter in adapters if isinstance(adapter, WatchAdapter)]
+
+    assert len(watch_adapters) == len(WATCH_TARGETS)
+    assert all(adapter.timeout == timeout for adapter in watch_adapters)
 
 
 @pytest.mark.parametrize(
