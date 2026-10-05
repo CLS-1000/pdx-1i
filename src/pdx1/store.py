@@ -266,7 +266,7 @@ class DualWriteStore:
                 """
                 SELECT payload FROM intelligence_records
                  WHERE outcome IN ('ESCALATE', 'CORROBORATED', 'INVESTIGATE')
-                 ORDER BY confidence DESC, published_at DESC
+                 ORDER BY confidence DESC, julianday(published_at) DESC, record_id DESC
                  LIMIT ? OFFSET ?
                 """,
                 (limit, offset),

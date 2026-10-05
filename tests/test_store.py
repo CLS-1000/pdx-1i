@@ -121,6 +121,28 @@ def test_query_respects_the_limit(store):
     assert len(store.query(limit=5)) == 5
 
 
+def test_lead_order_compares_timestamps_across_timezones(store):
+    from datetime import datetime, timedelta, timezone
+
+    at_noon_utc = make_record(1).model_copy(
+        update={"confidence": 0.75, "published_at": datetime(2026, 5, 27, 12, tzinfo=timezone.utc)}
+    )
+    at_1230_utc = make_record(6).model_copy(
+        update={
+            "confidence": 0.75,
+            "published_at": datetime(
+                2026, 5, 27, 11, 30, tzinfo=timezone(timedelta(hours=-1))
+            ),
+        }
+    )
+    store.write([at_noon_utc, at_1230_utc])
+
+    assert [record.record_id for record in store.query_leads()] == [
+        at_1230_utc.record_id,
+        at_noon_utc.record_id,
+    ]
+
+
 def test_has_detects_presence(store):
     store.write([make_record(1)])
     assert store.has("rec_test_0001")
