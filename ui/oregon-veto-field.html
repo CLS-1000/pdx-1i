@@ -58,7 +58,7 @@
       <p class="kicker">Civic data · Oregon Legislature</p>
       <h1>Oregon's Veto Field Said “No” Since 2007. Then It Said “Yes.”</h1>
       <p class="dek">A consistency check found that a structured field disagreed with bills’ own action histories. The Legislature confirmed both the numbers and the correction.</p>
-      <p class="meta"><strong>DRAFT — cleared for publication 2026-10-01</strong> · Legislature replied 2026-09-30</p>
+      <p class="meta">Published 2026-10-02 · Updated 2026-10-06 · Legislature replied 2026-09-30</p>
 
       <aside class="confidence" aria-label="Confidence and attribution">
         <p><strong>Confidence:</strong> High on the before-and-after values. The Legislature confirmed the numbers and the correction (reply received 2026-09-30). Whether the update was made because of the report is unconfirmed in their words; the sequence is documented by both sides.</p>
@@ -79,7 +79,7 @@
       </ul>
       <p>The gap was not one bad session. It appeared in 9 of the 10 sessions that had vetoes, including all seven vetoes of 2025. Anyone who asked the service “which bills did the Governor veto?” got <strong>one</strong> bill back. The real answer — 24 vetoes that stood — existed only in free-text history rows.</p>
       <p>On <strong>28 September</strong> we sent the finding, with a one-line query anyone could run, to the Legislature’s data helpdesk.</p>
-      <p>On <strong>29 September at 03:28 UTC</strong>, the same query showed <code>Vetoed = true</code> on <strong>all 27</strong> measures, including the three overrides. Across the whole service, asking for <code>Vetoed = true</code> now returns exactly those 27. Re-checked 30 September, 01:25 UTC: still exactly 27.</p>
+      <p>On <strong>29 September at 03:28 UTC</strong>, the same query showed <code>Vetoed = true</code> on <strong>all 27</strong> measures, including the three overrides. Across the whole service, asking for <code>Vetoed = true</code> now returns exactly those 27. Re-checked 6 October, 08:16 UTC: still exactly 27.</p>
 
       <h2>The Legislature replied</h2>
       <p>On <strong>30 September</strong>, Jack Martinis of the Legislative Help Desk replied, forwarding a response from a development-team member, Nagaraj. The reply:</p>
@@ -91,7 +91,7 @@
 
       <h2>Why the proof matters more than the bug</h2>
       <p>Here is the thing about the “before” state: <strong>it’s gone.</strong> You cannot query the API today and see what it said on September 27. The live service shows only the present. If we had simply written down “it was wrong,” that would be our word against nobody’s — there would be nothing to check.</p>
-      <p>So before we reported it, we sealed it. Every measure’s record, the full request, the retrieval time — bound into a hash chain and signed with our key. Anyone can run a one-file verifier, offline, and confirm the records haven’t been edited since. The pack cannot prove what the API returned independently of us; only our records are sealed, not theirs. But it proves <em>we</em> haven’t changed our story, and it preserves a past state the live service has already overwritten.</p>
+      <p>So we kept it. Every measure’s record, the full request and the retrieval time were bound into a hash chain on the day we retrieved them, and on 1 October we sealed that chain, with the corrected records, under our operator key. Anyone can run a one-file verifier, offline, and confirm the records haven’t been edited since. The pack cannot prove what the API returned independently of us; only our records are sealed, not theirs. But it proves <em>we</em> haven’t changed our story, and it preserves a past state the live service has already overwritten.</p>
       <p>That is what the proof layer is for. Not catching villains. Preserving the past against the present.</p>
 
       <h2>What we can and can’t claim</h2>
@@ -109,7 +109,7 @@
       <h2>Check it yourself</h2>
       <p>This returns the 27 vetoed measures today:</p>
       <pre><a href="https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$filter=Vetoed%20eq%20true&amp;$select=SessionKey,MeasurePrefix,MeasureNumber,Vetoed&amp;$format=json">https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$filter=Vetoed eq true&amp;$select=SessionKey,MeasurePrefix,MeasureNumber,Vetoed&amp;$format=json</a></pre>
-      <p>The sealed evidence pack — hash chain, signed, offline-verifiable — will be published with the publisher’s key. Anyone will then be able to confirm that neither the “before” nor the “after” records were edited after the fact.</p>
+      <p>The sealed evidence pack is a signed, offline-verifiable hash chain. Download it here: <a href="https://github.com/CLS-1000/notitia-civica/tree/main/evidence/or_veto_pack_2026-10-01"><code>or_veto_pack_2026-10-01</code></a>. Check it against the operator public key published here: <a href="https://github.com/CLS-1000/notitia-civica/blob/main/evidence/OPERATOR_KEY.md">key <code>f7b1282a4a9ccf50</code></a>. The verifier confirms that neither the “before” nor the “after” records were edited after sealing.</p>
 
       <h2>Why it matters beyond Oregon</h2>
       <ul>
