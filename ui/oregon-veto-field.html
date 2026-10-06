@@ -1,140 +1,766 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A documented consistency check found Oregon's Vetoed field disagreed with bill action histories; the Legislature confirmed the correction.">
-  <title>Oregon's Veto Field Said “No” Since 2007. Then It Said “Yes.” · Notitia Civica</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --paper: #F5F1E8;
-      --card: #FBF8F1;
-      --ink: #1A1815;
-      --body: #3E3830;
-      --muted: #6B635A;
-      --rule: #DCD4C4;
-      --accent: #14625C;
-      --serif: Georgia, "Times New Roman", serif;
-      --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-    *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; background: var(--paper); color: var(--body); font: 17px/1.7 var(--serif); }
-    a { color: var(--accent); text-underline-offset: .18em; }
-    a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-    .masthead { border-bottom: 1px solid var(--rule); padding: 1rem max(1.25rem, calc((100% - 760px) / 2)); font: 600 .75rem/1.4 var(--sans); letter-spacing: .12em; text-transform: uppercase; }
-    .masthead a { text-decoration: none; }
-    main { max-width: 760px; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
-    .kicker, .meta, .label { font: 600 .75rem/1.5 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-    h1, h2 { color: var(--ink); line-height: 1.15; }
-    h1 { max-width: 700px; margin: .65rem 0 1rem; font-size: clamp(2.2rem, 7vw, 4rem); letter-spacing: -.035em; }
-    .dek { margin: 0 0 1.1rem; color: var(--body); font-size: 1.2rem; }
-    .meta { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: .8rem 0; letter-spacing: .035em; text-transform: none; }
-    .confidence { margin: 1.5rem 0 2.5rem; padding: 1rem 1.2rem; background: var(--card); border-left: 3px solid var(--accent); }
-    .confidence p { margin: 0; }
-    h2 { margin: 2.6rem 0 .8rem; font-size: 1.65rem; }
-    p { margin: 0 0 1.1rem; }
-    ul { padding-left: 1.35rem; margin: 0 0 1.25rem; }
-    li { margin: .4rem 0; }
-    blockquote { margin: 1rem 0; padding: .25rem 0 .25rem 1rem; border-left: 2px solid var(--rule); }
-    table { width: 100%; margin: 1.2rem 0 1.6rem; border-collapse: collapse; font: .92rem/1.5 var(--sans); }
-    th, td { border-bottom: 1px solid var(--rule); padding: .65rem .5rem; text-align: left; vertical-align: top; }
-    th { color: var(--ink); }
-    pre { overflow-wrap: anywhere; white-space: pre-wrap; margin: .8rem 0 1.2rem; padding: 1rem; background: var(--card); border: 1px solid var(--rule); font: .82rem/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .note { padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .9rem; color: var(--muted); }
-    footer { border-top: 1px solid var(--rule); padding: 1rem 1.25rem 2rem; text-align: center; font: .8rem/1.5 var(--sans); color: var(--muted); }
-    @media (max-width: 560px) {
-      body { font-size: 16px; }
-      main { padding-top: 2rem; }
-      table { font-size: .82rem; }
-      th, td { padding: .5rem .3rem; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oregon's Veto Field — Notitia Civica</title>
+<meta name="description" content="Oregon's legislative data marked one bill as vetoed since 2007. Governors vetoed 27. The field was corrected the day after we reported it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   NOTITIA CIVICA — print-first publication template
+   Monochrome. Black ink on warm off-white. Archival register.
+   ============================================================ */
+
+:root {
+  --ink:        #191510;   /* near-black, warm */
+  --ink-soft:   #3d3831;   /* secondary text */
+  --ink-faint:  #6e675c;   /* captions, footnotes */
+  --paper:      #f6f1e6;   /* warm off-white stock */
+  --paper-deep: #efe8d9;   /* recessed panels */
+  --rule:       #191510;   /* hairline rules — same ink */
+  --serif: "Libre Caslon Text", "Iowan Old Style", Georgia, serif;
+  --mono:  "Courier Prime", "Courier New", Courier, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { background: #d8d2c4; }
+
+body {
+  font-family: var(--serif);
+  color: var(--ink);
+  font-size: 10.5pt;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Page sheet (screen preview mimics US Letter) ---------- */
+.sheet {
+  background: var(--paper);
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0.35in auto;
+  padding: 0.75in 0.85in 0.9in;
+  box-shadow: 0 1px 3px rgba(0,0,0,.28), 0 12px 32px rgba(0,0,0,.14);
+  position: relative;
+}
+/* subtle paper grain — screen only, drops out in print */
+.sheet::before {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(25,21,16,.028) 1px, transparent 1px),
+    radial-gradient(rgba(25,21,16,.018) 1px, transparent 1px);
+  background-size: 3px 3px, 7px 7px;
+  background-position: 0 0, 2px 3px;
+}
+.sheet > * { position: relative; }
+
+/* ============================================================
+   MASTHEAD
+   ============================================================ */
+.masthead { text-align: center; }
+
+.masthead .rubric {
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 3px 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+.masthead h1 {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 42pt;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin: 22px 0 6px;
+  line-height: 1;
+}
+.masthead h1 .sep { font-weight: 400; padding: 0 .08em; }
+
+.masthead .subtitle {
+  font-family: var(--mono);
+  font-size: 8.5pt;
+  letter-spacing: .42em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+}
+.masthead .series-banner {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 8pt;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  border: 1px solid var(--rule);
+  padding: 4px 18px 5px;
+  margin-bottom: 18px;
+}
+
+/* double rule beneath masthead — classic bulletin device */
+.double-rule {
+  border-top: 2.5px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  height: 5px;
+}
+
+/* ---- Issue metadata strip ---------------------------------- */
+.issue-line {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  border-left: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  margin-top: 0;
+  font-family: var(--mono);
+}
+.issue-line .cell {
+  border-right: 1px solid var(--rule);
+  padding: 7px 12px 8px;
+}
+.issue-line .k {
+  display: block;
+  font-size: 6.5pt;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 2px;
+}
+.issue-line .v {
+  font-size: 9pt;
+  letter-spacing: .05em;
+}
+
+/* ---- Distribution / classification-style banner (civic) ---- */
+.dist-banner {
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 5px 0 6px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+
+/* ============================================================
+   SECTION HEADINGS
+   ============================================================ */
+.section { margin-top: 34px; page-break-inside: avoid; }
+.section.allow-break { page-break-inside: auto; }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 5px;
+  margin-bottom: 14px;
+}
+.section-head .num {
+  font-family: var(--mono);
+  font-size: 9pt;
+  color: var(--ink-faint);
+  letter-spacing: .1em;
+}
+.section-head h2 {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 12.5pt;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+}
+.section-head .tag {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 6.5pt;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ============================================================
+   BODY / EXEC SUMMARY
+   ============================================================ */
+p.lede {
+  font-size: 11.5pt;
+  line-height: 1.7;
+}
+p.lede::first-letter {
+  font-size: 27pt;
+  line-height: .85;
+  float: left;
+  padding: 3px 7px 0 0;
+  font-weight: 700;
+}
+p + p { margin-top: 9px; text-indent: 1.6em; }
+
+.summary-points {
+  margin-top: 14px;
+  border-top: 1px dotted var(--ink-faint);
+  padding-top: 10px;
+  list-style: none;
+}
+.summary-points li {
+  padding-left: 26px;
+  position: relative;
+  margin-bottom: 7px;
+  font-size: 10pt;
+}
+.summary-points li::before {
+  content: "§";
+  position: absolute;
+  left: 4px;
+  font-family: var(--mono);
+  color: var(--ink-faint);
+}
+
+/* ============================================================
+   METADATA BOX (bordered, reusable)
+   ============================================================ */
+.meta-box {
+  border: 1px solid var(--rule);
+  margin: 16px 0;
+}
+.meta-box .box-title {
+  font-family: var(--mono);
+  font-size: 6.5pt;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-deep);
+}
+.meta-box .box-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  font-family: var(--mono);
+}
+.meta-box .box-grid > div {
+  padding: 6px 10px 7px;
+  border-right: 1px dotted var(--ink-faint);
+  font-size: 8.5pt;
+}
+.meta-box .box-grid > div:last-child { border-right: none; }
+.meta-box .k {
+  display: block;
+  font-size: 6pt;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ============================================================
+   SIGNALS — numbered entries, field-report register
+   ============================================================ */
+.signal {
+  border-left: 2px solid var(--rule);
+  padding: 2px 0 10px 16px;
+  margin-bottom: 18px;
+  page-break-inside: avoid;
+}
+.signal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.signal-id {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 9.5pt;
+  letter-spacing: .08em;
+}
+.signal-title {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 11pt;
+}
+.signal-verdict {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  border: 1px solid var(--rule);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.signal-verdict.hold { border-style: dashed; color: var(--ink-soft); }
+.signal-body { margin-top: 6px; font-size: 10pt; }
+.signal-src {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--ink-faint);
+  margin-top: 6px;
+  letter-spacing: .04em;
+}
+.signal-src::before { content: "SRC · "; letter-spacing: .2em; }
+
+/* gate score micro-table inside a signal */
+.gates {
+  display: inline-flex;
+  margin-top: 8px;
+  border: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 7pt;
+}
+.gates span {
+  padding: 3px 12px 4px;
+  text-transform: uppercase;
+  border-right: 1px solid var(--rule);
+  letter-spacing: .12em;
+}
+.gates span:last-child { border-right: none; background: var(--paper-deep); font-weight: 700; }
+
+/* ============================================================
+   SIGNAL ASSESSMENT — two-column analytic memo
+   ============================================================ */
+.assessment {
+  column-count: 2;
+  column-gap: 30px;
+  column-rule: 1px dotted var(--ink-faint);
+  font-size: 9.8pt;
+  text-align: justify;
+  hyphens: auto;
+}
+.assessment p { text-indent: 1.6em; margin-top: 0; margin-bottom: 8px; }
+.assessment p:first-child { text-indent: 0; }
+.confidence-note {
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  letter-spacing: .1em;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  margin-top: 10px;
+  padding-top: 6px;
+}
+
+.not-prove-body {
+  padding: 10px 14px 12px;
+  font-size: 9.8pt;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+/* ============================================================
+   STORY LEADS
+   ============================================================ */
+.lead-row {
+  display: grid;
+  grid-template-columns: 88px 1fr 120px;
+  gap: 0 16px;
+  padding: 9px 0;
+  border-bottom: 1px dotted var(--ink-faint);
+  page-break-inside: avoid;
+}
+.lead-row:last-child { border-bottom: 1px solid var(--rule); }
+.lead-id { font-family: var(--mono); font-size: 8.5pt; font-weight: 700; }
+.lead-desc { font-size: 9.8pt; }
+.lead-desc .angle {
+  display: block;
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+.lead-status {
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  text-align: right;
+  color: var(--ink-soft);
+}
+
+/* ============================================================
+   WATCH LIST — ruled table
+   ============================================================ */
+table.watch {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+table.watch th {
+  font-family: var(--mono);
+  font-size: 6.5pt;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  text-align: left;
+  font-weight: 400;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 5px 10px;
+}
+table.watch td {
+  padding: 7px 10px 8px;
+  border-bottom: 1px dotted var(--ink-faint);
+  vertical-align: top;
+}
+table.watch tr:last-child td { border-bottom: 1px solid var(--rule); }
+table.watch .mono { font-family: var(--mono); font-size: 8.5pt; }
+table.watch .trigger { font-style: italic; color: var(--ink-soft); }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.footer {
+  margin-top: 44px;
+  border-top: 2.5px solid var(--rule);
+  padding-top: 8px;
+}
+.footer .colophon {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.footer .method {
+  margin-top: 10px;
+  font-size: 8pt;
+  color: var(--ink-faint);
+  line-height: 1.5;
+  border-top: 1px dotted var(--ink-faint);
+  padding-top: 8px;
+}
+.footer .seal {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 7pt;
+  letter-spacing: .5em;
+  margin-top: 14px;
+  color: var(--ink-soft);
+}
+
+/* ============================================================
+   PRINT
+   ============================================================ */
+@page { size: letter; margin: 0.6in 0.7in; }
+
+@media print {
+  html, body { background: var(--paper); }
+  .sheet {
+    width: auto; min-height: 0;
+    margin: 0; padding: 0;
+    box-shadow: none;
+  }
+  .sheet::before { display: none; }
+  .no-print { display: none !important; }
+  a { color: var(--ink); text-decoration: none; }
+}
+
+/* screen-only print hint */
+.print-hint {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 8pt;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: #7a7365;
+  padding: 14px 0 2px;
+}
+
+/* ---- Screen: phone width ---- */
+.signal-src, .box-grid div { overflow-wrap: anywhere; }
+.box-grid a { color: inherit; }
+@media screen and (max-width: 860px) {
+  .sheet { width: auto; min-height: 0; margin: 0; padding: 28px 16px 40px; box-shadow: none; }
+  .masthead h1 { font-size: clamp(30px, 9vw, 52px) !important; letter-spacing: .04em !important; }
+  .issue-line { grid-template-columns: 1fr 1fr !important; }
+  .box-grid { grid-template-columns: 1fr !important; }
+  .assessment { column-count: 1 !important; }
+  .rubric { flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .watch { display: block; overflow-x: auto; }
+  .lead-row { grid-template-columns: 1fr !important; }
+}
+</style>
 </head>
 <body>
-  <header class="masthead"><a href="./">Notitia Civica</a> · Civic Intelligence</header>
-  <main>
-    <article>
-      <p class="kicker">Civic data · Oregon Legislature</p>
-      <h1>Oregon's Veto Field Said “No” Since 2007. Then It Said “Yes.”</h1>
-      <p class="dek">A consistency check found that a structured field disagreed with bills’ own action histories. The Legislature confirmed both the numbers and the correction.</p>
-      <p class="meta">Published 2026-10-02 · Updated 2026-10-06 · Legislature replied 2026-09-30</p>
 
-      <aside class="confidence" aria-label="Confidence and attribution">
-        <p><strong>Confidence:</strong> High on the before-and-after values. The Legislature confirmed the numbers and the correction (reply received 2026-09-30). Whether the update was made because of the report is unconfirmed in their words; the sequence is documented by both sides.</p>
-      </aside>
+<div class="sheet">
 
-      <h2>What happened</h2>
-      <p>The Oregon Legislature publishes a free public data service at <code>api.oregonlegislature.gov</code>. Every bill in it carries a yes-or-no field called <code>Vetoed</code>. Every bill also carries its own action history — a list of dated events such as “Governor vetoed.”</p>
-      <p>On <strong>27 September 2026</strong>, an automated consistency check compared the two across every session in the service.</p>
-      <ul>
-        <li><strong>27 measures</strong> have a “Governor vetoed.” action in their history, spread over 10 sessions from 2007 to 2026.</li>
-        <li>On <strong>26 of the 27</strong>, <code>Vetoed</code> was <code>false</code>.
-          <ul>
-            <li><strong>23</strong> of those are vetoes that stood. For them, the field contradicted the bill’s own record.</li>
-            <li><strong>3</strong> (SB 5520, SB 545 and SB 897, all from 2009) became law when the Legislature overrode the veto. <code>false</code> is defensible there.</li>
-          </ul>
-        </li>
-        <li>Only one bill, SB 215 from 2013, was marked <code>Vetoed = true</code>.</li>
-      </ul>
-      <p>The gap was not one bad session. It appeared in 9 of the 10 sessions that had vetoes, including all seven vetoes of 2025. Anyone who asked the service “which bills did the Governor veto?” got <strong>one</strong> bill back. The real answer — 24 vetoes that stood — existed only in free-text history rows.</p>
-      <p>On <strong>28 September</strong> we sent the finding, with a one-line query anyone could run, to the Legislature’s data helpdesk.</p>
-      <p>On <strong>29 September at 03:28 UTC</strong>, the same query showed <code>Vetoed = true</code> on <strong>all 27</strong> measures, including the three overrides. Across the whole service, asking for <code>Vetoed = true</code> now returns exactly those 27. Re-checked 6 October, 08:16 UTC: still exactly 27.</p>
+  <!-- ==================== MASTHEAD ==================== -->
+  <header class="masthead">
+    <div class="rubric">
+      <span>Public Record</span>
+      <span>Open Sources Only</span>
+      <span>Evidence-Anchored</span>
+    </div>
+    <h1>Notitia<span class="sep">·</span>Civica</h1>
+    <div class="subtitle">Public-Interest Intelligence&nbsp;&nbsp;·&nbsp;&nbsp;OSINT</div>
+    <div class="series-banner">Series&nbsp;&nbsp;·&nbsp;&nbsp;Civic Intelligence Brief</div>
+    <div class="double-rule"></div>
+    <div class="issue-line">
+      <div class="cell"><span class="k">Issue</span><span class="v">No. OR-001</span></div>
+      <div class="cell"><span class="k">Date</span><span class="v">06 OCT 2026</span></div>
+      <div class="cell"><span class="k">Run ID</span><span class="v">NC-2026-1006-A</span></div>
+      <div class="cell"><span class="k">Coverage Window</span><span class="v">27 SEP – 06 OCT</span></div>
+    </div>
+    <div class="dist-banner">Unrestricted Distribution · Compiled From Public Sources · Verify Before Acting</div>
+  </header>
 
-      <h2>The Legislature replied</h2>
-      <p>On <strong>30 September</strong>, Jack Martinis of the Legislative Help Desk replied, forwarding a response from a development-team member, Nagaraj. The reply:</p>
-      <ul>
-        <li><strong>Reproduced the numbers exactly</strong> — 27 measures with a “Governor vetoed.” action across 2007R1–2026R1, three overridden into law, the remaining 24 including all seven 2025R1 vetoes (HB 2596, HB 3795, SB 302, SB 736, SB 875, SB 976, SB 1047) and HB 4177 in 2026R1.</li>
-        <li><strong>Confirmed the correction</strong> — “The data has now been updated to ensure that all measures with a gubernatorial veto are accurately reflected. If a veto was later overridden, the measure will continue to display Vetoed = true, consistent with the historical record.”</li>
-      </ul>
-      <p>One honest wrinkle: the same message first describes the old values as correct — “the Vetoed field correctly displays false” for the 24 — and then announces the update. The field’s semantics were evidently ambiguous even inside the building, which is precisely why the check reports disagreement rather than error. The reply does not directly answer whether the update was made in response to the report; it documents that the report was received, forwarded to the development team, and followed by the update.</p>
+  <!-- ==================== 01 EXECUTIVE SUMMARY ==================== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="num">01</span>
+      <h2>Executive Summary</h2>
+      <span class="tag">Analyst Synthesis</span>
+    </div>
+    <p class="lede">
+      Oregon's public legislative data service carries a yes-or-no field, <i>Vetoed</i>, on every bill.
+      From 2007 until last week it was false on 26 of the 27 measures governors vetoed, and only one bill in
+      the service was marked as vetoed. We reported the gap on 28 September. By the next day the field was
+      true on all 27, and the Legislature has since confirmed both the numbers and the correction.
+    </p>
+    <ul class="summary-points">
+      <li>On 27 September the <i>Vetoed</i> field disagreed with the bills' own action histories on 26 of 27 vetoed measures, across 9 of the 10 sessions that had vetoes, including all seven vetoes of 2025.</li>
+      <li>The field was corrected on all 27 by 29 September, 03:28 UTC, and still matched on 6 October.</li>
+      <li>The Legislature's reply reproduced the numbers and confirmed the update. It does not say the update was made because of the report.</li>
+    </ul>
+    <div class="meta-box">
+      <div class="box-title">Issue Metadata</div>
+      <div class="box-grid">
+        <div><span class="k">Measures Checked</span> 31,405</div>
+        <div><span class="k">Vetoes in History</span> 27</div>
+        <div><span class="k">Field Wrong (27 Sep)</span> 26</div>
+        <div><span class="k">Field Right (6 Oct)</span> 27</div>
+        <div><span class="k">Sealed Records</span> 56</div>
+        <div><span class="k">Method</span> proc_track</div>
+      </div>
+    </div>
+  </section>
 
-      <h2>Why the proof matters more than the bug</h2>
-      <p>Here is the thing about the “before” state: <strong>it’s gone.</strong> You cannot query the API today and see what it said on September 27. The live service shows only the present. If we had simply written down “it was wrong,” that would be our word against nobody’s — there would be nothing to check.</p>
-      <p>So we kept it. Every measure’s record, the full request and the retrieval time were bound into a hash chain on the day we retrieved them, and on 1 October we sealed that chain, with the corrected records, under our operator key. Anyone can run a one-file verifier, offline, and confirm the records haven’t been edited since. The pack cannot prove what the API returned independently of us; only our records are sealed, not theirs. But it proves <em>we</em> haven’t changed our story, and it preserves a past state the live service has already overwritten.</p>
-      <p>That is what the proof layer is for. Not catching villains. Preserving the past against the present.</p>
+  <!-- ==================== 02 SIGNALS ==================== -->
+  <section class="section allow-break">
+    <div class="section-head">
+      <span class="num">02</span>
+      <h2>Signals</h2>
+      <span class="tag">Gated · Ranked</span>
+    </div>
 
-      <h2>What we can and can’t claim</h2>
-      <table>
-        <thead><tr><th scope="col">Claim</th><th scope="col">Status</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">Wrong on 26 of 27 on 09-27</th><td>Our retrieval that day, re-sealed 2026-10-01 in <code>or_veto_pack_2026-10-01</code> (56 records, 1 seal) under operator key <code>f7b1282a4a9ccf50</code>.</td></tr>
-          <tr><th scope="row">Reported 09-28</th><td>Our sent email to the Legislature’s data helpdesk.</td></tr>
-          <tr><th scope="row">Corrected on all 27 by 09-29 03:28 UTC</th><td>Live API, sealed in the pack with the full request for each measure.</td></tr>
-          <tr><th scope="row">Legislature confirmed the numbers and the correction on 09-30</th><td>Reply from the Legislative Help Desk with the development team’s response (Jack Martinis / Nagaraj).</td></tr>
-          <tr><th scope="row">Corrected <em>because of</em> our report</th><td><strong>Not stated in their words.</strong> The reply documents the sequence — report received, forwarded to the development team, update followed — but does not attribute cause.</td></tr>
-        </tbody>
-      </table>
-
-      <h2>Check it yourself</h2>
-      <p>This returns the 27 vetoed measures today:</p>
-      <pre><a href="https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$filter=Vetoed%20eq%20true&amp;$select=SessionKey,MeasurePrefix,MeasureNumber,Vetoed&amp;$format=json">https://api.oregonlegislature.gov/odata/odataservice.svc/Measures?$filter=Vetoed eq true&amp;$select=SessionKey,MeasurePrefix,MeasureNumber,Vetoed&amp;$format=json</a></pre>
-      <p>The sealed evidence pack is a signed, offline-verifiable hash chain. Download it here: <a href="https://github.com/CLS-1000/notitia-civica/tree/main/evidence/or_veto_pack_2026-10-01"><code>or_veto_pack_2026-10-01</code></a>. Check it against the operator public key published here: <a href="https://github.com/CLS-1000/notitia-civica/blob/main/evidence/OPERATOR_KEY.md">key <code>f7b1282a4a9ccf50</code></a>. The verifier confirms that neither the “before” nor the “after” records were edited after sealing.</p>
-
-      <h2>Why it matters beyond Oregon</h2>
-      <ul>
-        <li><strong>Machine-readable doesn’t mean correct.</strong> A reporter, a researcher or an app that trusted the structured field would have published the wrong number for nearly every session since 2007, with nothing to warn them.</li>
-        <li><strong>The truth was there, just not where software looks.</strong> The history rows were right the whole time. The field built to summarize them wasn’t. A status field drifting from the record it summarizes is worth checking in every public dataset that has both.</li>
-        <li><strong>Long-standing errors can close fast.</strong> Whatever the reason, a gap dating to 2007 closed within about a day of being reported.</li>
-      </ul>
-
-      <h2>What remains uncertain</h2>
-      <ul>
-        <li><strong>Whether it changed because of the report.</strong> The timing fits: a gap dating to 2007 closed after the report was forwarded to the development team, and the reply documents the sequence. But the Legislature’s reply does not attribute cause, so this piece still doesn’t claim it.</li>
-        <li><strong>The “before” values rest on our own retrieval.</strong> Today’s live service can’t show the old state. The sealed pack proves our records haven’t changed since we made them.</li>
-        <li><strong>The overrides.</strong> Marking the three overridden bills <code>true</code> is defensible — they were vetoed. But <code>Vetoed = true</code> no longer means “did not become law.” Anyone counting laws should check for overrides separately.</li>
-      </ul>
-
-      <h2>What to watch</h2>
-      <ul>
-        <li>Whether the field stays maintained or drifts again. The check reruns; the pack seals whatever it finds.</li>
-        <li>The same check on neighboring fields. Early work found that <code>CurrentLocation</code> scattered 2025’s seven vetoes across four different values, and the same action is recorded under different capitalizations within a single session.</li>
-        <li>Other states. Any legislature that publishes both a status field and an action history can be checked the same way.</li>
-      </ul>
-
-      <p class="note"><strong>Method:</strong> a procedural consistency check (<code>proc_track</code>) replays each measure’s recorded actions against the field values the service publishes, and flags disagreement between them. It reports disagreement, not error. An exception we don’t know about may explain any single case. Contact: <a href="mailto:spec1_ops@proton.me">spec1_ops@proton.me</a>.</p>
+    <article class="signal">
+      <div class="signal-head">
+        <span class="signal-id">SIG-001</span>
+        <span class="signal-title">Oregon's veto field contradicted the bills' own records on 26 of 27 vetoes</span>
+        <span class="signal-verdict">Corroborated</span>
+      </div>
+      <div class="signal-body">
+        On 27 September, an automated check compared each measure's <i>Vetoed</i> field with its action history across
+        every session in the Legislature's data service. Twenty-seven measures from 2007 to 2026 record "Governor vetoed."
+        Twenty-six read <i>Vetoed = false</i>. Twenty-three of those are vetoes that stood. Three (SB 545, SB 897 and SB 5520,
+        all 2009) became law by override, so <i>false</i> was defensible for them. Only SB 215 (2013) was marked <i>true</i>.
+      </div>
+      <div class="signal-src">Oregon Legislature OData service · Measures, MeasureHistoryActions · retrieved 27 SEP 2026 13:04 UTC · confirmed by the Legislature 30 SEP</div>
+      <div class="gates"><span>Assessment</span><span>High Confidence</span></div>
     </article>
-  </main>
-  <footer><a href="./">PDX-1i · Portland Metro Intelligence</a></footer>
+
+    <article class="signal">
+      <div class="signal-head">
+        <span class="signal-id">SIG-002</span>
+        <span class="signal-title">The field was corrected on all 27 within about a day of the report</span>
+        <span class="signal-verdict">Confirmed</span>
+      </div>
+      <div class="signal-body">
+        The finding went to the Legislature's data help desk on 28 September, with a one-line query anyone could run.
+        At 03:28 UTC on 29 September, the same query returned <i>Vetoed = true</i> on all 27 measures, including the three
+        overrides. Across the whole service, <i>Vetoed = true</i> now returns exactly those 27. It still did on 6 October at 08:16 UTC.
+      </div>
+      <div class="signal-src">Oregon Legislature OData service · retrieved 29 SEP 03:28 UTC, 30 SEP 01:25 UTC, 06 OCT 08:16 UTC</div>
+      <div class="gates"><span>Assessment</span><span>High Confidence</span></div>
+    </article>
+
+    <article class="signal">
+      <div class="signal-head">
+        <span class="signal-id">SIG-003</span>
+        <span class="signal-title">The Legislature confirmed the numbers and the fix, but not the cause</span>
+        <span class="signal-verdict">Confirmed</span>
+      </div>
+      <div class="signal-body">
+        On 30 September the Legislative Help Desk replied, forwarding its development team's response. The team reproduced the
+        27 measures, the three overrides and the 24 vetoes that stood, and wrote: "The data has now been updated to ensure that
+        all measures with a gubernatorial veto are accurately reflected." The same message first describes the old values as
+        correct, then announces the update. It does not say whether the update was made in response to the report.
+      </div>
+      <div class="signal-src">Reply from Jack Martinis, Oregon Legislative Help Desk, forwarding a response from development-team member Nagaraj · 30 SEP 2026 · held by Notitia Civica</div>
+      <div class="gates"><span>Assessment</span><span>High Confidence · Cause Unattributed</span></div>
+    </article>
+  </section>
+
+  <!-- ==================== 03 SIGNAL ASSESSMENT ==================== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="num">03</span>
+      <h2>Signal Assessment</h2>
+      <span class="tag">Interpretation · Bounded</span>
+    </div>
+    <div class="assessment">
+      <p>
+        SIG-001 and SIG-003 together establish, with high confidence, that a structured field in Oregon's official
+        legislative data disagreed with the Legislature's own history on nearly every veto since 2007. Anyone who asked
+        the service which bills the governor vetoed got one bill back, not 24. The history rows were right the whole time.
+        The field built to summarize them was not.
+      </p>
+      <p>
+        The baseline matters for scale. The major legislative-data vendors read veto status from the action history, so
+        their Oregon data was already correct. The error reached people who trusted the field directly: small newsrooms,
+        researchers and anyone building on the raw service. Comparable checks of Washington (2021–2026) and California
+        (2025–26) found no equivalent defect.
+      </p>
+      <p>
+        SIG-002 shows the old state is gone. The live service now shows only the corrected values. The 27 September retrieval
+        was bound into a hash chain the day it was made, and on 1 October it was sealed, with the corrected records, under
+        the publisher's key. The pack shows that our records have not been edited since. It cannot show, independently of us,
+        what the service returned; the Legislature's own reproduction of the 27 measures is the independent check.
+      </p>
+      <p>
+        What remains unknown: why the field was wrong for so long, what it was meant to represent, and whether the correction
+        was made because of the report. With the overrides now marked <i>true</i>, <i>Vetoed = true</i> no longer means
+        "did not become law."
+      </p>
+    </div>
+    <div class="confidence-note">
+      CONFIDENCE LANGUAGE — HIGH CONFIDENCE · MODERATE CONFIDENCE · DIRECTIONAL SIGNAL · WATCH ITEM / UNCONFIRMED SIGNAL. Confidence language clarifies uncertainty; it does not create authority. Internal scoring is not published.
+    </div>
+    <div class="meta-box" style="margin-top:14px">
+      <div class="box-title">Evidence &amp; Verification</div>
+      <div class="box-grid">
+        <div><span class="k">Evidence Pack</span> <a href="https://github.com/CLS-1000/notitia-civica/tree/main/evidence/or_veto_pack_2026-10-01">or_veto_pack_2026-10-01</a></div>
+        <div><span class="k">Signing Key</span> <a href="https://github.com/CLS-1000/notitia-civica/blob/main/evidence/OPERATOR_KEY.md">f7b1282a4a9ccf50</a></div>
+        <div><span class="k">Format</span> gp-canon/1 · Ed25519</div>
+        <div><span class="k">Reproduce</span> Measures?$filter=Vetoed eq true</div>
+        <div><span class="k">Verifier</span> verify.py · stdlib</div>
+        <div><span class="k">Result</span> 56 records · exit 0</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 04 WHAT THIS DOES NOT PROVE ==================== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="num">04</span>
+      <h2>What This Does Not Prove</h2>
+      <span class="tag">Standing Limits</span>
+    </div>
+    <div class="meta-box">
+      <div class="box-title">Publication Rule — A Pattern Is Not Proof of Intent</div>
+      <div class="not-prove-body">
+        A wrong field is not evidence of concealment; the history rows recorded every veto correctly throughout.
+        The timing of the correction does not prove it was made because of the report, and the Legislature's reply does
+        not say so. No one was shown to have relied on the field to their harm. The disagreement is between a data field and
+        the record it summarizes, and this check reports disagreement, not error.
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 05 STORY LEADS ==================== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="num">05</span>
+      <h2>Story Leads</h2>
+      <span class="tag">For Follow-Up</span>
+    </div>
+    <div class="lead-row">
+      <span class="lead-id">LEAD-001</span>
+      <span class="lead-desc">
+        Neighboring fields in the same service: <i>CurrentLocation</i> scattered 2025's seven vetoes across four different values, and the same action is recorded under different capitalizations within a single session.
+        <span class="angle">Angle · Field-by-field replay against action history</span>
+      </span>
+      <span class="lead-status">Open</span>
+    </div>
+    <div class="lead-row">
+      <span class="lead-id">LEAD-002</span>
+      <span class="lead-desc">
+        California's 2026 Senate vetoes: 30 of 31 show "In Floor Process" rather than "Vetoed" while the override window is open, unlike Assembly vetoes. Procedural, and temporary in the 2025 data; worth confirming it resolves.
+        <span class="angle">Angle · Re-pull California bill table after the veto calendar is cleared</span>
+      </span>
+      <span class="lead-status">Open</span>
+    </div>
+    <div class="lead-row">
+      <span class="lead-id">LEAD-003</span>
+      <span class="lead-desc">
+        What the <i>Vetoed</i> field was intended to mean, who maintains it, and why it was set on only one measure since 2007.
+        <span class="angle">Angle · Follow-up question to the Legislative Help Desk</span>
+      </span>
+      <span class="lead-status">Open</span>
+    </div>
+  </section>
+
+  <!-- ==================== 06 WATCH LIST ==================== -->
+  <section class="section">
+    <div class="section-head">
+      <span class="num">06</span>
+      <h2>Watch List</h2>
+      <span class="tag">Standing Items</span>
+    </div>
+    <table class="watch">
+      <thead>
+        <tr>
+          <th style="width:80px">Item</th>
+          <th>Subject</th>
+          <th style="width:34%">Trigger Condition</th>
+          <th style="width:80px">Since</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">W-01</td>
+          <td>Oregon <i>Vetoed</i> field, each new session release</td>
+          <td class="trigger">Any measure with a "Governor vetoed." action that reads <i>Vetoed = false</i></td>
+          <td class="mono">29 SEP</td>
+        </tr>
+        <tr>
+          <td class="mono">W-02</td>
+          <td>Legislature's explanation of the change</td>
+          <td class="trigger">A statement on the field's meaning or why it was updated</td>
+          <td class="mono">30 SEP</td>
+        </tr>
+        <tr>
+          <td class="mono">W-03</td>
+          <td>California 2026 Senate veto status</td>
+          <td class="trigger">Status fails to change to "Vetoed" after the override window closes</td>
+          <td class="mono">06 OCT</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="footer">
+    <div class="colophon">
+      <span>Notitia Civica · No. OR-001</span>
+      <span>Run NC-2026-1006-A</span>
+      <span>Published 02 OCT · Updated 06 OCT</span>
+    </div>
+    <div class="method">
+      PUBLICATION NOTE — Notitia Civica is an independent public-interest publication
+      operated by EVASTARARCANA LLC, Portland, Oregon. Reports are based on public records,
+      open-source reporting, official statements, filings, and structured research workflows.
+      Analytical judgments are separated from sourced facts wherever possible. Method: proc_track replays
+      each measure's recorded actions against the field values the service publishes and flags
+      disagreement between them. Corrections are appended to the public record of the issue in which the
+      error appeared. SPEC-1 supports source monitoring and signal organization. Editorial responsibility
+      remains human. Contact: spec1_ops@proton.me.
+    </div>
+    <div class="seal">· NOTITIA · CIVICA ·</div>
+  </footer>
+
+</div>
+
 </body>
 </html>
