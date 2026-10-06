@@ -158,3 +158,105 @@ def test_registry_keeps_series_independent(epoch):
 
 def test_unknown_key_starts_empty():
     assert BaselineRegistry(90).baseline("NEW").sample_size == 0
+
+
+# ── Dispersion floors ────────────────────────────────────────────────────────
+#
+# A window with variance can still be too flat to divide by. Without a floor, a
+# difference at rounding scale becomes a large sigma and publishes as a finding.
+
+
+def test_the_live_wa_pdc_case_that_published_a_false_tier_1(epoch):
+    """
+    Regression: the exact series that put a 3.7-sigma TIER_1 in a brief headline.
+
+    Live WA PDC records are near-identical hard records filed the same day, so their
+    composite scores clustered at mean 0.597 with sd 0.0016. An observation of 0.603
+    -- six thousandths away -- divided out to 3.67 sigma, escalated, and published as
+    "1 at elevated disposition". The line read "(sd 0.00, n=3) -- 3.7 sigma", which
+    cannot show the arithmetic for its own claim.
+    """
+    baseline = RollingBaseline(90)
+    _series(baseline, [0.595, 0.597, 0.599] * 4, epoch)
+
+    reading = baseline.measure(0.603)
+
+    assert reading.baseline_stddev < 0.005
+    assert reading.tier is AnomalyTier.NONE
+    assert reading.sigma == 0.0
+    # The suppressed reading still reports the series it suppressed.
+    assert reading.baseline_mean == pytest.approx(0.597)
+    assert reading.sample_size == 12
+
+
+def test_a_suppressed_reading_never_prints_sd_zero_beside_a_sigma(epoch):
+    """
+    The published line must be able to display the basis of its own claim.
+
+    `describe()` renders sd at two decimals, so any sd under 0.005 prints as 0.00.
+    Whenever that happens the sigma must be 0.0, or the brief states a deviation it
+    cannot substantiate on its face.
+    """
+    baseline = RollingBaseline(90)
+    _series(baseline, [0.595, 0.597, 0.599] * 4, epoch)
+    text = baseline.measure(0.603).describe()
+
+    assert "sd 0.00" in text
+    assert "0.0 sigma" in text
+
+
+@pytest.mark.parametrize(
+    ("values", "observed", "tier"),
+    [
+        # Counts: sd 2.0 on mean 5.0 is 40% dispersion -- measurable.
+        ([2, 4, 4, 4, 5, 5, 7, 9], 11.0, AnomalyTier.TIER_1),
+        # Scores clustered at 1% dispersion clear both floors.
+        ([0.50, 0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57], 0.75, AnomalyTier.TIER_1),
+        # Same shape at a hundredth the spread: absolute floor rejects it.
+        ([0.500, 0.501, 0.502, 0.503, 0.504, 0.505, 0.506, 0.507], 0.75, AnomalyTier.NONE),
+    ],
+)
+def test_floors_separate_measurable_series_from_constant_ones(
+    epoch, values, observed, tier
+):
+    baseline = RollingBaseline(90)
+    _series(baseline, list(values), epoch)
+    assert baseline.measure(observed).tier is tier
+
+
+def test_a_wide_series_at_a_high_level_is_still_measurable(epoch):
+    """The relative floor must not reject a volume series just because it is large."""
+    baseline = RollingBaseline(90)
+    _series(baseline, [30, 35, 40, 45, 45, 50, 55, 60], epoch)
+
+    reading = baseline.measure(120.0)
+    assert reading.tier is AnomalyTier.TIER_1
+    assert reading.baseline_stddev > 0.005
+
+
+def test_a_narrow_series_at_a_high_level_is_not(epoch):
+    """
+    Mean 1000 with sd 0.01 prints a legible sd and is still effectively constant.
+
+    The absolute floor alone would admit this -- 0.01 exceeds 0.005 -- and a 0.05
+    difference would read as 5 sigma. The relative floor is what rejects it.
+    """
+    baseline = RollingBaseline(90)
+    _series(baseline, [999.99, 1000.0, 1000.01] * 4, epoch)
+
+    reading = baseline.measure(1000.05)
+    assert reading.baseline_stddev > 0.005
+    assert reading.tier is AnomalyTier.NONE
+
+
+def test_a_series_centred_on_zero_is_judged_on_the_absolute_floor(epoch):
+    """
+    Day-over-day deltas sit around zero, where the relative floor collapses.
+
+    Such a series is legitimately measurable, so only the absolute floor applies.
+    """
+    baseline = RollingBaseline(90)
+    _series(baseline, [-3, -2, -1, 0, 0, 1, 2, 3], epoch)
+
+    assert baseline.mean == pytest.approx(0.0)
+    assert baseline.measure(9.0).tier is AnomalyTier.TIER_1
