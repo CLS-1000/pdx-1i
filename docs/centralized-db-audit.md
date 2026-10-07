@@ -12,14 +12,13 @@
 | Adapter last-good caches | `cache_dir` (`sources/base.py`) | `_fetch_live` | `_read_raw` tier 3 | Outage fallback; projected to mapped columns (no donor addresses) |
 | Source fixtures | `tests/fixtures`, `fixture_path` | checked in | adapters | Replay input |
 | In-memory | `RollingBaseline`, `TriggerState`, novelty gate, resolver | pipeline | pipeline | Re-seeded from the store each cycle |
-| `schema/civic_records.sql` | repo | not wired in | none | Unused proposal (sources, raw_payloads, normalized_records ...) |
 
 Findings:
 
 - **Single owner of SQL.** All SQLite access is in `DualWriteStore`; there is no second writer, which makes centralising cheap.
 - **Schema management was ad hoc.** `CREATE TABLE IF NOT EXISTS` plus a hand-written `ALTER` in `_migrate`; no version record.
 - **JSON-in-column.** `entity_ids` was a JSON array, so entity lookups (`entity_ids_for_records`, `entity_record_counts`, `records_for_entity`) scanned and decoded every row.
-- **Drift risk.** `schema/civic_records.sql` describes a different, unused model from the live tables.
+- **Drift risk.** ~~`schema/civic_records.sql` describes a different, unused model from the live tables.~~ **Resolved 2026-10-07: deleted.** Reconciling it would have meant designing a second schema nothing reads.
 - **Integrity.** JSONL and SQLite have no cross-process transaction; mitigated by write order (JSONL first) and `rebuild_from_jsonl`. The run ledger and caches live outside the DB.
 - **Pre-existing, unchanged:** novelty hashes are read from JSONL (`known_signal_hashes`), a full file scan per cycle.
 
@@ -57,6 +56,78 @@ Proposed for later phases (not created yet): `entities` / `entity_ties` (from `g
 
 Compatibility: JSONL files, table names and the public `DualWriteStore` API are unchanged. Nothing legacy was removed.
 
+### 4a. Follow-up fixes — 2026-10-07
+
+An audit of the audit found two latent defects in the runner above, both verified by
+test before and after.
+
+**The migration runner's transaction did nothing.** It opened `BEGIN`, called the
+migration, inserted the ledger row and rolled back on error -- but both migrations ran
+their DDL through `executescript`, which COMMITs any pending transaction before it
+runs. Measured: a migration that created a table and then raised left the table
+behind and recorded no version.
+
+```
+canary table survived the rollback: True      <- before
+canary table survived the rollback: False     <- after
+```
+
+Fixed by executing statement by statement (`_statements`, `_exec_script`) using
+`sqlite3.complete_statement` as the splitter, so `--` comment blocks between
+statements are handled. SQLite makes DDL transactional, so the rollback is now real.
+Migrations stay idempotent regardless, because an unversioned legacy database must be
+adoptable.
+
+**One unparseable row failed migration 2 permanently.** `json_each` raises on a value
+it cannot parse, and the backfill runs over whatever the database already holds. With
+the transaction broken as above, the table was created but the ledger row was not --
+so the migration failed again on *every subsequent open*. On the scheduler under
+`Restart=on-failure` that is a crash loop, which is the failure shape D2 set out to
+remove, on the machine D4 deploys to.
+
+| `entity_ids` | before | after |
+|---|---|---|
+| `["a","b"]`, `[]` | OK | OK |
+| `''`, `pge,metro`, `{oops` | **`OperationalError: malformed JSON`** | OK, row skipped |
+
+Fixed with `WHERE json_valid(r.entity_ids)` in the backfill. The writer only ever
+emits a JSON array, so the guard should never exclude a live row; it is there so a
+legacy or hand-edited one cannot stop the cycle starting. Neither defect was
+reachable from current data -- the column is `NOT NULL`, and the committed `pdx1.db`
+holds 0 rows and 0 invalid values -- so both were latent, not active.
+
+Also: deleted the orphaned `schema/civic_records.sql`, and corrected
+`entity_record_counts`'s docstring, which recommended building the join table that
+migration 2 had already built.
+
+## 8. Measurements — 2026-10-07
+
+Taken on this checkout, so they can be re-run rather than trusted.
+
+**Migration 2 backfill**, synthetic databases, 400 entities, 0-4 per record:
+
+| records | migration 2 | link rows | db size |
+|---|---|---|---|
+| 10,000 | 0.07s | 19,790 | 2.4 MB |
+| 100,000 | 0.69s | 200,036 | 24.5 MB |
+| 500,000 | **4.50s** | 1,000,486 | 126.6 MB |
+
+**Novelty seed** (`known_signal_hashes`, a full JSONL parse once per cycle):
+
+| records | jsonl size | parse |
+|---|---|---|
+| 10,000 | 8.6 MB | 0.08s |
+| 100,000 | 85.6 MB | 0.81s |
+| 500,000 | 428.0 MB | **4.28s** |
+
+Both scale linearly. At the live rate measured 2026-10-06 (**1,249 records/day**),
+500,000 records is **~365 days** of operation. That is the number that argues against
+phases 3 and 4: the costs they remove are seconds per day after a year.
+
+`ON DELETE CASCADE` on `record_entities` was also confirmed to fire -- deleting a
+parent record removed its link rows -- which depends on `connect()` setting
+`foreign_keys = ON`, and on `DualWriteStore` opening through it. Both hold.
+
 ## 5. Local setup, migration, rollback
 
 ```bash
@@ -68,18 +139,48 @@ pytest tests/ -q && ruff check src/ tests/ && bandit -r src/ -ll
 
 Upgrade is automatic on first open. Rollback: migrations are forward-only; because SQLite is a query layer, delete the database file (or restore a copy) and run `rebuild_from_jsonl()`, using the previous release. To drop only the new table: `DROP TABLE record_entities; DELETE FROM schema_migrations WHERE version = 2;`.
 
-## 6. Phased rollout
+## 6. Phased rollout — revised 2026-10-07 against measurement
 
-1. **Done (this change):** DB module, versioned migrations, `record_entities`.
-2. Move `entity_record_counts` and `records_for_entity` onto `record_entities`; add a parity test against the JSON column.
-3. Add `runs` table mirrored from the run ledger (JSONL stays authoritative); extend `rebuild_from_jsonl`.
-4. Persist `entities`/`ties` from `graph.py`; reconcile or delete `schema/civic_records.sql`; consider storing hashes so `known_signal_hashes` need not scan JSONL.
-5. Optional: Postgres behind `db.connect` if concurrent writers or hosted querying appear. Dual-write, compare, then cut over.
+Phases 1 and 1a are done. **Everything below them is now recommended against**, on the
+evidence in §8. Each was measured rather than estimated, and none of it moves the
+thirty-day count, which is still 0.
+
+1. **Done:** DB module, versioned migrations, `record_entities`.
+1a. **Done 2026-10-07:** migrations made genuinely atomic, backfill guarded with
+    `json_valid`, orphaned `schema/civic_records.sql` deleted. See §4.
+2. **Optional, not required.** Move `entity_record_counts` and `records_for_entity`
+   onto `record_entities` with a parity test against the JSON column. A performance
+   fix for queries over ~1,249 records a day; do it when something feels slow, not
+   before. The link table is already in place for it.
+3. **Recommended against.** A `runs` table mirroring the ledger. The ledger is the
+   evidence for the count (rule 7: every cycle leaves one line, and a missing line is
+   what the alert looks for). A SQL mirror adds a second place that can disagree with
+   the one artifact the definition of done rests on, and serves no query anyone makes.
+4. **Recommended against, two parts.**
+   - `entities`/`entity_ties` persisted from `graph.py`: `graph.py` is the
+     authoritative role-based registry and is how rule 2 is kept. A copy in the
+     database is a second home for the constraint, and at query time the copy wins.
+   - Novelty hashes in SQL so `known_signal_hashes` stops scanning JSONL: measured in
+     §8 at ~4s once a day after a *year* of operation. The docstring states why it
+     reads ground truth -- "so novelty survives a database rebuild". Trading a
+     correctness property of the gate that decides what publishes for four seconds a
+     day is the wrong trade.
+5. **Stay deferred.** Postgres behind `db.connect`, if concurrent writers or hosted
+   querying ever appear. The concentration of SQL in `store.py` and `db.py` is what
+   keeps that a driver swap; nothing more is needed now.
 
 ## 7. Risks
 
 - JSONL/SQLite parity: unchanged, mitigated by write order and rebuild. `record_entities` is derived, so it is rebuilt with the rest.
 - `json_each` needs SQLite's JSON1 (built in on current Python builds).
-- `executescript` commits implicitly, so migrations must stay idempotent.
+- ~~`executescript` commits implicitly, so migrations must stay idempotent.~~ **Closed
+  2026-10-07.** Migrations now execute statement-wise inside the transaction, so the
+  rollback is real; they are still written to be idempotent so an unversioned legacy
+  database can be adopted.
+- ~~Unverified: backfill time for migration 2 on a very large database.~~ **Measured
+  2026-10-07, see §8.** 4.50s at 500,000 records -- over a year of operation at the
+  observed rate. Not a risk.
 - Public records only: no new table may hold private addresses or personal identifiers.
-- Unverified here: behaviour on a very large production database (backfill time for migration 2).
+- **Still open:** the migration runner has no test for a *partially* written database
+  (a crash between two statements of the same migration). Atomicity makes that case
+  impossible in principle; it is untested in fact.

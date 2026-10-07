@@ -28,7 +28,38 @@ _TIER_THRESHOLDS: tuple[tuple[float, AnomalyTier], ...] = (
 
 # Below this many points the standard deviation is not meaningful, so the detector
 # reports NONE rather than manufacturing a sigma from two observations.
-MIN_SAMPLES = 3
+MIN_SAMPLES = 8
+
+# A window can carry variance and still be too flat to divide by. Both floors below
+# exist because a near-constant series turns a rounding-scale difference into a large
+# sigma, and the resulting line publishes with full authority.
+#
+# Absolute: `AnomalyReading.describe()` renders sd with two decimals, so a sd under
+# 0.005 prints as "sd 0.00". A published line reading "(sd 0.00, n=3) -- 3.7 sigma"
+# cannot show the arithmetic for its own claim. The detector must not assert a
+# deviation whose basis the brief is unable to display.
+MIN_ABSOLUTE_DISPERSION = 0.005
+
+# Relative: a series whose spread is under half a percent of its level is constant for
+# practical purposes. Measured on this repo (2026-10-06), per-source sd/mean on a
+# fixture cycle runs 0.011 (WA_PDC) to 0.117 (OLIS); the live WA_PDC case that
+# manufactured a 3.7-sigma TIER_1 from a 0.006 gap sat at 0.0027. This floor is set in
+# the gap between those, so it suppresses the degenerate case with roughly 2x margin
+# and keeps every legitimate series with roughly 2x margin.
+MIN_RELATIVE_DISPERSION = 0.005
+
+
+def dispersion_is_measurable(stddev: float, mean: float) -> bool:
+    """
+    Whether a window's spread is wide enough to divide an observation by.
+
+    A series centred near zero is judged on the absolute floor alone -- the relative
+    floor collapses to zero there, which is correct: a series of small deltas around
+    zero is legitimately measurable, while one that is constant is not.
+    """
+    if stddev < MIN_ABSOLUTE_DISPERSION:
+        return False
+    return stddev >= MIN_RELATIVE_DISPERSION * abs(mean)
 
 
 def classify(sigma: float) -> AnomalyTier:
@@ -97,14 +128,19 @@ class RollingBaseline:
         """
         Measure an observation against the current window without adding it.
 
-        A flat window (stddev 0) yields sigma 0 -- with no variance there is no basis to
-        call anything a deviation, however far the observation sits from the mean.
+        A window too flat to divide by yields sigma 0 -- with no usable variance there
+        is no basis to call anything a deviation, however far the observation sits from
+        the mean. "Too flat" is not only stddev 0: see `dispersion_is_measurable`.
+
+        The reading still carries the real mean, stddev and sample size when it reports
+        NONE. A caller that suppresses a near-constant series should still be able to
+        see what the series was.
         """
         n = self.sample_size
         mean = self.mean
         sd = self.stddev
 
-        if n < MIN_SAMPLES or sd == 0.0:
+        if n < MIN_SAMPLES or not dispersion_is_measurable(sd, mean):
             sigma = 0.0
             tier = AnomalyTier.NONE
         else:

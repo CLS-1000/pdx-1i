@@ -90,7 +90,7 @@ and a test, not a redesign.
 | D0 | Freeze scope — SHIPPING.md, PARKED.md, notes in other repos | this file; PARKED notes in other repos **not yet written** |
 | D1 | Go live — explicit live/fixture config, no fixture default in production, per-adapter isolation, timeouts, bounded retry | **done 2026-09-26** — all four record feeds return live rows (ORESTAR via search export, SEI via OGEC EFS, OLIS, WA PDC); see the 2026-09-26 section |
 | D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | **done** (code); DEPLOY.md deferred to D4, which must write it from a real deploy |
-| D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | **started** — empty-day behaviour defined by the run ledger; baselines and trigger now persist. Leads, chain of custody, seed warnings not started |
+| D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | **started** — empty-day behaviour defined by the run ledger; baselines and trigger now persist; the anomaly detector no longer asserts a sigma it cannot show (2026-10-06). Leads, chain of custody, seed warnings not started, and **the anomaly series is still the composite score — see the 2026-10-06 section** |
 | D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | **blocked** — see below |
 | D5 | The clock — health-check line, one alert path, start the count | health line **built** (run ledger); alert path not armed |
 | D6 | When it breaks — fix, test, log, reset | standing |
@@ -511,6 +511,100 @@ rejects negative ages (`age >= 0`). The live read above contained one row dated
   cycle now appends one line to `<store>_runs.jsonl` with its status, per-adapter
   result, drops by gate, and either the brief id or the reason there is none. Fill
   each row of the count table from that line.
+
+---
+
+## The anomaly detector measures the scorer, not Portland — 2026-10-06
+
+The brief published `1 at elevated disposition` off a reading that read, verbatim:
+
+```
+0.60 against a 90-day baseline of 0.60 (sd 0.00, n=3) -- 3.7 sigma
+```
+
+`sd 0.00` beside `3.7 sigma` cannot show the arithmetic for its own claim. Both
+numbers are correct. The series is the problem.
+
+### What it was measuring
+
+`pipeline.py` observes `opportunity.score` — the composite priority score — against a
+per-source baseline. That score is a function of source credibility, freshness inside
+the velocity window, and length above the volume floor. For a feed whose records are
+all the same source type, filed the same day, at similar length, those three inputs
+barely move. Live WA PDC clustered at mean 0.597 with **sd 0.0016**. A gap of six
+thousandths divided out to 3.67 sigma, cleared TIER_1, and escalated.
+
+Rule 3 says anomalies are measurements, never adjectives. This obeyed the letter and
+broke the intent: a precise measurement of the wrong quantity publishes as verified.
+The composite score is a property of the engine's own scoring, so a deviation in it is
+a statement about the scorer, not about Portland.
+
+### Fixed: the detector no longer asserts what it cannot show
+
+`measure()` guarded only `sd == 0.0` exactly, and 0.0016 is not 0.0. Two floors now
+replace that, in `anomaly.py`:
+
+- **Absolute, 0.005.** `AnomalyReading.describe()` renders sd at two decimals, so any
+  sd below 0.005 prints as `0.00`. The detector must not assert a deviation whose
+  basis the brief is unable to display. This floor is derived from the publication
+  format, not fitted to data.
+- **Relative, 0.005.** A series whose spread is under half a percent of its level is
+  constant for practical purposes. Measured on a fixture cycle, per-source sd/mean runs
+  0.011 (WA_PDC) to 0.117 (OLIS); the degenerate live case sat at 0.0027. The floor
+  sits in that gap with roughly 2x margin either side.
+- `MIN_SAMPLES` 3 → 8. Claiming a 90-day baseline off three points was always thin.
+  Now that baselines persist (rule 8), the samples exist.
+
+A suppressed reading still carries the real mean, sd and sample size. Suppressing the
+verdict is not the same as hiding the series.
+
+Measured on a live cycle, 2026-10-06 — 7,824 harvested, 1,249 written, 3 feeds:
+
+| | before | after |
+|---|---|---|
+| stored anomalies printing `sd 0.00` beside a sigma | present | **0 of 115** |
+| minimum stored sd | 0.0016 | **0.0102** |
+| minimum stored n | 3 | **8** |
+
+Suite 812 → 820 on 3.13 and the 3.12 floor. Nothing was suppressed that prints a
+legible sd.
+
+### Not fixed, and the reason this is not finished
+
+Replaying the same live run exposed the deeper defect. **The composite score is
+effectively categorical, not continuous:**
+
+| source | records | distinct scores |
+|---|---|---|
+| ORESTAR | 1,000 | **28** |
+| WA_PDC | 232 | **15** |
+| PORTLAND_PRESS | 17 | 16 |
+
+A rolling sigma over a 28-value categorical series does not measure anything. The
+surviving readings show it directly — a block of records sitting at a second score
+level reports as a decaying run of deviations as each one inflates the sd behind it:
+
+```
++28.0, +20.4, +16.8, +15.1, +13.4, +12.2, +11.5, +10.6 sigma ...
+```
+
+That is not 106 anomalies. It is one group of records at a different score level,
+reported 106 times with a shrinking number attached. The floors above remove the
+incoherent lines; they do not make the remaining ones mean anything.
+
+**The series has to change, not the thresholds.** The candidate is per-source daily
+volume — how many records cleared the gates from this feed today, against the 90-day
+history of that count. `WA_PDC cleared 72 records against a 90-day baseline of 45.0
+(sd 12.0, n=61) -- 2.2 sigma` is a fact about filing activity. The history already
+exists: rule 7 has every cycle writing a ledger line.
+
+The cost, stated before anyone starts: `anomaly` stops being a per-record field and
+becomes per-source-per-cycle. No enum is renamed, so stored records stay parseable,
+but the *meaning* of an `anomaly` block in existing JSONL shifts. That is a migration
+question and it is not free.
+
+Until that lands, D3 is not done. A brief whose elevated section is driven by a sigma
+test on a categorical variable is not one to put a name on.
 
 ---
 
