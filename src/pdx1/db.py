@@ -6,19 +6,24 @@ Every store opens its database through `connect` and brings it up to date throug
 remains ground truth (see `store.py`); this module only governs the query layer, which
 is why every migration here is safe to discard and rebuild with `rebuild_from_jsonl()`.
 
-Migrations are numbered, applied in order, and recorded in
-`schema_migrations`. A database created before versioning existed has none recorded,
-so every migration is written to be idempotent (`executescript` commits implicitly, so
-a crash between a migration and its ledger row just re-runs it). Migrations are
-forward-only; rollback is "delete the database and rebuild from JSONL" (see
-docs/centralized-db-audit.md).
+Migrations are numbered, applied in order, and recorded in `schema_migrations`, and
+each one runs inside a transaction with its ledger row: SQLite makes DDL
+transactional, so a migration that raises half way leaves no trace of itself. That
+requires executing statement by statement rather than through `executescript`, which
+COMMITs any open transaction before it runs and so would silently defeat the
+rollback -- see `_statements`.
+
+Every migration is *also* written to be idempotent, because a database created before
+versioning existed has nothing recorded and must be adoptable without a rewrite.
+Migrations are forward-only; rollback is "delete the database and rebuild from JSONL"
+(see docs/centralized-db-audit.md).
 """
 
 from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -107,14 +112,56 @@ CREATE TABLE IF NOT EXISTS record_entities (
 );
 CREATE INDEX IF NOT EXISTS idx_record_entities_entity ON record_entities(entity_id);
 
+-- `json_valid` is not belt-and-braces. `json_each` raises on a value it cannot
+-- parse, and because this backfill runs over whatever the database already holds,
+-- one unparseable row would fail the whole migration -- on every open, forever,
+-- since the ledger row is never written. On the scheduler under
+-- `Restart=on-failure` that is a crash loop rather than a visible error. The
+-- writer only ever emits a JSON array, so the guard should never exclude a row;
+-- it is here so that a legacy or hand-edited one cannot stop the cycle starting.
 INSERT OR IGNORE INTO record_entities (record_id, entity_id)
 SELECT r.record_id, j.value
-  FROM intelligence_records r, json_each(r.entity_ids) j;
+  FROM intelligence_records r, json_each(r.entity_ids) j
+ WHERE json_valid(r.entity_ids);
 """
 
 
+def _statements(script: str) -> Iterator[str]:
+    """
+    Split a DDL script into single statements, using SQLite's own tokenizer.
+
+    `executescript` would be shorter, but it COMMITs any pending transaction before
+    running, which silently defeats the runner's BEGIN/rollback: the DDL lands and
+    stays even when the migration raises immediately afterwards. Running the
+    statements one at a time keeps the whole migration, ledger row included, inside
+    one transaction.
+
+    `sqlite3.complete_statement` is what sqlite3's own shell uses to decide whether it
+    has a whole statement yet, so `--` comments and semicolons inside string literals
+    are handled. A naive `split(";")` is not safe here: these schemas carry comment
+    blocks between statements.
+    """
+    buffer = ""
+    for line in script.splitlines(keepends=True):
+        buffer += line
+        if sqlite3.complete_statement(buffer):
+            statement = buffer.strip()
+            if statement:
+                yield statement
+            buffer = ""
+    trailing = buffer.strip()
+    if trailing:
+        yield trailing
+
+
+def _exec_script(conn: sqlite3.Connection, script: str) -> None:
+    """Run a DDL script inside the caller's transaction. See `_statements`."""
+    for statement in _statements(script):
+        conn.execute(statement)
+
+
 def _m1_baseline(conn: sqlite3.Connection) -> None:
-    conn.executescript(BASELINE_SCHEMA)
+    _exec_script(conn, BASELINE_SCHEMA)
     # CREATE TABLE IF NOT EXISTS leaves an older briefs table alone; add what it lacks.
     existing = {row[1] for row in conn.execute("PRAGMA table_info(briefs)")}
     for column, ddl in (
@@ -126,7 +173,7 @@ def _m1_baseline(conn: sqlite3.Connection) -> None:
 
 
 def _m2_record_entities(conn: sqlite3.Connection) -> None:
-    conn.executescript(RECORD_ENTITIES_SCHEMA)
+    _exec_script(conn, RECORD_ENTITIES_SCHEMA)
 
 
 #: (version, name, apply). Append only; never edit or renumber a shipped migration.

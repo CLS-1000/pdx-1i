@@ -579,8 +579,11 @@ class DualWriteStore:
         How many stored records mention each entity, keyed by node ID.
 
         `entity_ids` is a JSON array in a text column, so this tallies in Python
-        rather than SQL. The record set is one metro's public filings, not a firehose;
-        if that stops being true, this wants a join table rather than a cleverer query.
+        rather than SQL. The `record_entities` link table (migration 2) could serve
+        this as an indexed `GROUP BY`; it is not used here yet because the record set
+        is one metro's public filings and the scan has never been the slow part. If
+        that stops being true, move this and `records_for_entity` onto the link table
+        together, with a parity test against the JSON column.
 
         A count is a count. It says how often a body appears in the record set and
         nothing about why, which is the only claim the graph is entitled to make.
