@@ -60,10 +60,10 @@ def _action(history_id, prefix, number, chamber, date, text):
     }
 
 
-#: SB 976 moves; SB 579 carries the one row in the real corpus that no rule claims
-#: ("Rescission of the subsequent referral denied by Order of the President" -- the
-#: actual 2023R1 halt), so the halt path is exercised against a real payload rather
-#: than an invented one.
+#: SB 976 moves; SB 579 carries a row no rule claims, to exercise the halt path. This
+#: row is synthetic. It used to be the one real unclaimed row in the corpus ("Rescission
+#: of the subsequent referral denied by Order of the President", 2023R1), but proc_track
+#: 1189af2 added a rule for it and no real unclaimed row remains in the 11 sessions.
 BASE_ACTIONS = [
     _action(1, "SB", 976, "S", "2026-02-10T08:00:00",
             "Introduction and first reading. Referred to President's desk."),
@@ -74,7 +74,7 @@ BASE_ACTIONS = [
     _action(9, "SB", 579, "S", "2026-02-11T08:00:00",
             "Introduction and first reading. Referred to President's desk."),
     _action(10, "SB", 579, "S", "2026-02-14T08:00:00",
-            "Rescission of the subsequent referral denied by Order of the President"),
+            "SYNTHETIC: no rule claims this row"),
 ]
 
 #: A row inserted into the middle of an already-replayed history. OLIS does this: 2,188

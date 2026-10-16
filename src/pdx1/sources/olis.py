@@ -424,8 +424,8 @@ class OlisAdapter(LiveSourceAdapter):
         Group, sort and replay one session, keyed by the emitted-transition tuple.
 
         A halted measure is tallied and skipped. One anomalous measure must not take
-        down the adapter -- the corpus already contains at least one (SB579 in 2023R1,
-        whose "Rescission of the subsequent referral denied" no rule claims).
+        down the adapter. The corpus had one (SB579 in 2023R1, fixed upstream in
+        proc_track 1189af2); a new session's clerical wording can produce another.
         """
         groups: dict[tuple[str, int], list[dict[str, Any]]] = {}
         for row in rows:

@@ -70,7 +70,12 @@ def test_sb976_emits_the_veto_chain(fixture_dir):
     emitted = [(t.chamber, t.from_state, t.to_state) for t in found if t.to_state in olis_actions.EMITTABLE]
 
     assert ("S", "signed_by_presiding", "vetoed") in emitted
-    assert ("S", "vetoed", "veto_sustained") in emitted
+    # The Senate laid the bill and the Governor's message on the table before the veto
+    # was sustained (proc_track 9582534; before that the tabling row was swallowed by
+    # motion_carried_generic and the chain went straight to veto_sustained).
+    assert ("S", "vetoed", "tabled") in emitted
+    assert ("S", "tabled", "veto_sustained") in emitted
+    assert ("S", "vetoed", "veto_sustained") not in emitted
     assert ("H", "passed", "signed_by_presiding") in emitted
     # Committee churn never reaches a Signal.
     assert not {"committee", "public_hearing", "work_session"} & {t[2] for t in emitted}
