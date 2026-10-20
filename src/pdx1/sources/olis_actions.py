@@ -16,12 +16,13 @@ suite. That is a drift *detector*, not a drift *preventer*: it cannot tell you t
 upstream table moved. When proc_track's rules are patched, re-copy and re-digest.
 
 Replay provenance (2026-09-07, 11 sessions pulled live from the OData service):
-12,641 of 12,642 measures replay to completion across 2019R1, 2021R1, 2023R1, 2025R1,
-2026R1, 2024R1, 2022R1, 2020S1, 2020S2, 2020S3 and 2025S1. The one halt is SB579 in
-2023R1 -- "Rescission of the subsequent referral denied by Order of the President",
-which no rule claims because `[Rr]escind` does not match "Rescission". That is an
-upstream gap and is deliberately not patched here; patching the copy would fork the
-rules from the only place they are validated.
+12,641 of 12,642 measures replayed; the one halt was SB579 (2023R1), "Rescission of
+the subsequent referral denied ...". Fixed upstream in proc_track 1189af2 and carried
+here by the 2026-10-16 re-sync (proc_track 9582534).
+
+Not copied: proc_track's `DATA_CORRECTIONS` / `apply_corrections`, which fix source
+rows at load time. Its one entry is HB2998 (2019R1), outside what this adapter
+harvests. `replay()` still reads a `DataCorrection` key if a row carries one.
 """
 
 from __future__ import annotations
@@ -63,16 +64,7 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("informational_meeting",      r"Informational Meeting held",       None, {}),
     ("event_not_held",              r"(Public Hearing|Work Session|Possible [^.]*) not held", None, {}),
     ("event_scheduled",             r"(Public Hearing|Work Session|Informational Meeting) [Ss]cheduled", None, {}),
-    ("event_not_held",              r"(Public Hearing|Work Session|Possible [^.]*) not held", None, {}),
-    ("event_scheduled",             r"(Public Hearing|Work Session|Informational Meeting) [Ss]cheduled", None, {}),
-    ("event_not_held",              r"(Public Hearing|Work Session|Possible [^.]*) not held", None, {}),
-    ("event_scheduled",             r"(Public Hearing|Work Session|Informational Meeting) [Ss]cheduled", None, {}),
-    ("event_not_held",              r"(Public Hearing|Work Session|Possible [^.]*) not held", None, {}),
-    ("event_scheduled",             r"(Public Hearing|Work Session|Informational Meeting) [Ss]cheduled", None, {}),
     ("in_committee_adjournment",   r"In committee upon adjournment",    "committee", {}),
-    ("in_conference_adjournment",   r"In conference committee upon adjournment", "committee", {"conference": True}),
-    ("in_conference_adjournment",   r"In conference committee upon adjournment", "committee", {"conference": True}),
-    ("in_conference_adjournment",   r"In conference committee upon adjournment", "committee", {"conference": True}),
     ("in_conference_adjournment",   r"In conference committee upon adjournment", "committee", {"conference": True}),
 
     # --- recommendations --------------------------------------------------
@@ -106,9 +98,10 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("motion_failed",              r"Motion to [^.]*failed",            None, {"motion_failed": True}),
     ("motion_carried_refer",       r"Motion to r?e?refer to ([^.]+) carried[^.]*", "committee", {"committee": r"\1"}),
     ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
-    ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
-    ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
-    ("motion_postpone",            r"Motion to pos[tp]one[^.]*",         None, {"postponed": True}),
+    # Must sit above motion_carried_generic: both span the same text, and on a tie the
+    # earlier rule wins. Requires "carried" so a failed tabling motion is not a tabling.
+    # (SB721 2021R1; SB5506 2023R1; SB302, SB736, SB976, SB1047 2025R1)
+    ("motion_to_table",            r"Motion to lay bill[^.]*on the table carried[^.]*", "tabled", {}),
     ("motion_carried_generic",     r"Motion to [^.]*carried[^.]*",      None, {"motion_carried": True}),
     # "Motion to take and place ... Motion failed." -- a failed motion, not a failed
     # measure. Longest match beats "failed". (SB554, 2021R1)
@@ -120,7 +113,6 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("carried_by",                 r"Carried by ([^.]+)",               None, {"carried_by": r"\1"}),
     ("carried_over",               r"Carried [Oo]ver to [^.]+",         None, {"carried_over": True}),
     ("vote_explanation",           r"Vote explanation[^.]*",  None, {}),
-    ("motion_to_table",            r"Motion to lay bill.*on the table", "tabled", {}),
     ("withdrawn_committee",        r"[Ww]ithdrawn from committee",      "committee", {}),
 
     # --- executive / post-passage ----------------------------------------
@@ -132,7 +124,6 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
                                                                         {"veto_type": "line_item"}),
     ("governor_signed",            r"Governor signed",                  "enacted", {}),
     ("art_v_time_allowed",         r"The time allowed by Article V[^.]*", None, {}),
-    ("art_v_time_allowed",         r"The time allowed by Article V[^.]*", None, {}),
     ("line_item_veto",             r"Governor purported to sign with line-item veto", "vetoed", {"veto_type": "line_item"}),
     ("governor_vetoed",            r"Governor vetoed",                  "vetoed", {}),
     ("veto_sustained",             r"Veto sustained[^.]*",              "veto_sustained", {}),
@@ -142,23 +133,13 @@ RULES: list[tuple[str, str, Optional[str], dict]] = [
     ("filed_sos",                  r"Filed with Secretary of State",    None, {"filed_sos": True}),
     ("chapter_number",             r"Chapter (\d+)[^.]*Laws",            None, {"chapter": r"\1"}),
     ("filed_without_signature", r"Filed without Governor.s signature", "enacted", {}),
-    ("filed_without_signature", r"Filed without Governor.s signature", "enacted", {}),
-    ("filed_without_signature", r"Filed without Governor.s signature", "enacted", {}),
-    ("filed_without_signature", r"Filed without Governor.s signature", "enacted", {}),
     ("effective_date",             r"Effective date[^.]*",              None, {}),
     ("effective_91st_day",         r"[Ee]ffective on the \d+\w* day[^.]*", None, {}),
     ("subsequent_referral_denied", r"[Rr]escind[^.]*subsequent referral[^.]*denied[^.]*", None, {}),
     ("referral_rescinded_reref",    r"[Rr]eferral rescinded by order[^.]*", "committee", {}),
     ("subseq_referral_resc_denied", r"[Ss]ubsequent referral rescission denied[^.]*", None, {}),
-    ("subsequent_referral_denied", r"[Rr]escind[^.]*subsequent referral[^.]*denied[^.]*", None, {}),
-    ("referral_rescinded_reref",    r"[Rr]eferral rescinded by order[^.]*", "committee", {}),
-    ("subseq_referral_resc_denied", r"[Ss]ubsequent referral rescission denied[^.]*", None, {}),
-    ("subsequent_referral_denied", r"[Rr]escind[^.]*subsequent referral[^.]*denied[^.]*", None, {}),
-    ("referral_rescinded_reref",    r"[Rr]eferral rescinded by order[^.]*", "committee", {}),
-    ("subseq_referral_resc_denied", r"[Ss]ubsequent referral rescission denied[^.]*", None, {}),
-    ("subsequent_referral_denied", r"[Rr]escind[^.]*subsequent referral[^.]*denied[^.]*", None, {}),
-    ("referral_rescinded_reref",    r"[Rr]eferral rescinded by order[^.]*", "committee", {}),
-    ("subseq_referral_resc_denied", r"[Ss]ubsequent referral rescission denied[^.]*", None, {}),
+    # Third phrasing of the same order; "[Rr]escind" does not reach "Rescission". (SB579, 2023R1)
+    ("rescission_subsequent_referral_denied", r"Rescission of the subsequent referral denied[^.]*", None, {}),
     ("subsequent_referral_resc",   r"[Ss]ubsequent referral[^.]*rescinded[^.]*", None, {"subsequent_referral": "rescinded"}),
     ("amendments_distributed",     r"\(Amendments distributed\.?\)",     None, {}),
     ("at_desk_adjournment",        r"At ((President's|Speaker's) desk|Desk) upon adjournment", None, {"location": "desk"}),
@@ -254,11 +235,15 @@ def parse_row(action_text: str) -> tuple[list[Emit], list[str]]:  # noqa: C901
         gaps.append(cur.strip(" .,;"))
     return emits, gaps
 
+
 # --------------------------------------------------------------------------
 # schema — chamber-aware WITH a crossover edge (the piece that was missing)
 # --------------------------------------------------------------------------
 
 CHAMBER_FLOW = {
+    # None -> third_reading exists for one measure, HCR21 (2021R1), whose first Senate
+    # row is "Final reading ... Adopted." It does not move swap rejection; mapping
+    # final_reading to no state instead cost ~200 resolutions (tried 2026-09-26).
     None: {"introduced", "adopted", "third_reading"},
     "introduced": {"committee", "second_reading", "third_reading", "adopted"},
     "committee": {"committee", "public_hearing", "work_session", "second_reading", "third_reading",
@@ -274,9 +259,10 @@ CHAMBER_FLOW = {
     "adopted": {"signed_by_presiding", "committee", "adopted", "third_reading", "passed"},
     "failed": {"committee", "failed", "second_reading", "third_reading", "passed", "adopted"},
     "signed_by_presiding": {"signed_by_presiding", "enacted", "enacted_line_item_veto", "vetoed", "committee"},
-    # Enacted is final for the measure. proc_track used to allow enacted -> vetoed /
-    # veto_sustained, which only HB5050 (2019R1) and SB5506 (2023R1) ever used -- both
-    # line-item vetoes, and both law. That path is modelled below instead.
+    # Enacted is final for the measure. The four duplicated `"enacted": {"vetoed",
+    # "veto_sustained"}` keys that stood here existed only to let HB5050 (2019R1) and
+    # SB5506 (2023R1) replay, which recorded two enacted laws as vetoed. Both were
+    # line-item vetoes; that path is modelled below instead.
     "enacted": set(),
     "enacted_line_item_veto": {"line_item_veto_sustained"},
     "vetoed": {"tabled", "veto_sustained", "veto_overridden", "committee", "passed"},
@@ -290,6 +276,14 @@ TERMINAL = {"veto_sustained", "veto_overridden", "line_item_veto_sustained"}
 # from enacted_line_item_veto it means the item veto stood, not that the measure died.
 CONTEXTUAL_STATE = {
     ("enacted_line_item_veto", "veto_sustained"): "line_item_veto_sustained",
+}
+
+# Rows that are events at a given position, not transitions. Tabling the Governor's
+# message on a line-item-vetoed law disposes of the message (the struck items stay
+# struck); the measure is still law. It is recorded in history with no state change.
+# (SB5506, 2023R1: tabled 2024-02-05, veto sustained 2024-03-07)
+CONTEXTUAL_EVENT = {
+    ("enacted_line_item_veto", "tabled"): "line_item_veto_message_tabled",
 }
 
 
@@ -313,6 +307,13 @@ class Item:
 
 def step(item: Item, to_state: str, chamber: str, occurred_at: str, rule_id: str, payload: dict):
     frm = item.states.get(chamber)
+    event = CONTEXTUAL_EVENT.get((frm, to_state))
+    if event is not None:
+        item.chamber = chamber
+        item.payload.update(payload)
+        item.payload[event] = True
+        item.history.append((occurred_at, chamber, frm, frm, f"{rule_id}:{event}"))
+        return
     to_state = CONTEXTUAL_STATE.get((frm, to_state), to_state)
     # crossover: origin chamber passed -> second chamber introduction is legal
     if frm is None and to_state == "introduced":
@@ -333,6 +334,8 @@ def replay(measure_id: str, rows: list[dict]):
     item = Item(measure_id)
     uncovered = []
     for r in rows:
+        if "DataCorrection" in r:
+            item.payload.setdefault("data_corrections", []).append(r["DataCorrection"])
         emits, gaps = parse_row(r["ActionText"])
         uncovered.extend(gaps)
         if not emits:
@@ -348,7 +351,6 @@ def replay(measure_id: str, rows: list[dict]):
     return item, None, uncovered
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # PDX-1i additions. Everything above this line is copied from proc_track and must
 # stay byte-identical to it; everything below is this repo's own and is not part
@@ -361,7 +363,7 @@ def replay(measure_id: str, rows: list[dict]):
 #:
 #: Bump this deliberately when re-copying from proc_track. A failure here on a
 #: deliberate sync is expected and is the whole point: the copy cannot drift quietly.
-RULES_VERSION = "44887b1a71d0"
+RULES_VERSION = "865a0eeb00ad"
 
 #: States worth a Signal. These are the procedural facts a reader would call news:
 #: a measure moved, or it stopped moving.
@@ -433,6 +435,12 @@ def transitions(rows: list[dict]) -> tuple[Item, list[Transition]]:
                 item.payload.update(e.payload)
                 continue
             before = item.states.get(r["Chamber"])
+            if CONTEXTUAL_EVENT.get((before, e.state)) is not None:
+                # An event at this position, not a state change (the Governor's
+                # message tabled on a line-item-vetoed law). step() records it in
+                # history; emitting it would publish the measure as newly enacted.
+                step(item, e.state, r["Chamber"], r["ActionDate"], e.rule_id, e.payload)
+                continue
             # step() raises Halt on an illegal edge; let it reach the caller.
             step(item, e.state, r["Chamber"], r["ActionDate"], e.rule_id, e.payload)
             found.append(
