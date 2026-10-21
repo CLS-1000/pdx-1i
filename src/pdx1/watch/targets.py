@@ -52,11 +52,11 @@ WATCH_TARGETS: tuple[WatchTarget, ...] = (
     ),
     WatchTarget(
         name="PGE",
-        endpoint="https://investors.portlandgeneral.com/rss/news-releases.xml",
+        endpoint="https://feed.businesswire.com/rss/home/?rss=G1QFDERBXkJeGVpXWA==",
     ),
     WatchTarget(
         name="NW Natural",
-        endpoint="https://www.nwnatural.com/news/rss",
+        endpoint="https://feed.businesswire.com/rss/home/?rss=G1QFDERBXkJeGVpYWA==",
     ),
     WatchTarget(
         name="Portland Water Bureau",
