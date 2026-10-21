@@ -27,7 +27,7 @@ PARKED.md and the work continues.
 
 ## Count
 
-**Current consecutive count: 0 — not started.**
+**Current consecutive count: 0 — countdown armed 2026-10-21 (first unattended run scheduled 2026-10-22 06:00:00 PDT).**
 
 The count starts when D5 is complete: the scheduler is live on the VM, the daily
 health check writes its line, and the failure alert path is armed. Until then
@@ -91,8 +91,8 @@ and a test, not a redesign.
 | D1 | Go live — explicit live/fixture config, no fixture default in production, per-adapter isolation, timeouts, bounded retry | **done 2026-09-26** — all four record feeds return live rows (ORESTAR via search export, SEI via OGEC EFS, OLIS, WA PDC); see the 2026-09-26 section |
 | D2 | Fix the port collision — headless scheduler, `PDX1_ENVIRONMENT` refusal, API bind address, documented schema init | **done** (code); DEPLOY.md deferred to D4, which must write it from a real deploy |
 | D3 | Make the brief publishable — seed warnings surfaced, leads as search prompts, chain of custody, no placeholders, defined empty-day behaviour | **started** — empty-day behaviour defined by the run ledger; baselines and trigger now persist; the anomaly detector no longer asserts a sigma it cannot show (2026-10-06). Leads, chain of custody, seed warnings not started, and **the anomaly series is still the composite score — see the 2026-10-06 section** |
-| D4 | Deploy — VM, persistent SSD, two systemd services, DEPLOY.md from measured reality | **blocked** — see below |
-| D5 | The clock — health-check line, one alert path, start the count | health line **built** (run ledger); alert path not armed |
+| D4 | Deploy — VM, persistent SSD, systemd service + timer, failure handler | **done 2026-10-21** — live on Hetzner VM (`switchboard-daily.timer`, `switchboard-daily.service`) |
+| D5 | The clock — health-check line, one alert path, start the count | **done 2026-10-21** — run ledger active, `switchboard-failure.service` armed on `OnFailure`, timer queued |
 | D6 | When it breaks — fix, test, log, reset | standing |
 
 ---
