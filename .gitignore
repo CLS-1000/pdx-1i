@@ -47,3 +47,7 @@ coverage.xml
 /pdx1.db
 /*.jsonl
 /*.db
+.env
+live-run.log
+cache/
+pdx1_records
