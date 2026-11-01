@@ -41,6 +41,8 @@ def list_signals(
                 url=r.url,
                 published_at=r.published_at,
                 credibility=r.confidence,
+                origin=r.origin,
+                evidence_url=r.evidence_url,
             )
         )
 

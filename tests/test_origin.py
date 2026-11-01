@@ -191,3 +191,45 @@ def test_evidence_url_reaches_the_record(tmp_path, fixture_dir):
     rows = [json.loads(line) for line in settings.store_path.read_text().splitlines() if line]
     by_source = {row["source_type"]: row for row in rows}
     assert "evidence_url" in by_source["ORESTAR"] and by_source["ORESTAR"]["evidence_url"] is None
+
+
+def test_wa_pdc_evidence_url_ignores_a_report_number_fallback():
+    """Without Socrata's `id` column, receipt_id comes from report_number: no URL."""
+    row = {k: v for k, v in SOCRATA_ROW.items() if k != "id"}
+    signal = WaPdcAdapter().parse(json.dumps([row]))[0]
+    assert "110401493" in signal.text  # the report number did become receipt_id
+    assert signal.evidence_url is None
+
+
+def test_signals_route_returns_origin_and_evidence_url(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from pdx1.api.app import create_app
+    from pdx1.models import GateResult
+
+    monkeypatch.setenv("PDX1_STORE_PATH", str(tmp_path / "s.jsonl"))
+    monkeypatch.setenv("PDX1_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.delenv("PDX1_API_KEY", raising=False)
+    store = DualWriteStore(tmp_path / "s.jsonl", tmp_path / "s.db")
+    record = IntelligenceRecord(
+        record_id="rec_pdc",
+        run_id="pdx1_2026_1101_200057",
+        source="WA_PDC",
+        source_type="WA_PDC",
+        pattern="Washington PDC receipt 21807083",
+        outcome="MONITOR",
+        priority="MONITOR",
+        confidence=0.7,
+        tier="HARD_RECORD",
+        gates=GateResult(credibility=True, volume=True, velocity=True, novelty=True),
+        signal_id="sig_pdc",
+        url="https://my.pdc.wa.gov/public/registrations/campaign-finance-report/110401493",
+        published_at="2026-11-01T00:00:00Z",
+        origin="live",
+        evidence_url="https://data.wa.gov/resource/kv7h-kjye.json?id=21807083",
+    )
+    store.write([record])
+    with TestClient(create_app()) as client:
+        item = client.get("/signals").json()["items"][0]
+    assert item["origin"] == "live"
+    assert item["evidence_url"].endswith("id=21807083")

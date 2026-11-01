@@ -193,7 +193,10 @@ class WaPdcAdapter(LiveSourceAdapter):
                 canonical: row.get(columns.get(canonical, canonical), row.get(canonical, ""))
                 for canonical in _FIELD_ALIASES
             }
-            signal = self._to_signal(rec)
+            # The evidence URL looks a receipt up by Socrata's own `id` column, read
+            # straight from the row: `receipt_id` can fall back to `report_number`
+            # through the alias table, and a report number is not a receipt id.
+            signal = self._to_signal(rec, socrata_id=row.get("id"))
             if signal is None:
                 undated += 1
                 continue
@@ -210,7 +213,7 @@ class WaPdcAdapter(LiveSourceAdapter):
             )
         return signals
 
-    def _evidence_url(self, receipt_id: object) -> str | None:
+    def _evidence_url(self, socrata_id: object) -> str | None:
         """
         The Socrata row for this receipt, projected to EVIDENCE_COLUMNS.
 
@@ -220,14 +223,14 @@ class WaPdcAdapter(LiveSourceAdapter):
         `kv7h-kjye` on 2026-11-01: `?id=<receipt>` returns exactly that receipt.
         Only built against a Socrata `/resource/` endpoint.
         """
-        receipt = str(receipt_id).strip() if receipt_id is not None else ""
+        receipt = str(socrata_id).strip() if socrata_id is not None else ""
         base = urlsplit(self.feed_url)
         if not receipt.isdigit() or "/resource/" not in base.path:
             return None
         query = urlencode({"id": receipt, "$select": EVIDENCE_COLUMNS}, safe="$,")
         return urlunsplit((base.scheme, base.netloc, base.path, query, ""))
 
-    def _to_signal(self, rec: dict[str, Any]) -> Signal | None:
+    def _to_signal(self, rec: dict[str, Any], socrata_id: object = None) -> Signal | None:
         """Render one contribution, or None when it cannot be dated."""
         filed_at = parse_timestamp(rec.get("filed_at")) or parse_timestamp(
             rec.get("contribution_date")
@@ -273,7 +276,7 @@ class WaPdcAdapter(LiveSourceAdapter):
             source_type=self.source_type,
             text=text,
             url=_socrata_url(rec.get("url")),
-            evidence_url=self._evidence_url(rec.get("receipt_id")),
+            evidence_url=self._evidence_url(socrata_id),
             author=rec.get("recipient") or None,
             published_at=filed_at,
             credibility=self.credibility,
