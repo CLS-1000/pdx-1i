@@ -158,6 +158,10 @@ class Signal(BaseModel):
     meta: dict | None = None
     #: Set by `SourceAdapter.safe_fetch` from how the payload was read.
     origin: SignalOrigin | None = None
+    #: A machine-readable URL that returns exactly this record, for consumers that
+    #: seal the source (the newsroom). `url` stays the human-facing link the brief
+    #: cites. Set only where the source offers one that carries no home address.
+    evidence_url: str | None = None
 
     @property
     def display_title(self) -> str:
@@ -305,6 +309,8 @@ class IntelligenceRecord(BaseModel):
     #: The originating signal's origin. Downstream consumers (the newsroom) refuse
     #: anything that is not "live" or "cache"; None means a pre-origin record.
     origin: SignalOrigin | None = None
+    #: The originating signal's evidence_url; see `Signal.evidence_url`.
+    evidence_url: str | None = None
 
 
 # ── Political web ────────────────────────────────────────────────────────────
