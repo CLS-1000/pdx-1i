@@ -17,6 +17,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ..models import Signal, SourceType
 from .base import LiveSourceAdapter
@@ -92,6 +93,16 @@ def _socrata_url(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+#: Columns the evidence URL asks Socrata for: the receipt, the recipient and the
+#: money, and nothing that locates the contributor. `$select` keeps a contributor
+#: address column out of the response even on rows that carry one.
+EVIDENCE_COLUMNS = (
+    "id,report_number,filer_id,filer_name,type,for_or_against,jurisdiction,"
+    "jurisdiction_type,election_year,amount,cash_or_in_kind,receipt_date,"
+    "description,contributor_category,contributor_state"
+)
 
 
 class WaPdcAdapter(LiveSourceAdapter):
@@ -199,6 +210,23 @@ class WaPdcAdapter(LiveSourceAdapter):
             )
         return signals
 
+    def _evidence_url(self, receipt_id: object) -> str | None:
+        """
+        The Socrata row for this receipt, projected to EVIDENCE_COLUMNS.
+
+        The report link in the payload (`my.pdc.wa.gov/...`) is a browser app: a
+        plain fetch returns the same empty shell for every report, so it cannot
+        evidence any one of them. The dataset row can. Verified against
+        `kv7h-kjye` on 2026-11-01: `?id=<receipt>` returns exactly that receipt.
+        Only built against a Socrata `/resource/` endpoint.
+        """
+        receipt = str(receipt_id).strip() if receipt_id is not None else ""
+        base = urlsplit(self.feed_url)
+        if not receipt.isdigit() or "/resource/" not in base.path:
+            return None
+        query = urlencode({"id": receipt, "$select": EVIDENCE_COLUMNS}, safe="$,")
+        return urlunsplit((base.scheme, base.netloc, base.path, query, ""))
+
     def _to_signal(self, rec: dict[str, Any]) -> Signal | None:
         """Render one contribution, or None when it cannot be dated."""
         filed_at = parse_timestamp(rec.get("filed_at")) or parse_timestamp(
@@ -245,6 +273,7 @@ class WaPdcAdapter(LiveSourceAdapter):
             source_type=self.source_type,
             text=text,
             url=_socrata_url(rec.get("url")),
+            evidence_url=self._evidence_url(rec.get("receipt_id")),
             author=rec.get("recipient") or None,
             published_at=filed_at,
             credibility=self.credibility,

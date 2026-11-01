@@ -140,3 +140,54 @@ def test_an_explicit_store_path_still_wins(monkeypatch, tmp_path):
     monkeypatch.setenv("PDX1_LIVE", "false")
     monkeypatch.setenv("PDX1_STORE_PATH", str(tmp_path / "mine.jsonl"))
     assert Settings.from_env().store_path == tmp_path / "mine.jsonl"
+
+
+# ── evidence_url ─────────────────────────────────────────────────────────────
+
+from urllib.parse import parse_qs, urlsplit  # noqa: E402
+
+from pdx1.sources.wa_pdc import EVIDENCE_COLUMNS, WaPdcAdapter  # noqa: E402
+
+SOCRATA_ROW = {
+    "id": "21807083",
+    "report_number": "110401493",
+    "filer_name": "Yes for Wenatchee Schools",
+    "type": "Political Committee",
+    "jurisdiction": "WENATCHEE SD 246",
+    "election_year": "2026",
+    "amount": "96.62",
+    "cash_or_in_kind": "Cash",
+    "receipt_date": "2026-11-01T00:00:00.000",
+    "contributor_name": "SMALL CONTRIBUTIONS",
+    "url": {"url": "https://my.pdc.wa.gov/public/registrations/campaign-finance-report/110401493"},
+}
+
+
+def test_wa_pdc_evidence_url_is_the_projected_socrata_row():
+    signal = WaPdcAdapter().parse(json.dumps([SOCRATA_ROW]))[0]
+    assert signal.url.startswith("https://my.pdc.wa.gov/")  # the brief's link is unchanged
+    parts = urlsplit(signal.evidence_url)
+    assert (parts.scheme, parts.netloc, parts.path) == (
+        "https", "data.wa.gov", "/resource/kv7h-kjye.json"
+    )
+    query = parse_qs(parts.query)
+    assert query["id"] == ["21807083"]
+    assert query["$select"] == [EVIDENCE_COLUMNS]
+    selected = set(EVIDENCE_COLUMNS.split(","))
+    assert not {c for c in selected if "address" in c or "zip" in c or c == "contributor_name"}
+
+
+def test_wa_pdc_evidence_url_needs_a_numeric_receipt_and_a_socrata_feed():
+    row = dict(SOCRATA_ROW, id="not-a-number")
+    assert WaPdcAdapter().parse(json.dumps([row]))[0].evidence_url is None
+    elsewhere = WaPdcAdapter(feed_url="https://example.invalid/pdc.json")
+    assert elsewhere.parse(json.dumps([SOCRATA_ROW]))[0].evidence_url is None
+
+
+def test_evidence_url_reaches_the_record(tmp_path, fixture_dir):
+    settings = Settings(store_path=tmp_path / "s.jsonl", db_path=tmp_path / "s.db")
+    store = DualWriteStore(settings.store_path, settings.db_path)
+    run_cycle(settings=settings, adapters=default_adapters(settings, fixture_dir), store=store)
+    rows = [json.loads(line) for line in settings.store_path.read_text().splitlines() if line]
+    by_source = {row["source_type"]: row for row in rows}
+    assert "evidence_url" in by_source["ORESTAR"] and by_source["ORESTAR"]["evidence_url"] is None

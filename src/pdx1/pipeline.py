@@ -596,6 +596,7 @@ def _run_cycle(
             url=opportunity.signal.url,
             published_at=opportunity.signal.published_at,
             origin=opportunity.signal.origin,
+            evidence_url=opportunity.signal.evidence_url,
         )
         records.append(record)
 
