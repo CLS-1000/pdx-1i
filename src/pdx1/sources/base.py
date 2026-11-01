@@ -185,6 +185,10 @@ class SourceAdapter(ABC):
         """Read and parse. Raises on failure -- callers usually want `safe_fetch`."""
         return FetchResult(source=self.name, signals=self.parse(self._read_raw()))
 
+    def _origin(self) -> str | None:
+        """How this fetch read its payload. The base adapter only replays fixtures."""
+        return "fixture" if self.fixture_path is not None else None
+
     def _annotate(self, result: FetchResult) -> FetchResult:
         """
         Copy per-fetch measurements off the adapter and onto the result.
@@ -211,7 +215,13 @@ class SourceAdapter(ABC):
             logger.warning("adapter %s failed: %s", self.name, exc)
             result = FetchResult(source=self.name, errors=[f"{type(exc).__name__}: {exc}"])
         result.elapsed_s = round(time.monotonic() - started, 3)
-        return self._annotate(result)
+        result = self._annotate(result)
+        origin = self._origin()
+        if origin is not None:
+            result.signals = [
+                signal.model_copy(update={"origin": origin}) for signal in result.signals
+            ]
+        return result
 
 
 class LiveSourceAdapter(SourceAdapter):
@@ -402,6 +412,9 @@ class LiveSourceAdapter(SourceAdapter):
         if self.fixture_path is not None:
             return self.fixture_path.read_text(encoding="utf-8")
         if self._live and self.feed_url:
+            # Per fetch, not per adapter: a cache fallback must not mark the next
+            # successful live read as cached.
+            self._from_cache = False
             try:
                 text = self._fetch_live_with_retry()
             except Exception as exc:  # noqa: BLE001 - any failure may fall back to cache
@@ -423,6 +436,14 @@ class LiveSourceAdapter(SourceAdapter):
         raise RuntimeError(
             f"{self.name}: no fixture_path configured and live fetch is not enabled"
         )
+
+    def _origin(self) -> str | None:
+        """fixture_path wins in `_read_raw`, then live HTTP, then the last-good cache."""
+        if self.fixture_path is not None:
+            return "fixture"
+        if self._live and self.feed_url:
+            return "cache" if self._from_cache else "live"
+        return None
 
     def _annotate(self, result: FetchResult) -> FetchResult:
         result.http_status = self._http_status

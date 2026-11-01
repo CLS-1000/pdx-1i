@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -122,6 +123,13 @@ def content_hash(*parts: str) -> str:
 
 # ── Pipeline models ──────────────────────────────────────────────────────────
 
+#: Where a signal's payload came from. "live" is an HTTP fetch made this cycle,
+#: "cache" is the last-good payload served after a live fetch failed, and
+#: "fixture" is a checked-in test payload replayed. Only live and cache are
+#: real public records; a fixture is invented and must never be published.
+#: None on records written before this field existed: origin unknown.
+SignalOrigin = Literal["live", "cache", "fixture"]
+
 
 class Signal(BaseModel):
     """Raw item emitted by a source adapter, before parsing or scoring."""
@@ -148,6 +156,8 @@ class Signal(BaseModel):
     #:
     #: Defaulted, so every existing construction site is untouched.
     meta: dict | None = None
+    #: Set by `SourceAdapter.safe_fetch` from how the payload was read.
+    origin: SignalOrigin | None = None
 
     @property
     def display_title(self) -> str:
@@ -292,6 +302,9 @@ class IntelligenceRecord(BaseModel):
     url: str | None = None
     published_at: datetime
     created_at: datetime = Field(default_factory=utcnow)
+    #: The originating signal's origin. Downstream consumers (the newsroom) refuse
+    #: anything that is not "live" or "cache"; None means a pre-origin record.
+    origin: SignalOrigin | None = None
 
 
 # ── Political web ────────────────────────────────────────────────────────────
