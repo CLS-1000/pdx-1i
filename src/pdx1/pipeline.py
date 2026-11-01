@@ -595,6 +595,7 @@ def _run_cycle(
             dedup_hash=opportunity.signal.dedup_hash,
             url=opportunity.signal.url,
             published_at=opportunity.signal.published_at,
+            origin=opportunity.signal.origin,
         )
         records.append(record)
 

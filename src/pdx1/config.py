@@ -385,9 +385,15 @@ class Settings:
                 "Use 'development' or 'production'."
             )
 
+        live_fetch = _resolve_live_fetch(environment)
+        # A fixture replay writes invented test records. Kept out of the live store
+        # by default so nothing downstream reads them as public records; an explicit
+        # PDX1_STORE_PATH still wins, and every record carries `origin` regardless.
+        default_store = "pdx1_signals.jsonl" if live_fetch else "pdx1_signals_replay.jsonl"
+        default_db = "pdx1.db" if live_fetch else "pdx1_replay.db"
         return cls(
-            store_path=Path(_env("PDX1_STORE_PATH", "pdx1_signals.jsonl")),
-            db_path=Path(_env("PDX1_DB_PATH", "pdx1.db")),
+            store_path=Path(_env("PDX1_STORE_PATH", default_store)),
+            db_path=Path(_env("PDX1_DB_PATH", default_db)),
             briefs_path=(
                 Path(os.environ["PDX1_BRIEFS_PATH"])
                 if os.environ.get("PDX1_BRIEFS_PATH", "").strip()
@@ -437,6 +443,6 @@ class Settings:
             scheduler_embedded_api=_env_bool("PDX1_SCHEDULER_EMBEDDED_API", False),
             api_host=_resolve_api_host(environment),
             api_port=_env_int("PDX1_API_PORT", 8000),
-            live_fetch=_resolve_live_fetch(environment),
+            live_fetch=live_fetch,
             tone_gate=_env_bool("PDX1_TONE_GATE", True),
         )

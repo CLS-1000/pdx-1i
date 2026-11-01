@@ -125,15 +125,21 @@ populated only when applicable:
 
 | Path | Contents |
 |---|---|
-| `pdx1_signals.jsonl` | Append-only intelligence records; ground truth |
+| `pdx1_signals.jsonl` | Append-only intelligence records from live runs; ground truth |
 | `pdx1.db` | SQLite query layer, rebuildable from JSONL |
+| `pdx1_signals_replay.jsonl`, `pdx1_replay.db` | The same, for fixture replays (`PDX1_LIVE=false`) |
 | `pdx1_signals_briefs.jsonl` | Published briefs, when the trigger fires |
 | `pdx1_signals_runs.jsonl` | One run-ledger entry per cycle, including quiet or failed runs |
 | `pdx1_signals_olis_emitted.jsonl` | Live OLIS transitions already emitted, used to avoid repeats |
 | `cache/pdx1/` | Last-good payloads from live fetching |
 
+Every record carries `origin`: `live` (fetched this cycle), `cache` (the last-good
+payload after a failed fetch) or `fixture` (a checked-in test payload, invented and
+never publishable). Records written before the field existed have no origin.
+
 Set `PDX1_STORE_PATH`, `PDX1_DB_PATH`, `PDX1_BRIEFS_PATH`, and `PDX1_CACHE_DIR`
-to change the corresponding paths. The brief file is separate because a cycle
+to change the corresponding paths; setting the store path sends replays and live
+runs to the same file. The brief file is separate because a cycle
 does not publish a brief every time; publication follows the configured trigger.
 
 Useful operational checks:
