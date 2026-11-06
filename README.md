@@ -127,7 +127,7 @@ populated only when applicable:
 |---|---|
 | `pdx1_signals.jsonl` | Append-only intelligence records from live runs; ground truth |
 | `pdx1.db` | SQLite query layer, rebuildable from JSONL |
-| `pdx1_signals_replay.jsonl`, `pdx1_replay.db` | The same, for fixture replays (`PDX1_LIVE=false`) |
+| `pdx1_signals_replay.jsonl`, `pdx1_replay.db` | The same, for fixture replays (`PDX1_LIVE=false`); replays also write `pdx1_signals_replay_briefs.jsonl` and `pdx1_signals_replay_runs.jsonl` |
 | `pdx1_signals_briefs.jsonl` | Published briefs, when the trigger fires |
 | `pdx1_signals_runs.jsonl` | One run-ledger entry per cycle, including quiet or failed runs |
 | `pdx1_signals_olis_emitted.jsonl` | Live OLIS transitions already emitted, used to avoid repeats |
