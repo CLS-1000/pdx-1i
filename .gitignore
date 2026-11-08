@@ -51,3 +51,8 @@ coverage.xml
 # Last-good payload cache for live adapters (PDX1_CACHE_DIR). Fetched bodies, not
 # source — rebuilt on the next successful cycle.
 /cache/
+
+# local secrets
+.env
+.env.*
+!.env.example
