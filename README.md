@@ -1,4 +1,4 @@
-# PDX-1i — Portland Metro Intelligence
+# [PDX-1i] — Portland Metro Intelligence
 
 [Open Citizen Cognisance](https://cls-1000.github.io/pdx-1i/) — the static public landing page.
 
