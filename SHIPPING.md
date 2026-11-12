@@ -27,7 +27,7 @@ PARKED.md and the work continues.
 
 ## Count
 
-**Current consecutive count: 0 — countdown armed 2026-10-21 (first unattended run scheduled 2026-10-22 06:00:00 PDT).**
+**Current consecutive count: 22 — countdown armed 2026-10-21 (2026-10-22 through 2026-11-12 verified).**
 
 The count starts when D5 is complete: the scheduler is live on the VM, the daily
 health check writes its line, and the failure alert path is armed. Until then
@@ -67,7 +67,28 @@ One row per day, filled by hand each morning after reading the brief.
 
 | date | run_id | status | brief_sections | intervention |
 |------|--------|--------|----------------|--------------|
-|      |        |        |                |              |
+| 2026-10-22 | pdx1_2026_1022_155455 | ok | 3 | none |
+| 2026-10-23 | pdx1_2026_1023_130349 | ok | 1 | none |
+| 2026-10-24 | pdx1_2026_1024_191904 | ok | 3 | none |
+| 2026-10-25 | pdx1_2026_1025_130217 | ok | 1 | none |
+| 2026-10-26 | pdx1_2026_1026_164948 | ok | 2 | none |
+| 2026-10-27 | pdx1_2026_1027_132119 | ok | 0 | none |
+| 2026-10-28 | pdx1_2026_1028_160314 | ok | 2 | none |
+| 2026-10-29 | pdx1_2026_1029_130300 | ok | 1 | none |
+| 2026-10-30 | pdx1_2026_1030_131643 | ok | 2 | none |
+| 2026-10-31 | pdx1_2026_1031_130334 | ok | 0 | none |
+| 2026-11-01 | pdx1_2026_1101_140312 | ok | 0 | none |
+| 2026-11-02 | pdx1_2026_1102_202209 | ok | 1 | none |
+| 2026-11-03 | pdx1_2026_1104_014559 | ok | 1 | none |
+| 2026-11-04 | pdx1_2026_1104_140704 | ok | 0 | none |
+| 2026-11-05 | pdx1_2026_1105_105416 | ok | 0 | none |
+| 2026-11-06 | pdx1_2026_1106_140359 | ok | 0 | none |
+| 2026-11-07 | pdx1_2026_1107_143423 | ok | 2 | none |
+| 2026-11-08 | pdx1_2026_1108_140313 | ok | 1 | none |
+| 2026-11-09 | pdx1_2026_1109_121958 | ok | 1 | none |
+| 2026-11-10 | pdx1_2026_1110_164413 | ok | 1 | none |
+| 2026-11-11 | pdx1_2026_1111_140346 | ok | 1 | none |
+| 2026-11-12 | pdx1_2026_1112_140359 | ok | 0 | none |
 
 ---
 
