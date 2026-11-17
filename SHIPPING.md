@@ -27,7 +27,25 @@ PARKED.md and the work continues.
 
 ## Count
 
-**Current consecutive count: 22 — countdown armed 2026-10-21 (2026-10-22 through 2026-11-12 verified).**
+**Count closed 2026-11-17 at 27 days (2026-10-22 through 2026-11-17). Target cut from thirty to twenty-seven by the operator. Result below.**
+
+### Result — what the 27 days showed
+
+Measured from `pdx1_signals_runs.jsonl` on the host, 2026-10-21 through 2026-11-17:
+
+- **98 unattended runs, 98 `ok`, 0 errors, 0 failed adapters reported, `switchboard-failure` never fired.**
+- **Every calendar day from 2026-10-22 to 2026-11-17 has at least one clean run.**
+- No intervention was logged during the window. The ledger cannot tell a boot-started run from a hand-started one; the off-schedule runs checked in the journal (2026-10-23, 2026-11-16) each start on a WSL boot.
+
+The claim this run supports: **the pipeline runs live against every adapter, unattended, and does not break.**
+
+What it does not support yet is the original **06:00 every day** cadence. The host was SWITCHBOARD under WSL2 on a desktop, not the always-on VM in D4. WSL is down when the PC is off or asleep, so:
+
+- the 06:00 timer fired on 14 of 27 days (Oct 23, 25, 27, 29, 31; Nov 1, 4, 6, 8, 11, 12, 15, 16, 17), plus near-06:00 runs on Oct 26, Oct 30 and Nov 7;
+- `switchboard-daily.timer` carries `Requires=switchboard-daily.service` in its `[Unit]` section, so starting the timer (at every WSL boot) also starts the cycle. Most days had more than one run (up to six), and those runs fed the baselines and consumed novelty. Found 2026-10-23 and left unfixed on purpose: editing the unit mid-count would have been an intervention. Removed 2026-11-17 after the count closed; the timer is now `OnCalendar` 06:00 + `Persistent=true` only (one catch-up run after a missed day, no boot runs).
+- WATCH/PGE and WATCH/NW Natural returned 0 items on every run, also known since 2026-10-23 and also left alone during the count.
+
+The rows below take each day's 06:00 run if there was one, otherwise the first clean run that day. The 06:00 cadence and a single run per day are the next thing to prove, on an always-on host.
 
 The count starts when D5 is complete: the scheduler is live on the VM, the daily
 health check writes its line, and the failure alert path is armed. Until then
@@ -89,6 +107,11 @@ One row per day, filled by hand each morning after reading the brief.
 | 2026-11-10 | pdx1_2026_1110_164413 | ok | 1 | none |
 | 2026-11-11 | pdx1_2026_1111_140346 | ok | 1 | none |
 | 2026-11-12 | pdx1_2026_1112_140359 | ok | 0 | none |
+| 2026-11-13 | pdx1_2026_1113_113417 | ok | 1 | none |
+| 2026-11-14 | pdx1_2026_1114_152830 | ok | 1 | none |
+| 2026-11-15 | pdx1_2026_1115_140344 | ok | 0 | none |
+| 2026-11-16 | pdx1_2026_1116_140625 | ok | 0 | none |
+| 2026-11-17 | pdx1_2026_1117_140358 | ok | 0 | none |
 
 ---
 
@@ -629,8 +652,8 @@ test on a categorical variable is not one to put a name on.
 
 ---
 
-## Day 30 is the decision point
+## Day 27 is the decision point
 
-Only after thirty clean runs is it worth asking who this brief is for and
+(Originally day 30; cut to 27 on 2026-11-17.) Only after the clean runs is it worth asking who this brief is for and
 whether anyone pays for it. Deciding that earlier is how the last four things
 stalled.
