@@ -161,3 +161,18 @@ def test_an_unparseable_entity_ids_row_does_not_fail_the_migration(tmp_path, ent
         }
     # The good row is linked; the unparseable one contributes nothing and raises nothing.
     assert linked == {("r_good", "pge"), ("r_good", "metro")}
+
+
+def test_connect_converts_existing_database_to_wal_with_busy_timeout(tmp_path):
+    path = tmp_path / "legacy.db"
+    with closing(sqlite3.connect(path)) as legacy:
+        assert legacy.execute("PRAGMA journal_mode = DELETE").fetchone()[0] == "delete"
+
+    with closing(db.connect(path)) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == db.BUSY_TIMEOUT_MS
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+
+    # The mode is stored in the file: a plain connection afterwards still sees WAL.
+    with closing(sqlite3.connect(path)) as raw:
+        assert raw.execute("PRAGMA journal_mode").fetchone()[0] == "wal"

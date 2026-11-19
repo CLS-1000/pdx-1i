@@ -10,7 +10,7 @@ point to evidence you can re-run.
 | System | Home | What it claims to be |
 |---|---|---|
 | SPEC-1 | `CLS-1000/spec-1` (`Main` default, `develop`) | Deterministic intel pipeline, analyst loop, planned threat index |
-| PDX-1i | `CLS-1000/pdx-1i` (`main`) | Portland-metro public-records engine, neutral brief, 30-day unattended count |
+| PDX-1i | `CLS-1000/pdx-1i` (`main`) | Portland-metro public-records engine, neutral brief, 27-day unattended count |
 | Gatepost | `CLS-1000/gatepost` (scaffold) + verifier files wherever they were committed | Gate + tamper-evident record + offline `verify.py` |
 | proc_track | `ominous-22/gatepost`, branch `claude/session-crfeeh` (sic, see K1) + local `~/proc_track` | OLIS action-history replay validator, veto-flag reconciliation |
 
