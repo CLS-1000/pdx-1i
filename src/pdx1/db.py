@@ -183,13 +183,29 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
 ]
 
 
+#: How long a connection waits on a locked database before raising, in milliseconds.
+#: busy_timeout is per connection, so `connect` sets it on every one it opens.
+BUSY_TIMEOUT_MS = 5000
+
+
 def connect(db_path: Path | str) -> sqlite3.Connection:
-    """Open the database with the project's standard settings."""
+    """Open the database with the project's standard settings.
+
+    WAL lets the API read while the pipeline (the single writer) writes; the
+    journal mode is stored in the file, so the first open converts an existing
+    rollback-journal database and later opens keep it.
+    """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_MS / 1000)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS:d}")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA foreign_keys = ON")
+    except sqlite3.Error:
+        conn.close()
+        raise
     return conn
 
 

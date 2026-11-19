@@ -25,6 +25,13 @@ from pdx1.sources import OlisAdapter, PortlandPressAdapter
 from pdx1.watch import WATCH_TARGETS, WatchAdapter
 
 
+@pytest.fixture(autouse=True)
+def _run_outside_the_repo(tmp_path_factory, monkeypatch):
+    """Live-mode `default_adapters` opens `Settings()`'s relative pdx1.db / JSONL
+    paths; run from a temp dir so these tests never open the checkout's dev store."""
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
+
+
 def _live(**urls) -> Settings:
     return replace(Settings(), live_fetch=True, urls=SourceUrls(**urls))
 

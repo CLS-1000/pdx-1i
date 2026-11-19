@@ -9,10 +9,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 from pdx1.sources.base import DEFAULT_HEADERS
 from pdx1.sources import OrestarAdapter, PortlandPressAdapter
 from pdx1.sources.base import LiveSourceAdapter
+
+
+@pytest.fixture(autouse=True)
+def _run_outside_the_repo(tmp_path_factory, monkeypatch):
+    """Live-mode `default_adapters` opens `Settings()`'s relative pdx1.db / JSONL
+    paths; run from a temp dir so these tests never open the checkout's dev store."""
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
 
 
 # ── Class-attribute checks ────────────────────────────────────────────────────
