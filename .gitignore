@@ -58,3 +58,5 @@ coverage.xml
 !.env.example
 /.archive/
 /.archive/
+*.db-wal
+*.db-shm
