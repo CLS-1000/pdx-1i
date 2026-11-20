@@ -259,3 +259,44 @@ def test_press_adapter_is_excluded_from_the_adapter_pass():
     """Guards the isinstance check the probe uses to avoid the duplicate."""
     adapters = default_adapters(_live())
     assert any(isinstance(a, PortlandPressAdapter) for a in adapters)
+
+
+def test_probe_never_opens_the_store(tmp_path, monkeypatch):
+    """`--check-endpoints` is read-only: no store is constructed, so nothing is
+    created, migrated or backfilled -- not the JSONL, not SQLite, not their dirs."""
+    import pdx1.pipeline as pipeline
+
+    def _refuse(*args, **kwargs):
+        raise AssertionError("check_endpoints constructed a DualWriteStore")
+
+    monkeypatch.setattr(pipeline, "DualWriteStore", _refuse)
+    store_dir = tmp_path / "store"
+    settings = replace(
+        _live(),
+        store_path=store_dir / "pdx1_signals.jsonl",
+        db_path=store_dir / "pdx1.db",
+        cache_dir=tmp_path / "cache",
+    )
+    with _probe(200):
+        assert check_endpoints(settings) == 0
+    assert not list(tmp_path.iterdir())
+
+
+def test_probe_leaves_an_existing_store_byte_identical(tmp_path):
+    """Against a store that already exists, the probe changes no byte and no mtime."""
+    from pdx1.store import DualWriteStore
+
+    jsonl, db = tmp_path / "pdx1_signals.jsonl", tmp_path / "pdx1.db"
+    DualWriteStore(jsonl, db)  # create and migrate it once, as a real host has
+    before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.iterdir()}
+    with _probe(200):
+        check_endpoints(replace(_live(), store_path=jsonl, db_path=db, cache_dir=tmp_path / "cache"))
+    after = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.iterdir()}
+    assert after == before
+
+
+def test_probe_store_stand_in_refuses_use():
+    from pdx1.pipeline import _ProbeOnlyStore
+
+    with pytest.raises(RuntimeError, match="read-only"):
+        _ProbeOnlyStore().record_olis_emitted([], "v")
