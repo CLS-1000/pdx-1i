@@ -27,7 +27,7 @@ PARKED.md and the work continues.
 
 ## Count
 
-**Current consecutive count: 22 — countdown armed 2026-10-21 (2026-10-22 through 2026-11-12 verified).**
+**Current consecutive count: 29 — countdown armed 2026-10-21 (2026-10-22 through 2026-11-19 verified; 2026-11-17 timer Requires= fix disclosed inline and in the Break log as an exception).**
 
 The count starts when D5 is complete: the scheduler is live on the VM, the daily
 health check writes its line, and the failure alert path is armed. Until then
@@ -89,6 +89,13 @@ One row per day, filled by hand each morning after reading the brief.
 | 2026-11-10 | pdx1_2026_1110_164413 | ok | 1 | none |
 | 2026-11-11 | pdx1_2026_1111_140346 | ok | 1 | none |
 | 2026-11-12 | pdx1_2026_1112_140359 | ok | 0 | none |
+| 2026-11-13 | pdx1_2026_1113_113417 | ok | 1 | none |
+| 2026-11-14 | pdx1_2026_1114_152830 | ok | 1 | none |
+| 2026-11-15 | pdx1_2026_1115_140344 | ok | 0 | none |
+| 2026-11-16 | pdx1_2026_1116_140625 | ok | 0 | none |
+| 2026-11-17 | pdx1_2026_1117_140358 | ok | 0 | none |
+| 2026-11-18 | pdx1_2026_1118_161508 | ok | 3 | none (note: removed Requires= from switchboard-daily.timer on 2026-11-17 10:47 PT; timer fired late at 07:37 PT on VM resume and the cycle ran unattended) |
+| 2026-11-19 | pdx1_2026_1119_140508 | ok | 1 | none |
 
 ---
 
@@ -100,7 +107,7 @@ and a test, not a redesign.
 
 | date | run_id | cause | fix | test added | count reset to |
 |------|--------|-------|-----|------------|----------------|
-|      |        |       |     |            |                |
+| 2026-11-17 | — (between pdx1_2026_1117_140358 and pdx1_2026_1118_161508) | not a break: operator edited a systemd unit, removing `Requires=switchboard-daily.service` from `switchboard-daily.timer` and running `daemon-reload` at 10:47 PT. By the definition above that is an intervention | none needed; no cycle failed. The next cycle (2026-11-18) was started by the timer, unattended | none | not reset (exception: count kept at 29, disclosed here and on the 2026-11-18 row) |
 
 ---
 
