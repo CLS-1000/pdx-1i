@@ -947,11 +947,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+class _ProbeOnlyStore:
+    """Stand-in store for `--check-endpoints`.
+
+    The probe only reads each adapter's `feed_url`, but `default_adapters` builds a
+    real `DualWriteStore` for OLIS when given none, and constructing one creates
+    directories, runs the SQLite migrations and backfills the OLIS-emitted JSONL --
+    writes to the live store from a command documented as read-only. Passing this
+    instead keeps the store closed; any attempt to use it is a bug and fails loudly.
+    """
+
+    def __getattr__(self, name: str) -> object:
+        raise RuntimeError(f"--check-endpoints is read-only; store.{name} was used")
+
+
 def _endpoint_targets(settings: Settings) -> list[tuple[str, str]]:
     """Every registered (name, url) pair, with Portland Press expanded per outlet."""
     live = replace(settings, live_fetch=True)
     targets: list[tuple[str, str]] = []
-    for adapter in default_adapters(live):
+    for adapter in default_adapters(live, store=_ProbeOnlyStore()):
         # Portland Press polls a map of feeds rather than its single registered URL,
         # so it is enumerated below instead -- listing both would report one outlet
         # twice and imply the others are not polled.
